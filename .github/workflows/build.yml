@@ -67,3 +67,29 @@ jobs:
           name: Caecilia-macOS
           path: build/src/caecilia/plugin/Caecilia_artefacts/Release/
           if-no-files-found: warn
+
+  installer:
+    name: Windows installer (Inno Setup)
+    needs: windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Windows artefacts
+        uses: actions/download-artifact@v4
+        with:
+          name: Caecilia-Windows
+          path: artefacts
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Compile installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            /DMyAppVersion=0.1.0 `
+            "/DArtefactsDir=${{ github.workspace }}\artefacts" `
+            installer\caecilia.iss
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Caecilia-Setup-Windows
+          path: dist/installer/*.exe
+          if-no-files-found: error
