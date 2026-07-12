@@ -37,6 +37,7 @@ juce_add_plugin(Caecilia
     IS_SYNTH                  TRUE
     NEEDS_MIDI_INPUT          TRUE
     NEEDS_MIDI_OUTPUT         FALSE
+    NEEDS_WEBVIEW2            TRUE
     IS_MIDI_EFFECT            FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD   FALSE
@@ -52,9 +53,16 @@ target_sources(Caecilia PRIVATE
     PluginProcessor.cpp
     PluginEditor.cpp)
 
+# --- embedded web UI (the console is the mockup, hosted in a WebBrowserComponent)
+# The self-contained mockup HTML is compiled into the binary so the plugin needs
+# no external files; the editor serves it to the WebView via a resource provider.
+juce_add_binary_data(CaeciliaWebUI
+    SOURCES "${CMAKE_SOURCE_DIR}/docs/mockups/console.html")
+set_target_properties(CaeciliaWebUI PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # --- compile-time JUCE configuration ---------------------------------------
 target_compile_definitions(Caecilia PUBLIC
-    JUCE_WEB_BROWSER=0
+    JUCE_WEB_BROWSER=1
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -67,10 +75,29 @@ target_compile_definitions(Caecilia PUBLIC
 target_link_libraries(Caecilia
     PRIVATE
         caecilia::core
+        CaeciliaWebUI
         juce::juce_audio_utils
+        juce::juce_gui_extra
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
+
+# On Linux, JUCE 8's juce_gui_extra does NOT auto-declare the WebKitGTK / GTK
+# packages the WebBrowserComponent needs, so wire them in ourselves. WebView2
+# (Windows) and WKWebView (macOS) need no extra packages.
+if(UNIX AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(WEBKIT2GTK IMPORTED_TARGET webkit2gtk-4.1)
+    if(NOT WEBKIT2GTK_FOUND)
+        pkg_check_modules(WEBKIT2GTK IMPORTED_TARGET webkit2gtk-4.0)
+    endif()
+    if(WEBKIT2GTK_FOUND)
+        target_link_libraries(Caecilia PRIVATE PkgConfig::WEBKIT2GTK)
+        message(STATUS "Caecilia: linked WebKitGTK for the embedded console WebView.")
+    else()
+        message(WARNING "Caecilia: WebKitGTK not found; the WebBrowser console will not build on Linux.")
+    endif()
+endif()
 
 # The project-wide include root so "caecilia/<module>/<File>.h" resolves. (core's
 # PUBLIC include dir already provides this, but state it explicitly for clarity.)

@@ -62,3 +62,5 @@ desktop.ini
 /local/
 *.local
 settings.local.json
+dist/
+scratch-*
