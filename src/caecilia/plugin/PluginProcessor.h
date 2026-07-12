@@ -171,8 +171,10 @@ private:
     ui::KeyStateSnapshot    keys_{};           ///< Lit-key accumulator (audio thread).
 
     /// One on-screen-keyboard note event, queued lock-free for the audio thread.
-    struct UiNoteEvent { core::MidiNote note = 0; bool down = false; };
+    /// Carries its division so the correct keyboard sounds and lights.
+    struct UiNoteEvent { core::DivisionId division{}; core::MidiNote note = 0; bool down = false; };
     core::engine::SpscRing<UiNoteEvent, 512> uiNotes_; ///< Console keyboard -> audio.
+    juce::MidiBuffer        uiScratch_;        ///< Pre-reserved: UI notes -> command bridge, no RT alloc.
 
     /// Host-facing output trim (NOT part of the synthesis chain), applied post-engine
     /// and smoothed to avoid zipper noise. // TODO(phase0.3): fold gain staging into

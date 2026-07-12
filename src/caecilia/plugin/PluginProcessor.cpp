@@ -101,6 +101,12 @@ void CaeciliaAudioProcessor::buildInstrument(double sampleRate, std::size_t maxB
     ctx.family  = core::TonalFamily::Principal;
     ctx.footage = core::footage::kEight; // composite is already referenced to 8'
 
+    // Size every voice's partial bank to hold the WHOLE composite: the default
+    // bank caps at 64 partials and silently drops the rest, which would mute the
+    // last-ordered ranks of any full registration. Must precede prepare(), which
+    // is what reserves the storage.
+    const std::size_t maxPartials = std::max<std::size_t>(composite.partials.size(), 16);
+
     voices_.clear();
     voicePtrs_.clear();
     voices_.reserve(kPolyphony);
@@ -108,6 +114,7 @@ void CaeciliaAudioProcessor::buildInstrument(double sampleRate, std::size_t maxB
     for (std::size_t i = 0; i < kPolyphony; ++i)
     {
         auto v = std::make_unique<synth::AdditiveVoice>();
+        v->bank().setMaxPartials(maxPartials);
         v->prepare(sampleRate, maxBlockFrames);
         v->setContext(ctx);
         v->seedFrom(composite);
@@ -196,6 +203,7 @@ void CaeciliaAudioProcessor::toggleStop(core::StopId stop)
     std::vector<core::IVoice*>                          newPtrs;
     {
         const synth::SpectralModel composite = compositeSpectrum();
+        const std::size_t maxPartials = std::max<std::size_t>(composite.partials.size(), 16);
         synth::VoiceContext ctx;
         ctx.family  = core::TonalFamily::Principal;
         ctx.footage = core::footage::kEight;
@@ -205,6 +213,7 @@ void CaeciliaAudioProcessor::toggleStop(core::StopId stop)
         for (std::size_t i = 0; i < kPolyphony; ++i)
         {
             auto v = std::make_unique<synth::AdditiveVoice>();
+            v->bank().setMaxPartials(maxPartials); // hold the whole composite (see buildInstrument)
             v->prepare(sr, frames);
             v->setContext(ctx);
             v->seedFrom(composite);
@@ -225,9 +234,10 @@ void CaeciliaAudioProcessor::toggleStop(core::StopId stop)
 
 void CaeciliaAudioProcessor::uiNote(core::DivisionId division, core::MidiNote note, bool down)
 {
-    juce::ignoreUnused(division); // routed to the primary manual for now
     // Lock-free hand-off to the audio thread; drop if the (large) ring is full.
-    (void) uiNotes_.push(UiNoteEvent{ note, down });
+    // The clicked division travels with the event so the right keyboard sounds
+    // and lights (not always the primary manual).
+    (void) uiNotes_.push(UiNoteEvent{ division, note, down });
 }
 
 // ---------------------------------------------------------------------------
@@ -265,8 +275,11 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     reverb_.setPreset(dsp::ReverbPreset::Hall);
     engine_.setMasterReverb(&reverb_);
 
-    // On-screen keyboard -> audio thread: clear any stale queued notes.
+    // On-screen keyboard -> audio thread: clear any stale queued notes and
+    // pre-reserve the scratch MIDI buffer so merging UI notes never allocates on
+    // the audio thread (ample for the 512-slot event ring).
     { UiNoteEvent drain; while (uiNotes_.pop(drain)) {} }
+    uiScratch_.ensureSize(8192);
     keys_ = {};
 
     masterGain_.reset(sampleRate, 0.02); // 20 ms output-trim ramp
@@ -301,26 +314,9 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     const auto numChannels = static_cast<std::size_t>(getTotalNumOutputChannels());
     const auto numFrames   = static_cast<std::size_t>(buffer.getNumSamples());
-    const int  numSamples  = buffer.getNumSamples();
-
-    // Merge notes played on the on-screen keyboard into the host's MIDI, so both
-    // streams reach the engine through the ONE command-bridge producer.
-    juce::ignoreUnused(numSamples);
-    {
-        const int channel = juce::jlimit(1, 16, static_cast<int>(playDivision_.value) + 1);
-        UiNoteEvent ev;
-        while (uiNotes_.pop(ev))
-        {
-            const juce::MidiMessage m = ev.down
-                ? juce::MidiMessage::noteOn(channel, static_cast<int>(ev.note),
-                                            static_cast<juce::uint8>(100))
-                : juce::MidiMessage::noteOff(channel, static_cast<int>(ev.note));
-            midi.addEvent(m, 0);
-        }
-    }
-
-    // Mirror note on/off into the lit-key snapshot the console paints. This is the
-    // "keys light up while playing" feed; a byte write per event, RT-safe.
+    // Lit-key feed for the console ("keys light while playing"): a byte write per
+    // event, RT-safe. Host MIDI is attributed to the primary manual (a single
+    // keyboard plays the Great).
     for (const juce::MidiMessageMetadata meta : midi)
     {
         const juce::MidiMessage m = meta.getMessage();
@@ -334,11 +330,32 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             keys_ = {};
     }
 
+    // On-screen keyboard notes: drained into a PRE-RESERVED scratch buffer (never
+    // grow the host MidiBuffer on the audio thread — that can heap-allocate), each
+    // lit on ITS OWN division so the clicked keyboard responds. clear() keeps the
+    // reserved storage, so addEvent stays allocation-free.
+    uiScratch_.clear();
+    {
+        UiNoteEvent ev;
+        while (uiNotes_.pop(ev))
+        {
+            const int ch = juce::jlimit(1, 16, static_cast<int>(ev.division.value) + 1);
+            const juce::MidiMessage m = ev.down
+                ? juce::MidiMessage::noteOn(ch, static_cast<int>(ev.note), static_cast<juce::uint8>(100))
+                : juce::MidiMessage::noteOff(ch, static_cast<int>(ev.note));
+            uiScratch_.addEvent(m, 0);
+            keys_.set(ev.division.value, ev.note,
+                      ev.down ? ui::KeySource::PlayedDirect : ui::KeySource::Off);
+        }
+    }
+
     // Single-producer encode of host intent onto the engine command ring, drained
     // by engine_.processBlock() below. Parameters first (cheap when unchanged),
-    // then MIDI note/panic events.
+    // then the host and on-screen note streams (both from THIS thread, so the ring
+    // still has exactly one producer).
     commandBridge_.pushChangedParameters(parameters_);
     commandBridge_.pushMidi(midi);
+    commandBridge_.pushMidi(uiScratch_);
     midi.clear(); // this instrument produces no MIDI output
 
     // Wrap the host buffer as the JUCE-free AudioBlock — the only audio type that

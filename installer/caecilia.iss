@@ -49,11 +49,12 @@ ArchitecturesInstallIn64BitMode=x64
 MinVersion=10.0
 PrivilegesRequired=admin
 WizardStyle=modern
-SetupIconFile=caecilia.ico
+; Branding assets live in assets\installer\ (one level up from this script).
+SetupIconFile=..\assets\installer\caecilia.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
-WizardImageFile=wizard-large.bmp
-WizardSmallImageFile=wizard-small.bmp
+WizardImageFile=..\assets\installer\wizard-large.bmp
+WizardSmallImageFile=..\assets\installer\wizard-small.bmp
 WizardImageStretch=no
 
 [Languages]
