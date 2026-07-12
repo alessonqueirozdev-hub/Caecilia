@@ -1,0 +1,64 @@
+# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
+# Ceciliae is proprietary and confidential. See LICENSE.
+
+# ---- Build output ---------------------------------------------------------
+/build/
+/build-*/
+/out/
+/cmake-build-*/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+
+# ---- CMake artifacts ------------------------------------------------------
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+Testing/
+
+# ---- Fetched dependencies (JUCE, Catch2 via FetchContent) -----------------
+/_deps/
+**/_deps/
+/deps/
+/external/JUCE/
+/external/Catch2/
+
+# ---- Plugin build products ------------------------------------------------
+*.vst3
+*.component
+*.aaxplugin
+*.app
+
+# ---- IDE / editor ---------------------------------------------------------
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.ncb
+*.sln
+*.vcxproj*
+.cache/
+*.swp
+*~
+
+# ---- OS junk --------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Local / secret -------------------------------------------------------
+/local/
+*.local
+settings.local.json

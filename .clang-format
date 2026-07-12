@@ -1,0 +1,59 @@
+# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
+# Ceciliae is proprietary and confidential; unauthorized copying,
+# distribution, or use of any part is prohibited. See LICENSE.
+
+---
+Language:        Cpp
+BasedOnStyle:    LLVM
+Standard:        c++20
+
+# Indentation
+IndentWidth:     4
+TabWidth:        4
+UseTab:          Never
+AccessModifierOffset: -4
+NamespaceIndentation: None
+ColumnLimit:     100
+
+# Braces: Allman-style for functions/types, attached elsewhere.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass:      true
+  AfterControlStatement: MultiLine
+  AfterEnum:       true
+  AfterFunction:   true
+  AfterNamespace:  true
+  AfterStruct:     true
+  AfterUnion:      true
+  BeforeCatch:     true
+  BeforeElse:      true
+  SplitEmptyFunction: false
+
+# Pointers / references bind to the type.
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Includes: keep grouped, do not auto-reorder across groups.
+SortIncludes:    CaseSensitive
+IncludeBlocks:   Preserve
+
+# Spacing & alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignTrailingComments: true
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+Cpp11BracedListStyle: true
+
+# Short constructs
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+# Misc
+FixNamespaceComments: true
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+IndentCaseLabels: true
+...
