@@ -51,6 +51,10 @@ private:
     /// Rebuild the cached wood-grain brush from the current tokens.
     void rebuildWoodBrush();
 
+    /// Radiating wooden pedalboard (naturals as long bars, sharps raised behind),
+    /// distinct from a manual and lit from the same key-state feed.
+    void paintPedalboard(juce::Graphics&, const ConsoleElement&, const KeyStateSnapshot&, std::size_t);
+
     ThemeTokens tokens_{};
     juce::Image woodTexture_; ///< Procedurally-generated grain tile (cached). // TODO(v0.9)
 };

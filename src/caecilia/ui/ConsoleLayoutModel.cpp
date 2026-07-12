@@ -10,7 +10,9 @@
 #include "caecilia/model/Organ.h"
 #include "caecilia/model/Stop.h"
 
+#include <algorithm>
 #include <cctype>
+#include <vector>
 
 namespace caecilia::ui
 {
@@ -51,164 +53,217 @@ void ConsoleLayoutModel::layoutFrom(const model::Organ& organ, LayoutRect canvas
     organ_  = &organ;
     canvas_ = canvas;
 
-    // The layout is a coarse but coherent console frame; the polished, builder-
-    // faithful placement (curved jambs, terraced manuals) lands with the skins.
-    // TODO(v0.9): replace with a proper measured jamb/terrace layout engine.
+    // A measured stop-jamb / terraced-manual console that fills the whole canvas:
+    // full-height drawstop jambs frame both sides, the manuals are terraced large
+    // in the centre with a radiating pedalboard beneath, and the combination bar,
+    // expression shoe and meters sit on the console frame.
+    // TODO(v0.9): curved jambs and per-builder faithful placement.
 
-    const float margin      = 24.0f;
-    const float jambWidth   = canvas.width * 0.22f;
-    const float keyboardTop = canvas.y + canvas.height * 0.52f;
-    const float rowHeight   = 120.0f;
+    const float margin    = canvas.width * 0.018f;
+    const float jambWidth = canvas.width * 0.255f;
+    const float leftJambX  = canvas.x + margin;
+    const float rightJambX = canvas.right() - margin - jambWidth;
 
-    // --- Drawstops: two jambs (left/right) filled from the divisions ---------
     const auto& divisions = organ.divisions();
 
-    float leftY  = canvas.y + margin;
-    float rightY = canvas.y + margin;
-    const float stopSize = 56.0f;
-    const float stopPad  = 12.0f;
-    const int   perRow   = 3;
-
-    std::uint16_t divIndex = 0;
-    for (const auto& division : divisions)
+    // Split divisions between the two jambs, keeping the pedal with the smaller
+    // side so the busiest manual gets a jamb to itself.
+    std::vector<const model::Division*> leftDivs, rightDivs;
     {
-        const bool  leftJamb = (divIndex % 2) == 0;
-        const float jambX    = leftJamb ? (canvas.x + margin)
-                                        : (canvas.right() - margin - jambWidth);
-        float&      cursorY  = leftJamb ? leftY : rightY;
-
-        // Division header label.
-        ConsoleElement header{};
-        header.role   = ElementRole::Label;
-        header.bounds = { jambX, cursorY, jambWidth, 22.0f };
-        header.semantic.role       = ElementRole::Label;
-        header.semantic.division   = division.id();
-        header.semantic.label      = division.name();
-        header.semantic.oscAddress = "/caecilia/" + slugify(division.name());
-        elements_.push_back(header);
-        cursorY += 30.0f;
-
-        int col = 0;
-        for (const core::StopId sid : division.stops())
+        std::uint16_t i = 0;
+        for (const auto& d : divisions)
         {
-            const model::Stop* stop = organ.stop(sid);
-            if (stop == nullptr)
-                continue;
-
-            const float sx = jambX + static_cast<float>(col) * (stopSize + stopPad);
-
-            ConsoleElement e{};
-            e.role      = ElementRole::Drawstop;
-            e.bounds    = { sx, cursorY, stopSize, stopSize };
-            e.footage   = stop->footage();
-            e.family    = stop->family();
-            e.learnable = true;
-
-            e.semantic.role       = ElementRole::Drawstop;
-            e.semantic.stop       = sid;
-            e.semantic.division   = division.id();
-            e.semantic.family     = stop->family();
-            e.semantic.label      = division.name() + " " + stop->displayName();
-            e.semantic.oscAddress = "/caecilia/" + slugify(division.name())
-                                    + "/" + slugify(stop->name());
-            elements_.push_back(e);
-
-            if (++col >= perRow)
-            {
-                col = 0;
-                cursorY += stopSize + stopPad;
-            }
+            (((i++) % 2) == 0 ? leftDivs : rightDivs).push_back(&d);
         }
-        if (col != 0)
-            cursorY += stopSize + stopPad;
-
-        ++divIndex;
     }
 
-    // --- Keyboards: stack the manual divisions from the bottom up ------------
-    float manualY = keyboardTop;
-    const float keyboardLeft  = canvas.x + jambWidth + 2.0f * margin;
-    const float keyboardWidth = canvas.width - 2.0f * jambWidth - 4.0f * margin;
+    // --- Drawstop jambs: each side lays its divisions top-to-bottom, four across.
+    const int   perRow   = 4;
+    const float stopPad  = jambWidth * 0.045f;
+    const float stopSize = (jambWidth - static_cast<float>(perRow - 1) * stopPad
+                            - 2.0f * (jambWidth * 0.04f)) / static_cast<float>(perRow);
+    const float jambInset = jambWidth * 0.04f;
 
+    const auto layoutJamb = [&](const std::vector<const model::Division*>& divs, float jambX)
+    {
+        float cursorY = canvas.y + margin * 1.4f;
+        for (const model::Division* dptr : divs)
+        {
+            const model::Division& division = *dptr;
+
+            ConsoleElement header{};
+            header.role   = ElementRole::Label;
+            header.bounds = { jambX + jambInset, cursorY, jambWidth - 2.0f * jambInset, 26.0f };
+            header.semantic.role     = ElementRole::Label;
+            header.semantic.division = division.id();
+            header.semantic.label    = division.name();
+            elements_.push_back(header);
+            cursorY += 34.0f;
+
+            int col = 0;
+            const float rowStride = stopSize + stopPad;
+            for (const core::StopId sid : division.stops())
+            {
+                const model::Stop* stop = organ.stop(sid);
+                if (stop == nullptr)
+                    continue;
+
+                const float sx = jambX + jambInset + static_cast<float>(col) * rowStride;
+
+                ConsoleElement e{};
+                e.role      = ElementRole::Drawstop;
+                e.bounds    = { sx, cursorY, stopSize, stopSize };
+                e.footage   = stop->footage();
+                e.family    = stop->family();
+                e.learnable = true;
+                e.semantic.role       = ElementRole::Drawstop;
+                e.semantic.stop       = sid;
+                e.semantic.division   = division.id();
+                e.semantic.family     = stop->family();
+                e.semantic.label      = division.name() + " " + stop->displayName();
+                e.semantic.oscAddress = "/caecilia/" + slugify(division.name())
+                                        + "/" + slugify(stop->name());
+                elements_.push_back(e);
+
+                if (++col >= perRow) { col = 0; cursorY += rowStride; }
+            }
+            if (col != 0)
+                cursorY += rowStride;
+            cursorY += stopSize * 0.5f; // gap between divisions on the same jamb
+        }
+    };
+    layoutJamb(leftDivs, leftJambX);
+    layoutJamb(rightDivs, rightJambX);
+
+    // --- Centre keydesk: terraced manuals over a radiating pedalboard ---------
+    const float keyboardLeft  = leftJambX + jambWidth + margin * 1.5f;
+    const float keyboardRight = rightJambX - margin * 1.5f;
+    const float keyboardWidth = keyboardRight - keyboardLeft;
+
+    int numManuals = 0;
+    for (const auto& d : divisions)
+        if (d.kind() != model::DivisionKind::Pedal)
+            ++numManuals;
+    numManuals = numManuals > 0 ? numManuals : 1;
+
+    // Vertical bands: coupler rail, manuals, pedalboard, combination bar.
+    const float railY        = canvas.y + canvas.height * 0.30f;
+    const float manualTop    = canvas.y + canvas.height * 0.36f;
+    const float manualBottom = canvas.y + canvas.height * 0.70f;
+    const float manualGap    = 14.0f;
+    const float manualH = (manualBottom - manualTop
+                           - static_cast<float>(numManuals - 1) * manualGap)
+                          / static_cast<float>(numManuals);
+
+    // Coupler rail sits just above the top manual.
+    const auto& couplers = organ.couplers();
+    if (! couplers.empty())
+    {
+        const float couplerW = std::min(150.0f, keyboardWidth / static_cast<float>(couplers.size()) - 8.0f);
+        float couplerX = keyboardLeft;
+        for (const auto& coupler : couplers)
+        {
+            ConsoleElement e{};
+            e.role      = ElementRole::Coupler;
+            e.bounds    = { couplerX, railY, couplerW, 30.0f };
+            e.learnable = true;
+            e.semantic.role    = ElementRole::Coupler;
+            e.semantic.coupler = coupler.id();
+            e.semantic.label   = coupler.name();
+            e.semantic.oscAddress = "/caecilia/coupler/" + slugify(coupler.name());
+            elements_.push_back(e);
+            couplerX += couplerW + 8.0f;
+        }
+    }
+
+    // Manuals terraced from the top down; pedalboard spans the bottom.
+    float manualY = manualTop;
     std::uint16_t manualIdx = 0;
+    const model::Division* pedalDiv = nullptr;
     for (const auto& division : divisions)
     {
-        const bool isPedal = division.kind() == model::DivisionKind::Pedal;
+        if (division.kind() == model::DivisionKind::Pedal)
+        {
+            pedalDiv = &division;
+            continue;
+        }
 
         ConsoleElement kb{};
-        kb.role     = isPedal ? ElementRole::Pedalboard : ElementRole::Manual;
-        kb.bounds   = { keyboardLeft, manualY, keyboardWidth, rowHeight - 12.0f };
+        kb.role     = ElementRole::Manual;
+        kb.bounds   = { keyboardLeft, manualY, keyboardWidth, manualH };
         kb.lowNote  = division.lowNote();
         kb.highNote = division.highNote();
         kb.index    = manualIdx;
-
-        kb.semantic.role       = kb.role;
-        kb.semantic.division   = division.id();
-        kb.semantic.label      = division.name() + " keyboard";
+        kb.semantic.role     = ElementRole::Manual;
+        kb.semantic.division = division.id();
+        kb.semantic.label    = division.name() + " keyboard";
         kb.semantic.oscAddress = "/caecilia/" + slugify(division.name()) + "/keys";
         elements_.push_back(kb);
 
-        manualY += rowHeight;
+        manualY += manualH + manualGap;
         ++manualIdx;
     }
 
-    // --- Coupler rail: one tab per coupler, along the console mid-band --------
-    const auto& couplers = organ.couplers();
-    float couplerX = keyboardLeft;
-    const float couplerY = keyboardTop - 44.0f;
-    const float couplerW = 96.0f;
-    for (const auto& coupler : couplers)
+    if (pedalDiv != nullptr)
     {
-        ConsoleElement e{};
-        e.role      = ElementRole::Coupler;
-        e.bounds    = { couplerX, couplerY, couplerW, 30.0f };
-        e.learnable = true;
-        e.semantic.role       = ElementRole::Coupler;
-        e.semantic.coupler    = coupler.id();
-        e.semantic.label      = coupler.name();
-        e.semantic.oscAddress = "/caecilia/coupler/" + slugify(coupler.name());
-        elements_.push_back(e);
-        couplerX += couplerW + 10.0f;
+        // A radiating pedalboard, centred and wider-keyed, distinct from a manual.
+        const float pedalH = canvas.height * 0.16f;
+        const float pedalW = keyboardWidth * 0.86f;
+        const float pedalX = keyboardLeft + (keyboardWidth - pedalW) * 0.5f;
+        const float pedalY = canvas.y + canvas.height * 0.735f;
+
+        ConsoleElement pb{};
+        pb.role     = ElementRole::Pedalboard;
+        pb.bounds   = { pedalX, pedalY, pedalW, pedalH };
+        pb.lowNote  = pedalDiv->lowNote();
+        pb.highNote = pedalDiv->highNote();
+        pb.index    = manualIdx;
+        pb.semantic.role     = ElementRole::Pedalboard;
+        pb.semantic.division = pedalDiv->id();
+        pb.semantic.label    = pedalDiv->name() + " pedalboard";
+        pb.semantic.oscAddress = "/caecilia/" + slugify(pedalDiv->name()) + "/keys";
+        elements_.push_back(pb);
     }
 
-    // --- Combination bar: a fixed row of pistons plus sequencer steppers -----
-    const float pistonY = canvas.bottom() - margin - 34.0f;
-    const float pistonW = 40.0f;
+    // --- Combination bar: general pistons along the base of the keydesk -------
+    const float pistonY = canvas.bottom() - margin - 40.0f;
+    const float pistonW = 44.0f;
     float pistonX = keyboardLeft;
     for (std::uint16_t p = 1; p <= 8; ++p)
     {
         ConsoleElement e{};
         e.role      = ElementRole::Piston;
-        e.bounds    = { pistonX, pistonY, pistonW, 34.0f };
+        e.bounds    = { pistonX, pistonY, pistonW, 38.0f };
         e.index     = p;
         e.learnable = true;
-        e.semantic.role       = ElementRole::Piston;
-        e.semantic.label      = "General " + std::to_string(p);
+        e.semantic.role  = ElementRole::Piston;
+        e.semantic.label = "General " + std::to_string(p);
         e.semantic.oscAddress = "/caecilia/general/" + std::to_string(p);
         elements_.push_back(e);
         pistonX += pistonW + 8.0f;
     }
 
-    // --- Expression pedal + meters along the lower-right frame ----------------
+    // --- Expression shoe (right of the pistons) and meters (frame) ------------
     ConsoleElement expr{};
     expr.role   = ElementRole::ExpressionPedal;
-    expr.bounds = { canvas.right() - margin - 70.0f, keyboardTop, 70.0f, canvas.bottom() - keyboardTop - margin };
-    expr.semantic.role       = ElementRole::ExpressionPedal;
-    expr.semantic.label      = "Expression";
+    expr.bounds = { keyboardRight - 76.0f, pistonY - 6.0f, 76.0f, 50.0f };
+    expr.semantic.role  = ElementRole::ExpressionPedal;
+    expr.semantic.label = "Expression";
     expr.semantic.oscAddress = "/caecilia/expression/1";
     expr.learnable = true;
     elements_.push_back(expr);
 
     ConsoleElement wind{};
     wind.role   = ElementRole::WindGauge;
-    wind.bounds = { canvas.x + margin, canvas.bottom() - margin - 60.0f, 140.0f, 60.0f };
+    wind.bounds = { leftJambX + jambInset, canvas.bottom() - margin - 88.0f, 96.0f, 88.0f };
     wind.semantic.role  = ElementRole::WindGauge;
     wind.semantic.label = "Wind pressure";
     elements_.push_back(wind);
 
     ConsoleElement vu{};
     vu.role   = ElementRole::VuMeter;
-    vu.bounds = { canvas.x + margin + 156.0f, canvas.bottom() - margin - 60.0f, 120.0f, 60.0f };
+    vu.bounds = { rightJambX + jambWidth - jambInset - 150.0f,
+                  canvas.bottom() - margin - 34.0f, 150.0f, 26.0f };
     vu.semantic.role  = ElementRole::VuMeter;
     vu.semantic.label = "Output level";
     elements_.push_back(vu);

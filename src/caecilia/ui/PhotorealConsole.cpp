@@ -113,6 +113,12 @@ void PhotorealConsole::paintKeyboard(juce::Graphics&          g,
                                      const KeyStateSnapshot&  keys,
                                      std::size_t              divisionSlot)
 {
+    if (element.role == ElementRole::Pedalboard)
+    {
+        paintPedalboard(g, element, keys, divisionSlot);
+        return;
+    }
+
     const auto bounds = toRect(element.bounds);
     const int  low = element.lowNote, high = element.highNote;
     int whiteCount = 0;
@@ -156,6 +162,71 @@ void PhotorealConsole::paintKeyboard(juce::Graphics&          g,
         const auto src = keys.get(divisionSlot, static_cast<core::MidiNote>(k));
         g.setColour(src != KeySource::Off ? litColour(tokens_, src) : juce::Colour(0xff141414));
         g.fillRoundedRectangle(key, 1.5f);
+    }
+}
+
+void PhotorealConsole::paintPedalboard(juce::Graphics&          g,
+                                       const ConsoleElement&    element,
+                                       const KeyStateSnapshot&  keys,
+                                       std::size_t              divisionSlot)
+{
+    const auto bounds = toRect(element.bounds);
+    const int  low = element.lowNote, high = element.highNote;
+
+    // Recessed well behind the pedals.
+    g.setColour(toColour(tokens_.surfaceSunken));
+    g.fillRoundedRectangle(bounds, tokens_.cornerRadius);
+
+    int naturals = 0;
+    for (int k = low; k <= high; ++k)
+        naturals += isWhiteKey(k) ? 1 : 0;
+    naturals = juce::jmax(1, naturals);
+
+    const float slot      = bounds.getWidth() / static_cast<float>(naturals);
+    const float naturalW  = slot * 0.72f;
+    const float naturalH  = bounds.getHeight() * 0.9f;
+    const float sharpW    = slot * 0.5f;
+    const float sharpH    = bounds.getHeight() * 0.42f;
+    const float topY      = bounds.getY() + bounds.getHeight() * 0.06f;
+
+    // Natural pedals: long rounded oak bars radiating up from the well.
+    float x = bounds.getX();
+    for (int k = low; k <= high; ++k)
+    {
+        if (! isWhiteKey(k))
+            continue;
+        const float cx = x + slot * 0.5f;
+        juce::Rectangle<float> pedal(cx - naturalW * 0.5f, topY, naturalW, naturalH);
+        const auto src = keys.get(divisionSlot, static_cast<core::MidiNote>(k));
+        if (src != KeySource::Off)
+        {
+            g.setColour(litColour(tokens_, src));
+            g.fillRoundedRectangle(pedal, 3.0f);
+        }
+        else
+        {
+            juce::ColourGradient oak(juce::Colour(0xff8a5a2b), pedal.getTopLeft(),
+                                     juce::Colour(0xff5c3a1a), pedal.getBottomLeft(), false);
+            g.setGradientFill(oak);
+            g.fillRoundedRectangle(pedal, 3.0f);
+        }
+        g.setColour(toColour(tokens_.outline).withAlpha(0.55f));
+        g.drawRoundedRectangle(pedal, 3.0f, 1.0f);
+        x += slot;
+    }
+
+    // Sharp pedals: shorter dark bars raised behind, between the naturals.
+    x = bounds.getX();
+    for (int k = low; k <= high; ++k)
+    {
+        if (isWhiteKey(k)) { x += slot; continue; }
+        const float cx = x; // sits on the boundary between two naturals
+        juce::Rectangle<float> pedal(cx - sharpW * 0.5f, topY, sharpW, sharpH);
+        const auto src = keys.get(divisionSlot, static_cast<core::MidiNote>(k));
+        g.setColour(src != KeySource::Off ? litColour(tokens_, src) : juce::Colour(0xff30200f));
+        g.fillRoundedRectangle(pedal, 2.5f);
+        g.setColour(juce::Colours::black.withAlpha(0.4f));
+        g.drawRoundedRectangle(pedal, 2.5f, 0.8f);
     }
 }
 
