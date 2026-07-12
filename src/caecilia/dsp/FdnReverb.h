@@ -89,6 +89,8 @@ private:
     void updateDamping() noexcept;
     /// Recompute stereo output-tap weights from the current width.
     void updateWidth() noexcept;
+    /// (Re)initialise the per-line modulation LFO increments for the sample rate.
+    void updateModulation() noexcept;
 
     core::SampleRate   sampleRate_    = 44100.0;
     std::size_t        maxBlockFrames_ = 0;
@@ -107,6 +109,15 @@ private:
     std::vector<float> preDelay_{};                       ///< Pre-delay ring buffer.
     std::size_t        preDelayLen_   = 1;                 ///< Active pre-delay length.
     std::size_t        preDelayPos_   = 0;                 ///< Pre-delay cursor.
+
+    // --- Light tail modulation --------------------------------------------
+    // A slow, low-depth per-line LFO jitters each delay-line read tap by a
+    // fraction of a sample. This time-varies the modal frequencies just enough
+    // to break up the metallic ringing / flutter of a static FDN without
+    // audibly detuning the tail. Standard public reverb practice (Dattorro).
+    std::array<float, kLines> modPhase_{};   ///< Per-line LFO phase in [0, 1).
+    std::array<float, kLines> modInc_{};     ///< Per-line LFO phase step / sample.
+    float                     modDepth_ = 0.0f; ///< Modulation depth (samples).
 };
 
 } // namespace caecilia::dsp

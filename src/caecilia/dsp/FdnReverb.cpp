@@ -55,8 +55,24 @@ void FdnReverb::prepare(core::SampleRate sampleRate,
     preDelay_.assign(std::max<std::size_t>(preMax, 2), 0.0f);
     preDelayPos_ = 0;
 
+    updateModulation();
     setParams(params_);
     reset();
+}
+
+void FdnReverb::updateModulation() noexcept
+{
+    // Slow (< ~1 Hz) mutually-detuned LFOs, one per line, so no two lines sweep
+    // in lock-step. Depth scales with the sample rate so the peak excursion is a
+    // constant fraction of a millisecond (about +/- 0.03 ms) at any rate — light
+    // enough to be inaudible as pitch, deep enough to smear the tail's modes.
+    constexpr double kModBaseHz = 0.6;
+    for (std::size_t i = 0; i < kLines; ++i)
+    {
+        const double rateHz = kModBaseHz * (1.0 + 0.05 * static_cast<double>(i));
+        modInc_[i] = static_cast<float>(rateHz / sampleRate_);
+    }
+    modDepth_ = static_cast<float>(1.5 * sampleRate_ / 44100.0);
 }
 
 core::ReverbParams FdnReverb::presetParams(ReverbPreset preset) noexcept
@@ -162,11 +178,30 @@ void FdnReverb::process(core::AudioBlock& block) noexcept
         preDelay_[preDelayPos_] = mono;
         preDelayPos_            = (preDelayPos_ + 1) % preDelay_.size();
 
-        // Read, damp and apply feedback gain to every line.
+        // Read, damp and apply feedback gain to every line. Each read tap is
+        // jittered forward by a light, slow LFO and linearly interpolated, so the
+        // effective delay wanders within [len - modDepth_, len] samples.
         float o[kLines];
         for (std::size_t i = 0; i < kLines; ++i)
         {
-            const float delayed = lines_[i][positions_[i]];
+            modPhase_[i] += modInc_[i];
+            if (modPhase_[i] >= 1.0f)
+                modPhase_[i] -= 1.0f;
+
+            const float lfo    = std::sin(kTwoPiF * modPhase_[i]);       // -1..+1
+            const float offset = modDepth_ * (0.5f + 0.5f * lfo);        // 0..depth
+            const std::size_t len = lengths_[i];
+
+            const float basePos = static_cast<float>(positions_[i]) + offset;
+            std::size_t i0       = static_cast<std::size_t>(basePos);
+            const float frac     = basePos - static_cast<float>(i0);
+            if (i0 >= len)
+                i0 -= len;
+            std::size_t i1 = i0 + 1;
+            if (i1 >= len)
+                i1 -= len;
+
+            const float delayed = lines_[i][i0] + (lines_[i][i1] - lines_[i][i0]) * frac;
             o[i]                = dampers_[i].process(delayed) * feedback_[i];
         }
 
@@ -214,6 +249,9 @@ void FdnReverb::reset() noexcept
         std::fill(lines_[i].begin(), lines_[i].end(), 0.0f);
         positions_[i] = 0;
         dampers_[i].reset();
+        // Spread the LFO phases evenly so the tail is deterministic and the
+        // per-line modulation starts maximally decorrelated.
+        modPhase_[i] = static_cast<float>(i) / static_cast<float>(kLines);
     }
     std::fill(preDelay_.begin(), preDelay_.end(), 0.0f);
     preDelayPos_ = 0;
