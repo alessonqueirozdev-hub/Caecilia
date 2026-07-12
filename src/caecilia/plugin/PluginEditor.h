@@ -7,6 +7,8 @@
 #pragma once
 
 #include "caecilia/plugin/PluginProcessor.h"
+#include "caecilia/ui/ConsoleLayoutModel.h"
+#include "caecilia/ui/ConsoleView.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -15,22 +17,18 @@ namespace caecilia::plugin
 {
 
 /**
- * @brief The plugin's @c juce::AudioProcessorEditor shell.
+ * @brief The plugin's @c juce::AudioProcessorEditor — the first-class console.
  *
- * The editor is deliberately thin: it hosts the console UI and polls the engine's
- * lock-free @ref MeterBridge at frame rate to animate live feedback (key levels,
- * wind sag, tremulant phase, voice count). The audio thread NEVER touches a
- * @c juce::Component — the editor only READS published snapshots on the message
- * thread.
+ * The editor owns the data-driven @c ui::ConsoleView, lays it out from the
+ * processor's compiled @c model::Organ, dresses it in the photoreal theme and
+ * feeds it the processor's lock-free @c ui::StateMirror so meters animate and
+ * keys light while playing. Every interaction is a semantic callback back into
+ * the processor: drawstops toggle the registration, on-screen keys inject notes.
  *
- * In this scaffold the editor draws a minimal status placeholder. The first-class
- * console pillar — @c ui::ConsoleView with its data-driven layout, pluggable
- * skins and registration palette — is embedded here in a later phase.
- * // TODO(phase0.2): mount ui::ConsoleView + StateMirror.
- * // TODO(phase0.9): PhotorealSkin / FlatVectorSkin + ThemeManager + zoom/pan.
+ * The audio thread NEVER touches a @c juce::Component; the console only READS
+ * published snapshots on the message thread (via the ConsoleView's own vblank).
  */
-class CaeciliaEditor final : public juce::AudioProcessorEditor,
-                             private juce::Timer
+class CaeciliaEditor final : public juce::AudioProcessorEditor
 {
 public:
     explicit CaeciliaEditor(CaeciliaAudioProcessor& processor);
@@ -40,14 +38,13 @@ public:
     void resized() override;
 
 private:
-    void timerCallback() override; ///< Frame-rate poll of the meter bridge.
+    /// (Re)build the console layout for the current component size and re-fit.
+    void relayout();
 
     CaeciliaAudioProcessor& processor_;
 
-    // Cached values pulled from the last poll, painted on the message thread.
-    float        masterPeakDb_ = -100.0f;
-    unsigned     activeVoices_ = 0;
-    float        windSagNorm_  = 0.0f;
+    ui::ConsoleLayoutModel  layout_;
+    ui::ConsoleView         console_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CaeciliaEditor)
 };

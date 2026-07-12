@@ -8,6 +8,8 @@
 
 #include "caecilia/plugin/PluginEditor.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <span>
 
@@ -16,50 +18,89 @@ namespace caecilia::plugin
 
 namespace
 {
+/// Total simultaneous voices. Each key grabs one composite voice, so this is the
+/// polyphony ceiling across every manual and the pedal at once.
+constexpr std::size_t kPolyphony = 96;
 
-/// Build the default "grand plenum" composite spectrum, referenced to 8' unison,
-/// by summing several principal ranks (8'/4'/2') and a mixture with each rank's
-/// footage folded into its partial ratios. A voice seeded with this plays the
-/// whole registration at the key pitch, so mutations/mixtures land at their true
-/// intervals instead of an arbitrary per-key stop.
-synth::SpectralModel buildPlenumSpectrum()
+/// Voicing balance for one drawn rank within the composite: a base level per
+/// tonal family, darkened by an octave for every pitch step above 8' so upperwork
+/// crowns the chorus without swamping the foundations. Mirrors the hand-tuned
+/// plenum the render harness was validated against.
+float rankGainDb(const model::Stop& stop) noexcept
 {
-    synth::SpectralModel plenum;
+    const bool unisonReferenced = stop.family() == core::TonalFamily::Mixture
+                               || stop.isCompound()
+                               || stop.footage().isMutation();
+    if (unisonReferenced)
+        return -11.0f; // mixtures/mutations sit under the foundations
 
-    const auto addStop = [&plenum](const synth::SpectralModel& stop, double feet, float gainDb)
+    float base = -3.0f;
+    switch (stop.family())
     {
-        const double ratioShift = feet > 0.0 ? 8.0 / feet : 1.0; // fold footage into ratio
-        for (const synth::PartialTrack& p : stop.partials)
+        case core::TonalFamily::Principal:  base =  0.0f; break;
+        case core::TonalFamily::Flute:      base = -1.5f; break;
+        case core::TonalFamily::String:     base = -4.0f; break;
+        case core::TonalFamily::Reed:       base = -2.0f; break;
+        case core::TonalFamily::Hybrid:     base = -2.0f; break;
+        case core::TonalFamily::Mixture:    // handled above via unisonReferenced
+        case core::TonalFamily::Percussion:
+        case core::TonalFamily::Undefined:
+        default:                            base = -3.0f; break;
+    }
+    // octaveClassFrom8(): 0 for 8', +1 for 4', +2 for 2', -1 for 16'.
+    return base - 3.3f * static_cast<float>(stop.footage().octaveClassFrom8());
+}
+} // namespace
+
+synth::SpectralModel CaeciliaAudioProcessor::compositeSpectrum() const
+{
+    synth::SpectralModel composite;
+
+    std::size_t drawn = 0;
+    for (bool b : engaged_)
+        drawn += b ? 1u : 0u;
+    if (drawn == 0)
+        return composite; // silence: no stop drawn
+
+    // Gentle global trim so stacking more ranks never clips the master bus.
+    const float stackTrimDb = -5.0f * std::log10(static_cast<float>(drawn));
+
+    for (const model::Stop& stop : organ_.stops())
+    {
+        if (stop.id().value >= engaged_.size() || ! engaged_[stop.id().value])
+            continue;
+
+        // Fold the footage into the partial ratios ourselves — EXACTLY as the
+        // engine's per-stop voicing does (unison-referenced recipes stay at 8').
+        const bool unisonReferenced = stop.family() == core::TonalFamily::Mixture
+                                   || stop.isCompound()
+                                   || stop.footage().isMutation();
+        const double feet = stop.footage().feet();
+        const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
+        const float  gainDb = rankGainDb(stop) + stackTrimDb;
+
+        const synth::SpectralModel recipe = model::spectralModelForStop(stop);
+        for (const synth::PartialTrack& p : recipe.partials)
         {
             synth::PartialTrack t = p;
-            t.ratioToF0 = static_cast<float>(static_cast<double>(p.ratioToF0) * ratioShift);
+            t.ratioToF0 = static_cast<float>(static_cast<double>(p.ratioToF0) * fold);
             t.ampDb     = p.ampDb + gainDb;
-            plenum.partials.push_back(t);
+            composite.partials.push_back(t);
         }
-    };
+    }
 
-    addStop(model::makeSpectralPrincipal(core::footage::kEight, 1.0f, 12), 8.0,  0.0f);
-    addStop(model::makeSpectralPrincipal(core::footage::kFour,  1.0f, 10), 4.0, -3.5f);
-    addStop(model::makeSpectralPrincipal(core::footage::kTwo,   1.1f,  8), 2.0, -7.0f);
-
-    const core::Footage mixRanks[] = { core::footage::kTwo, core::footage::kOneAndThird, core::footage::kOne };
-    addStop(model::makeSpectralMixture(std::span<const core::Footage>(mixRanks, 3), 1.2f), 8.0, -11.0f);
-
-    plenum.fundamentalHz = 0.0f; // set per note by the voice at noteOn
-    return plenum;
+    composite.fundamentalHz = 0.0f; // set per note by the voice at noteOn
+    return composite;
 }
-
-} // namespace
 
 void CaeciliaAudioProcessor::buildInstrument(double sampleRate, std::size_t maxBlockFrames)
 {
-    const synth::SpectralModel plenum = buildPlenumSpectrum();
+    const synth::SpectralModel composite = compositeSpectrum();
 
     synth::VoiceContext ctx;
     ctx.family  = core::TonalFamily::Principal;
     ctx.footage = core::footage::kEight; // composite is already referenced to 8'
 
-    constexpr std::size_t kPolyphony = 64;
     voices_.clear();
     voicePtrs_.clear();
     voices_.reserve(kPolyphony);
@@ -69,7 +110,7 @@ void CaeciliaAudioProcessor::buildInstrument(double sampleRate, std::size_t maxB
         auto v = std::make_unique<synth::AdditiveVoice>();
         v->prepare(sampleRate, maxBlockFrames);
         v->setContext(ctx);
-        v->seedFrom(plenum);
+        v->seedFrom(composite);
         voicePtrs_.push_back(v.get());
         voices_.push_back(std::move(v));
     }
@@ -81,6 +122,112 @@ CaeciliaAudioProcessor::CaeciliaAudioProcessor()
                                                         true))
     , parameters_(*this)
 {
+    // Compile the instrument once (off-thread). The console lays itself out from
+    // it and the registration is a subset of its stops.
+    organ_ = model::buildCaeciliaDemoOrgan();
+    engaged_.assign(organ_.stops().size(), false);
+    chooseDefaultRegistration();
+}
+
+// ---------------------------------------------------------------------------
+// Registration defaults and control.
+// ---------------------------------------------------------------------------
+
+void CaeciliaAudioProcessor::chooseDefaultRegistration()
+{
+    // Primary manual = the division carrying the most stops (the Grand-Orgue on
+    // the demo instrument); MIDI notes and key lights are routed here.
+    const auto& stops = organ_.stops();
+    std::array<int, ui::KeyStateSnapshot::kMaxDivisions> perDivision{};
+    for (const model::Stop& s : stops)
+        if (s.division().value < perDivision.size())
+            ++perDivision[s.division().value];
+
+    std::size_t best = 0;
+    for (std::size_t d = 1; d < perDivision.size(); ++d)
+        if (perDivision[d] > perDivision[best])
+            best = d;
+    playDivision_ = core::DivisionId{ static_cast<std::uint16_t>(best) };
+
+    // Draw a classic opening plenum on the primary manual: the whole principal
+    // chorus, its mixtures, and an 8' flute foundation for body.
+    for (const model::Stop& s : stops)
+    {
+        if (s.division() != playDivision_)
+            continue;
+        const bool principalChorus = s.family() == core::TonalFamily::Principal
+                                  || s.family() == core::TonalFamily::Mixture;
+        const bool fluteFoundation = s.family() == core::TonalFamily::Flute
+                                  && s.footage() == core::footage::kEight;
+        if (principalChorus || fluteFoundation)
+            engaged_[s.id().value] = true;
+    }
+
+    // Safety net: if the heuristic drew nothing, engage the first 8' stop found so
+    // the instrument is never silent out of the box.
+    if (std::none_of(engaged_.begin(), engaged_.end(), [](bool b) { return b; }))
+        for (const model::Stop& s : stops)
+            if (s.footage() == core::footage::kEight)
+            {
+                engaged_[s.id().value] = true;
+                break;
+            }
+}
+
+bool CaeciliaAudioProcessor::isStopEngaged(core::StopId stop) const noexcept
+{
+    return stop.value < engaged_.size() && engaged_[stop.value];
+}
+
+void CaeciliaAudioProcessor::toggleStop(core::StopId stop)
+{
+    if (stop.value >= engaged_.size())
+        return;
+    engaged_[stop.value] = ! engaged_[stop.value];
+
+    const double sr = getSampleRate();
+    if (sr <= 0.0)
+        return; // not prepared yet; the new state applies at the next prepareToPlay
+
+    // Build the new voice bank off the audio thread, then swap it in under the
+    // processing lock so the audio thread never renders a half-rebuilt pool.
+    const auto frames = static_cast<std::size_t>(juce::jmax(1, getBlockSize()));
+    std::vector<std::unique_ptr<synth::AdditiveVoice>> newVoices;
+    std::vector<core::IVoice*>                          newPtrs;
+    {
+        const synth::SpectralModel composite = compositeSpectrum();
+        synth::VoiceContext ctx;
+        ctx.family  = core::TonalFamily::Principal;
+        ctx.footage = core::footage::kEight;
+
+        newVoices.reserve(kPolyphony);
+        newPtrs.reserve(kPolyphony);
+        for (std::size_t i = 0; i < kPolyphony; ++i)
+        {
+            auto v = std::make_unique<synth::AdditiveVoice>();
+            v->prepare(sr, frames);
+            v->setContext(ctx);
+            v->seedFrom(composite);
+            newPtrs.push_back(v.get());
+            newVoices.push_back(std::move(v));
+        }
+    }
+
+    {
+        const juce::ScopedLock sl(getCallbackLock());
+        engine_.bindVoices(newPtrs.data(), newPtrs.size());
+        voices_.swap(newVoices);
+        voicePtrs_.swap(newPtrs);
+    }
+    // newVoices now holds the previous bank; it is freed here, after the lock is
+    // released and the engine has been rebound away from it. No use-after-free.
+}
+
+void CaeciliaAudioProcessor::uiNote(core::DivisionId division, core::MidiNote note, bool down)
+{
+    juce::ignoreUnused(division); // routed to the primary manual for now
+    // Lock-free hand-off to the audio thread; drop if the (large) ring is full.
+    (void) uiNotes_.push(UiNoteEvent{ note, down });
 }
 
 // ---------------------------------------------------------------------------
@@ -96,12 +243,19 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     // TODO(phase0.1): windchest count comes from the loaded OrganSpec.
     engine_.prepare(sampleRate, frames, channels, /*numWindchests*/ 1);
 
-    // Bind the single-producer command path and the metering read path.
+    // Bind the single-producer command path and the metering read path. Route
+    // MIDI note-ons to the primary manual so they light the right keyboard.
     commandBridge_.connect(engine_.commandQueue());
+    commandBridge_.setDefaultDivision(playDivision_);
     commandBridge_.resetChangeTracking();
     meterBridge_.connect(engine_);
 
-    // Build the default registration's voices and bind them into the engine.
+    // Equal-tempered A=440 tuning table (historical temperaments swap in here via
+    // the temperament parameter in a later phase). Bound read-only into the engine.
+    tuning_.setReferenceA4Hz(440.0);
+    engine_.setTuning(&tuning_);
+
+    // Build the drawn registration's voices and bind them into the engine.
     buildInstrument(sampleRate, frames);
     engine_.bindVoices(voicePtrs_.data(), voicePtrs_.size());
 
@@ -110,6 +264,10 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     reverb_.prepare(sampleRate, frames, channels);
     reverb_.setPreset(dsp::ReverbPreset::Hall);
     engine_.setMasterReverb(&reverb_);
+
+    // On-screen keyboard -> audio thread: clear any stale queued notes.
+    { UiNoteEvent drain; while (uiNotes_.pop(drain)) {} }
+    keys_ = {};
 
     masterGain_.reset(sampleRate, 0.02); // 20 ms output-trim ramp
     masterGain_.setCurrentAndTargetValue(1.0f);
@@ -143,6 +301,38 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     const auto numChannels = static_cast<std::size_t>(getTotalNumOutputChannels());
     const auto numFrames   = static_cast<std::size_t>(buffer.getNumSamples());
+    const int  numSamples  = buffer.getNumSamples();
+
+    // Merge notes played on the on-screen keyboard into the host's MIDI, so both
+    // streams reach the engine through the ONE command-bridge producer.
+    juce::ignoreUnused(numSamples);
+    {
+        const int channel = juce::jlimit(1, 16, static_cast<int>(playDivision_.value) + 1);
+        UiNoteEvent ev;
+        while (uiNotes_.pop(ev))
+        {
+            const juce::MidiMessage m = ev.down
+                ? juce::MidiMessage::noteOn(channel, static_cast<int>(ev.note),
+                                            static_cast<juce::uint8>(100))
+                : juce::MidiMessage::noteOff(channel, static_cast<int>(ev.note));
+            midi.addEvent(m, 0);
+        }
+    }
+
+    // Mirror note on/off into the lit-key snapshot the console paints. This is the
+    // "keys light up while playing" feed; a byte write per event, RT-safe.
+    for (const juce::MidiMessageMetadata meta : midi)
+    {
+        const juce::MidiMessage m = meta.getMessage();
+        if (m.isNoteOn())
+            keys_.set(playDivision_.value, static_cast<core::MidiNote>(m.getNoteNumber()),
+                      ui::KeySource::PlayedDirect);
+        else if (m.isNoteOff())
+            keys_.set(playDivision_.value, static_cast<core::MidiNote>(m.getNoteNumber()),
+                      ui::KeySource::Off);
+        else if (m.isAllNotesOff() || m.isAllSoundOff())
+            keys_ = {};
+    }
 
     // Single-producer encode of host intent onto the engine command ring, drained
     // by engine_.processBlock() below. Parameters first (cheap when unchanged),
@@ -155,6 +345,9 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // crosses the engine seam — and render. The engine overwrites the buffer.
     core::AudioBlock block(buffer.getArrayOfWritePointers(), numChannels, numFrames);
     engine_.processBlock(block);
+
+    // Publish one consistent frame (levels + lit keys) for the console to poll.
+    stateMirror_.publish(engine_.latestMeters(), keys_);
 
     // Host-facing output trim (see header): a smoothed gain, not synthesis DSP.
     const float gainDb = [this]
