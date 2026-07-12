@@ -8,6 +8,8 @@
 
 #include "BinaryData.h"
 
+#include <cstdio>
+
 namespace caecilia::plugin
 {
 

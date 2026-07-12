@@ -974,8 +974,11 @@ function refreshStop(id) {
 const CAE_DIV = { ped: 0, pos: 1, go: 2, rec: 3 };
 const CAE_BRIDGE = !!(window.__JUCE__ && window.__JUCE__.backend);
 function caeInvoke(name, params) {
-  try { if (CAE_BRIDGE) window.__JUCE__.backend.emitEvent("__juce__invoke", { name, params, resultId: 0 }); }
-  catch (e) {}
+  // Lazy backend lookup so it works whenever native integration is ready.
+  try {
+    const b = window.__JUCE__ && window.__JUCE__.backend;
+    if (b) b.emitEvent("__juce__invoke", { name, params, resultId: 0 });
+  } catch (e) {}
 }
 function caeNote(divStr, midi, down) {
   caeInvoke("caeciliaNote", [CAE_DIV[divStr] != null ? CAE_DIV[divStr] : 2, midi | 0, !!down]);
@@ -987,13 +990,20 @@ function caeSyncReg() {
 }
 window.caeSyncReg = caeSyncReg;
 window.caeNote = caeNote;
-// Match the engine to whatever the console shows once everything is built.
-if (CAE_BRIDGE) setTimeout(caeSyncReg, 500);
+// Once everything is built: draw a modest default so the instrument sings out of
+// the box (and the UI matches), then keep the engine in sync.
+if (CAE_BRIDGE) setTimeout(() => {
+  if (state.drawn.size === 0) applyPreset("default");
+  else caeSyncReg();
+}, 500);
 
 /* ---- Organ-type presets: draw a characteristic registration ------------- */
 const CAE_PRESETS = {
+  // A modest opening foundation (8'+4' principals & flutes, no mixtures/reeds).
+  default:     st => (st.feet === 8 && (st.fam === "Principal" || st.fam === "Flute")) ||
+                     (st.feet === 4 && st.fam === "Principal"),
   baroque:     st => st.fam === "Principal" || st.fam === "Mixture",
-  renaissance: st => st.fam === "Flute" || (st.fam === "Principal" && st.feet >= 4),
+  renaissance: st => st.fam === "Flute" || (st.fam === "Principal" && st.feet >= 4 && st.feet <= 8),
   notredame:   st => true,                                   // grand jeu / full organ
   romantic:    st => st.fam !== "Mixture" && st.feet >= 2,   // foundations + colour
   reeds:       st => st.fam === "Reed",

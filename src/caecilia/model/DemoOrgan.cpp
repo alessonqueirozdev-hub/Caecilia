@@ -290,6 +290,28 @@ float compositeRankGainDb(const Stop& stop) noexcept
     // octaveClassFrom8(): 0 for 8', +1 for 4', +2 for 2', -1 for 16'.
     return base - 3.3f * static_cast<float>(stop.footage().octaveClassFrom8());
 }
+
+/// Target RMS energy for a seeded voice, INDEPENDENT of how many ranks are drawn.
+/// Chosen with the voice/master gain staging so a single held note sits near
+/// -20 dBFS and a chord stays below clipping. Keeps loudness consistent across
+/// registrations and is the main safeguard against far-too-loud/distorted output.
+constexpr double kCompositeEnergy = 0.55;
+
+/// Scale every partial so sqrt(sum(amp^2)) == kCompositeEnergy. Off-thread.
+void normalizeComposite(synth::SpectralModel& c) noexcept
+{
+    double energy = 0.0;
+    for (const synth::PartialTrack& p : c.partials)
+    {
+        const double a = std::pow(10.0, static_cast<double>(p.ampDb) / 20.0);
+        energy += a * a;
+    }
+    if (energy <= 1.0e-9)
+        return;
+    const float scaleDb = 20.0f * std::log10(static_cast<float>(kCompositeEnergy / std::sqrt(energy)));
+    for (synth::PartialTrack& p : c.partials)
+        p.ampDb += scaleDb;
+}
 } // namespace
 
 synth::SpectralModel buildRegistrationCompositeSpectrum(
@@ -327,6 +349,7 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
         }
     }
 
+    normalizeComposite(composite);
     composite.fundamentalHz = 0.0f; // set per note by the voice at noteOn
     return composite;
 }
@@ -426,6 +449,7 @@ synth::SpectralModel buildCompositeFromRegistration(std::span<const Registration
         }
     }
 
+    normalizeComposite(composite);
     composite.fundamentalHz = 0.0f;
     return composite;
 }

@@ -331,6 +331,18 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }();
     masterGain_.setTargetValue(juce::Decibels::decibelsToGain(gainDb, -60.0f));
     masterGain_.applyGain(buffer, buffer.getNumSamples());
+
+    // Safety soft-clip: tanh is ~transparent below ~0.4 but saturates gracefully
+    // and hard-bounds the output to +/-1, so the instrument can NEVER blow up the
+    // speakers even under heavy polyphony. Belt-and-braces with the energy-
+    // normalised registration level (see model::normalizeComposite).
+    const int nSamp = buffer.getNumSamples();
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        float* d = buffer.getWritePointer(ch);
+        for (int i = 0; i < nSamp; ++i)
+            d[i] = std::tanh(d[i]);
+    }
 }
 
 // ---------------------------------------------------------------------------
