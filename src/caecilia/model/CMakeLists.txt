@@ -21,7 +21,8 @@ target_sources(caecilia_core PRIVATE
     Division.cpp
     Organ.cpp
     OrganDefinition.cpp
-    OrganLoader.cpp)
+    OrganLoader.cpp
+    DemoOrgan.cpp)
 
 # Public headers consumed via the project-wide include root (<root>/src):
 #   #include "caecilia/model/Organ.h"
@@ -39,7 +40,8 @@ set(CAECILIA_MODEL_PUBLIC_HEADERS
     Organ.h
     Diagnostics.h
     OrganDefinition.h
-    OrganLoader.h)
+    OrganLoader.h
+    DemoOrgan.h)
 
 target_sources(caecilia_core PUBLIC
     FILE_SET caecilia_model_headers
