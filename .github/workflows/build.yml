@@ -1,0 +1,69 @@
+# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
+# Caecilia is proprietary and confidential; see LICENSE.
+#
+# Builds the native Caecilia plugin (VST3 + Standalone) on Windows, macOS and
+# Linux and uploads the artefacts. JUCE is pulled by CMake FetchContent, so the
+# only prerequisite is a C/C++ toolchain and CMake, already present on the
+# GitHub-hosted runners.
+
+name: Build Caecilia
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (VST3 + Standalone, MSVC)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (Release)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCAECILIA_BUILD_TESTS=OFF -DCAECILIA_BUILD_TOOLS=OFF
+      - name: Build plugin
+        run: cmake --build build --config Release --target Caecilia_Standalone Caecilia_VST3 --parallel 4
+      - name: Upload Windows artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Caecilia-Windows
+          path: build/src/caecilia/plugin/Caecilia_artefacts/Release/
+          if-no-files-found: warn
+
+  linux:
+    name: Linux (VST3 + Standalone)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JUCE Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxcursor-dev libxcomposite-dev libfreetype6-dev \
+            libfontconfig1-dev libgl1-mesa-dev libcurl4-openssl-dev
+      - name: Configure (Release)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCAECILIA_BUILD_TESTS=OFF -DCAECILIA_BUILD_TOOLS=OFF
+      - name: Build plugin
+        run: cmake --build build --config Release --target Caecilia_Standalone Caecilia_VST3 --parallel 4
+      - name: Upload Linux artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Caecilia-Linux
+          path: build/src/caecilia/plugin/Caecilia_artefacts/Release/
+          if-no-files-found: warn
+
+  macos:
+    name: macOS (VST3 + AU + Standalone)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (Release)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCAECILIA_BUILD_TESTS=OFF -DCAECILIA_BUILD_TOOLS=OFF
+      - name: Build plugin
+        run: cmake --build build --config Release --target Caecilia_Standalone Caecilia_VST3 --parallel 4
+      - name: Upload macOS artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Caecilia-macOS
+          path: build/src/caecilia/plugin/Caecilia_artefacts/Release/
+          if-no-files-found: warn
