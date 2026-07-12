@@ -39,6 +39,9 @@ using namespace caecilia;
 constexpr double kSampleRate = 48000.0;
 constexpr int    kBlock      = 512;
 constexpr int    kBlocks     = 96; // ~1.0 s of render
+// M_PI is not portable under strict -std=c++20 (extensions are OFF project-wide),
+// so use an explicit constant like the rest of the codebase does.
+constexpr double kPi = 3.14159265358979323846;
 
 /// Tempered fundamental of a MIDI note (A4=440), the pitch an 8' rank sounds.
 double noteHz(int midi) { return 440.0 * std::pow(2.0, (midi - 69) / 12.0); }
@@ -77,7 +80,7 @@ RenderResult render(const model::Organ& organ,
 
     // Goertzel state for the fundamental.
     const double f0 = noteHz(midi);
-    const double w  = 2.0 * M_PI * f0 / kSampleRate;
+    const double w  = 2.0 * kPi * f0 / kSampleRate;
     const double coeff = 2.0 * std::cos(w);
     double s0 = 0.0, s1 = 0.0, s2 = 0.0;
 
@@ -196,19 +199,13 @@ int main()
     // render with the fixed (full) bank vs. the old default 64 cap. If the reeds
     // were being silently dropped, the two renders would be identical.
     std::vector<core::StopId> plenumReeds = plenum;
-    for (const model::Stop& s : organ.stops())
+    if (! plenum.empty())
     {
-        bool inGo = false;
-        for (const core::StopId id : plenum) if (id.value == s.division().value) { inGo = true; break; }
-        // add reeds that live in the same division as the plenum
-        if (s.family() == core::TonalFamily::Reed && ! plenum.empty())
-        {
-            const core::StopId first = plenum.front();
-            const model::Stop* fp = organ.stop(first);
-            if (fp && s.division() == fp->division())
+        const model::Stop* fp = organ.stop(plenum.front()); // the plenum's division
+        for (const model::Stop& s : organ.stops())
+            if (s.family() == core::TonalFamily::Reed && fp != nullptr
+                && s.division() == fp->division())
                 plenumReeds.push_back(s.id());
-        }
-        (void) inGo;
     }
     {
         const RenderResult fixed  = render(organ, plenumReeds, 60, -1);      // sized to composite
