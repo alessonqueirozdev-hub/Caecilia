@@ -135,34 +135,47 @@ void CaeciliaAudioProcessor::toggleStop(core::StopId stop)
         return;
     engaged_[stop.value] = ! engaged_[stop.value];
 
+    if (getSampleRate() <= 0.0)
+        return; // not prepared yet; the new state applies at the next prepareToPlay
+
+    swapVoicesFromComposite(compositeSpectrum());
+}
+
+void CaeciliaAudioProcessor::setUiRegistration(const std::vector<model::RegistrationRank>& ranks)
+{
+    if (getSampleRate() <= 0.0)
+        return; // not prepared yet
+    swapVoicesFromComposite(model::buildCompositeFromRegistration(ranks));
+}
+
+void CaeciliaAudioProcessor::swapVoicesFromComposite(const synth::SpectralModel& composite)
+{
     const double sr = getSampleRate();
     if (sr <= 0.0)
-        return; // not prepared yet; the new state applies at the next prepareToPlay
+        return;
 
     // Build the new voice bank off the audio thread, then swap it in under the
     // processing lock so the audio thread never renders a half-rebuilt pool.
     const auto frames = static_cast<std::size_t>(juce::jmax(1, getBlockSize()));
+    const std::size_t maxPartials = std::max<std::size_t>(composite.partials.size(), 16);
+
+    synth::VoiceContext ctx;
+    ctx.family  = core::TonalFamily::Principal;
+    ctx.footage = core::footage::kEight;
+
     std::vector<std::unique_ptr<synth::AdditiveVoice>> newVoices;
     std::vector<core::IVoice*>                          newPtrs;
+    newVoices.reserve(kPolyphony);
+    newPtrs.reserve(kPolyphony);
+    for (std::size_t i = 0; i < kPolyphony; ++i)
     {
-        const synth::SpectralModel composite = compositeSpectrum();
-        const std::size_t maxPartials = std::max<std::size_t>(composite.partials.size(), 16);
-        synth::VoiceContext ctx;
-        ctx.family  = core::TonalFamily::Principal;
-        ctx.footage = core::footage::kEight;
-
-        newVoices.reserve(kPolyphony);
-        newPtrs.reserve(kPolyphony);
-        for (std::size_t i = 0; i < kPolyphony; ++i)
-        {
-            auto v = std::make_unique<synth::AdditiveVoice>();
-            v->bank().setMaxPartials(maxPartials); // hold the whole composite (see buildInstrument)
-            v->prepare(sr, frames);
-            v->setContext(ctx);
-            v->seedFrom(composite);
-            newPtrs.push_back(v.get());
-            newVoices.push_back(std::move(v));
-        }
+        auto v = std::make_unique<synth::AdditiveVoice>();
+        v->bank().setMaxPartials(maxPartials);
+        v->prepare(sr, frames);
+        v->setContext(ctx);
+        v->seedFrom(composite);
+        newPtrs.push_back(v.get());
+        newVoices.push_back(std::move(v));
     }
 
     {

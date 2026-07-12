@@ -156,9 +156,10 @@ of inline SVG data-URI textures. Open directly in any modern browser.
     -webkit-appearance: none; appearance: none;
     font: 600 11px var(--font-sans); color: #f2e7cf; background-color: #2a2018;
     background-image: linear-gradient(180deg, #33271c, #221a12);
-    border: 1px solid var(--panel-edge); border-radius: 8px; padding: 6px 24px 6px 10px; cursor: pointer;
-    max-width: 240px; text-overflow: ellipsis;
+    border: 1px solid var(--panel-edge); border-radius: 8px; padding: 6px 22px 6px 10px; cursor: pointer;
+    max-width: 165px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
   }
+  .cae-lang { max-width: 130px; text-overflow: ellipsis; }
   .demo select option { color: #f2e7cf; background-color: #221a12; }
   .demo .sel-wrap { position: relative; display: inline-flex; align-items: center; }
   .demo .sel-wrap::after {
@@ -176,10 +177,14 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   #app[data-theme="flat"] .demo .play { background: linear-gradient(180deg,#cfe0fb,#7ea3e0); color: #0c1016; }
   #app[data-theme="flat"] .demo .play.playing { background: linear-gradient(180deg,#e8916a,#c85a3a); color: #fff; }
 
-  .omni { position: relative; flex: 1 1 260px; min-width: 200px; }
+  .omni { position: relative; flex: 1 1 150px; min-width: 120px; }
+  header.topbar { flex-wrap: nowrap; gap: 8px; }
+  header.topbar > * { flex-shrink: 0; }
+  header.topbar .omni { flex-shrink: 1; }
   .omni input {
     width: 100%;
-    padding: 9px 12px 9px 34px;
+    padding: 9px 104px 9px 34px;
+    text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
     border-radius: 9px;
     border: 1px solid var(--panel-edge);
     background: var(--meter-well);
@@ -873,10 +878,25 @@ function buildKeyboard(container, { start, octaves, div, accent }) {
     b.style.left = `calc(${bk.leftPct}% - 1.05%)`;
     container.append(b);
   });
+  // Momentary play: press & hold sounds the note through the engine; release
+  // stops it. (The old latch-toggle only lit keys, never played.)
+  const kbPress = (k, on) => {
+    if (!k) return;
+    const id = k.dataset.div + ":" + k.dataset.midi;
+    if (on) { state.held.add(id); k.classList.add("held"); }
+    else    { state.held.delete(id); k.classList.remove("held"); }
+    updateStatus();
+    caeNote(k.dataset.div, +k.dataset.midi, on);
+  };
   container.addEventListener("pointerdown", e => {
     const k = e.target.closest(".wk,.bk"); if (!k) return;
-    e.preventDefault(); toggleKey(k);
+    e.preventDefault();
+    try { container.setPointerCapture(e.pointerId); } catch (_) {}
+    container.__caeKey = k; kbPress(k, true);
   });
+  const release = () => { if (container.__caeKey) { kbPress(container.__caeKey, false); container.__caeKey = null; } };
+  container.addEventListener("pointerup", release);
+  container.addEventListener("pointercancel", release);
 }
 // Manuals terraced III (top) → I (bottom); each bound to its division.
 const MANUAL_ORDER = ["pos", "rec", "go"];
@@ -950,17 +970,54 @@ function refreshStop(id) {
   node.setAttribute("aria-pressed", on ? "true" : "false");
   node.setAttribute("aria-label", `${st.divName} ${st.n} ${st.ft}, ${st.fam}, ${on ? "drawn" : "off"}`);
 }
+/* ---- Native engine bridge (JS -> C++). No-op in a plain browser. -------- */
+const CAE_DIV = { ped: 0, pos: 1, go: 2, rec: 3 };
+const CAE_BRIDGE = !!(window.__JUCE__ && window.__JUCE__.backend);
+function caeInvoke(name, params) {
+  try { if (CAE_BRIDGE) window.__JUCE__.backend.emitEvent("__juce__invoke", { name, params, resultId: 0 }); }
+  catch (e) {}
+}
+function caeNote(divStr, midi, down) {
+  caeInvoke("caeciliaNote", [CAE_DIV[divStr] != null ? CAE_DIV[divStr] : 2, midi | 0, !!down]);
+}
+function caeSyncReg() {
+  const ranks = [];
+  state.drawn.forEach(id => { const st = byId[id]; if (st) ranks.push({ fam: st.fam, feet: st.feet }); });
+  caeInvoke("caeciliaSetRegistration", [ranks]);
+}
+window.caeSyncReg = caeSyncReg;
+window.caeNote = caeNote;
+// Match the engine to whatever the console shows once everything is built.
+if (CAE_BRIDGE) setTimeout(caeSyncReg, 500);
+
+/* ---- Organ-type presets: draw a characteristic registration ------------- */
+const CAE_PRESETS = {
+  baroque:     st => st.fam === "Principal" || st.fam === "Mixture",
+  renaissance: st => st.fam === "Flute" || (st.fam === "Principal" && st.feet >= 4),
+  notredame:   st => true,                                   // grand jeu / full organ
+  romantic:    st => st.fam !== "Mixture" && st.feet >= 2,   // foundations + colour
+  reeds:       st => st.fam === "Reed",
+  flutes:      st => st.fam === "Flute",
+};
+function applyPreset(key) {
+  const f = CAE_PRESETS[key];
+  if (!f) return;
+  setDrawn(new Set(ALL.filter(f).map(st => st.id)), key);   // setDrawn -> caeSyncReg
+}
+window.applyPreset = applyPreset;
 function toggleStop(id, silent) {
   if (state.drawn.has(id)) state.drawn.delete(id); else state.drawn.add(id);
   refreshStop(id);
   if (!silent) explain(`${byId[id].divName} ${byId[id].n} ${byId[id].ft} ${state.drawn.has(id) ? "drawn" : "retired"}`);
   updateStatus();
+  caeSyncReg();
 }
 function setDrawn(newSet, label) {
   // staggered cascade recall (click-free crossfade, visually)
   const changing = [];
   ALL.forEach(st => { if (newSet.has(st.id) !== state.drawn.has(st.id)) changing.push(st.id); });
   state.drawn = new Set(newSet);
+  caeSyncReg();
   ALL.forEach((st, i) => {
     const node = document.querySelector(`.stop[data-id="${st.id}"]`);
     refreshStop(st.id);
@@ -1298,7 +1355,12 @@ requestAnimationFrame(frame);
       const rt = ev.t - base;
       const ms = Array.isArray(ev.midi) ? ev.midi : [ev.midi];
       ms.forEach(m => {
-        playNote(m, t0 + rt, ev.dur);
+        if (CAE_BRIDGE) {
+          timers.push(setTimeout(() => { if (playing) caeNote(ev.div, m, true); }, rt*1000));
+          timers.push(setTimeout(() => caeNote(ev.div, m, false), (rt + ev.dur)*1000));
+        } else {
+          playNote(m, t0 + rt, ev.dur);
+        }
         timers.push(setTimeout(() => { if (playing) lightKey(ev.div, m, true); }, rt*1000));
         timers.push(setTimeout(() => lightKey(ev.div, m, false), (rt + ev.dur)*1000));
       });
@@ -1402,13 +1464,19 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
   function build(){
     const header = document.querySelector("header.topbar"); if (!header) return;
 
-    // Language selector + gear, inserted before the Wood/Flat segment.
+    // Organ preset + language selector + gear, inserted before the Wood/Flat segment.
     const seg = header.querySelector(".seg");
+    const presetSel = document.createElement("select"); presetSel.className = "cae-lang"; presetSel.title = "Organ preset";
+    [["","🎹 Organ…"],["baroque","Baroque Pipe Organ"],["renaissance","Renaissance Organ"],
+     ["notredame","Grand Organ · Notre-Dame"],["romantic","Romantic Cathedral"],
+     ["flutes","Flutes · Chamber"],["reeds","Solo Reeds"]].forEach(([v,t]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = t; presetSel.append(o); });
+    presetSel.onchange = () => { if (presetSel.value && window.applyPreset) window.applyPreset(presetSel.value); };
     const langSel = document.createElement("select"); langSel.className = "cae-lang"; langSel.title = "Language";
     ["en","pt","es","de"].forEach(l => { const o=document.createElement("option"); o.value=l; o.textContent=I18N[l].lang; langSel.append(o); });
     const gear = document.createElement("button"); gear.className = "cae-icobtn"; gear.innerHTML = "⚙"; gear.title = "Settings";
-    if (seg) { header.insertBefore(langSel, seg); header.insertBefore(gear, seg); }
-    else { header.append(langSel); header.append(gear); }
+    if (seg) { header.insertBefore(presetSel, seg); header.insertBefore(langSel, seg); header.insertBefore(gear, seg); }
+    else { header.append(presetSel); header.append(langSel); header.append(gear); }
 
     // Panel
     const scrim = document.createElement("div"); scrim.className = "cae-scrim";

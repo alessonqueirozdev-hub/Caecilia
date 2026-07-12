@@ -331,6 +331,105 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
     return composite;
 }
 
+core::Footage footageFromFeet(double feet) noexcept
+{
+    struct Std { double feet; core::Footage f; };
+    static const Std table[] = {
+        { 32.0,             core::footage::kThirtyTwo },
+        { 16.0,             core::footage::kSixteen },
+        { 16.0 / 3.0,       core::footage::kFiveAndThird },      // 5 1/3'
+        {  8.0,             core::footage::kEight },
+        {  4.0,             core::footage::kFour },
+        {  8.0 / 3.0,       core::footage::kTwoAndTwoThird },    // 2 2/3'
+        {  2.0,             core::footage::kTwo },
+        {  8.0 / 5.0,       core::footage::kOneAndThreeFifth },  // 1 3/5'
+        {  4.0 / 3.0,       core::footage::kOneAndThird },       // 1 1/3'
+        {  1.0,             core::footage::kOne },
+    };
+    core::Footage best = core::footage::kEight;
+    double bestErr = 1e9;
+    for (const Std& s : table)
+    {
+        const double e = feet > 0.0 ? std::abs(std::log(feet / s.feet)) : std::abs(feet - s.feet);
+        if (e < bestErr) { bestErr = e; best = s.f; }
+    }
+    return best;
+}
+
+namespace
+{
+/// Spectral recipe for a UI rank (family + footage), mirroring spectralModelForStop.
+synth::SpectralModel recipeForRank(core::TonalFamily fam, core::Footage ft, bool compound)
+{
+    if (compound || fam == core::TonalFamily::Mixture)
+    {
+        // A generic plein-jeu crown when the UI gives no explicit rank list.
+        static const core::Footage plein[] = {
+            core::footage::kTwo, core::footage::kOneAndThird, core::footage::kOne };
+        return makeSpectralMixture(std::span<const core::Footage>(plein, 3), 1.2f);
+    }
+    switch (fam)
+    {
+        case core::TonalFamily::Principal:  return makeSpectralPrincipal(ft);
+        case core::TonalFamily::Flute:      return ft.isMutation() ? makeSpectralMutation(ft)
+                                                                   : makeSpectralFlute(ft);
+        case core::TonalFamily::String:     return makeSpectralString(ft);
+        case core::TonalFamily::Reed:       return makeSpectralReed(ft);
+        case core::TonalFamily::Mixture:    // handled above
+        case core::TonalFamily::Hybrid:
+        case core::TonalFamily::Percussion:
+        case core::TonalFamily::Undefined:
+        default:                            return ft.isMutation() ? makeSpectralMutation(ft)
+                                                                   : makeSpectralPrincipal(ft);
+    }
+}
+} // namespace
+
+synth::SpectralModel buildCompositeFromRegistration(std::span<const RegistrationRank> ranks)
+{
+    synth::SpectralModel composite;
+    if (ranks.empty())
+        return composite;
+
+    const float stackTrimDb = -5.0f * std::log10(static_cast<float>(ranks.size()));
+
+    for (const RegistrationRank& r : ranks)
+    {
+        const bool unisonReferenced = r.compound
+                                   || r.family == core::TonalFamily::Mixture
+                                   || r.footage.isMutation();
+        const double feet = r.footage.feet();
+        const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
+
+        float base = -3.0f;
+        if (unisonReferenced)
+            base = -11.0f;
+        else switch (r.family)
+        {
+            case core::TonalFamily::Principal:  base =  0.0f; break;
+            case core::TonalFamily::Flute:      base = -1.5f; break;
+            case core::TonalFamily::String:     base = -4.0f; break;
+            case core::TonalFamily::Reed:       base = -2.0f; break;
+            default:                            base = -3.0f; break;
+        }
+        const float octDark = unisonReferenced
+                            ? 0.0f : -3.3f * static_cast<float>(r.footage.octaveClassFrom8());
+        const float gainDb = base + octDark + stackTrimDb;
+
+        const synth::SpectralModel recipe = recipeForRank(r.family, r.footage, r.compound);
+        for (const synth::PartialTrack& p : recipe.partials)
+        {
+            synth::PartialTrack t = p;
+            t.ratioToF0 = static_cast<float>(static_cast<double>(p.ratioToF0) * fold);
+            t.ampDb     = p.ampDb + gainDb;
+            composite.partials.push_back(t);
+        }
+    }
+
+    composite.fundamentalHz = 0.0f;
+    return composite;
+}
+
 // ---------------------------------------------------------------------------
 // The demo instrument.
 // ---------------------------------------------------------------------------

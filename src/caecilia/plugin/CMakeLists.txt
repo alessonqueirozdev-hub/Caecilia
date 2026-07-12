@@ -42,6 +42,8 @@ juce_add_plugin(Caecilia
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD   FALSE
     VST3_CATEGORIES           "Instrument"
+    ICON_BIG                  "${CMAKE_SOURCE_DIR}/assets/brand/caecilia-icon-512.png"
+    ICON_SMALL                "${CMAKE_SOURCE_DIR}/assets/brand/caecilia-icon.png"
     DESCRIPTION               "Caecilia hybrid pipe-organ virtual instrument")
 
 # --- plugin module translation units ---------------------------------------

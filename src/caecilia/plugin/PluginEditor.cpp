@@ -18,6 +18,18 @@ constexpr int kDefaultHeight = 900;
 constexpr int kRefreshHz     = 30;
 
 using Resource = juce::WebBrowserComponent::Resource;
+
+/// Map a console family label to the engine's tonal family.
+core::TonalFamily familyFromString(const juce::String& fam)
+{
+    if (fam == "Principal") return core::TonalFamily::Principal;
+    if (fam == "Flute")     return core::TonalFamily::Flute;
+    if (fam == "String")    return core::TonalFamily::String;
+    if (fam == "Reed")      return core::TonalFamily::Reed;
+    if (fam == "Mixture")   return core::TonalFamily::Mixture;
+    if (fam == "Cornet")    return core::TonalFamily::Mixture; // compound crown
+    return core::TonalFamily::Principal;
+}
 } // namespace
 
 std::optional<Resource> CaeciliaEditor::provide(const juce::String& url)
@@ -100,6 +112,27 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                     const bool down = static_cast<bool>(args[2]);
                     proc.uiNote(core::DivisionId{ div }, note, down);
                 }
+                complete(juce::var());
+            })
+        // The whole drawn registration (family + footage of each engaged rank);
+        // the engine rebuilds its composite voicing from this — the real audio path.
+        .withNativeFunction("caeciliaSetRegistration",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                std::vector<model::RegistrationRank> ranks;
+                if (! args.isEmpty() && args[0].isArray())
+                {
+                    for (const juce::var& e : *args[0].getArray())
+                    {
+                        const juce::String fam = e.getProperty("fam", "Principal").toString();
+                        model::RegistrationRank r;
+                        r.family   = familyFromString(fam);
+                        r.compound = (fam == "Mixture" || fam == "Cornet");
+                        r.footage  = model::footageFromFeet(static_cast<double>(e.getProperty("feet", 8.0)));
+                        ranks.push_back(r);
+                    }
+                }
+                proc.setUiRegistration(ranks);
                 complete(juce::var());
             });
 }

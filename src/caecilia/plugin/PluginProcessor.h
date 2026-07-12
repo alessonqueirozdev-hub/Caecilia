@@ -123,6 +123,12 @@ public:
     /// event is queued lock-free and merged into the next block's MIDI.
     void uiNote(core::DivisionId division, core::MidiNote note, bool down);
 
+    /// Set the whole sounding registration from the WebView console (a list of
+    /// drawn family+footage ranks). Message thread: builds the composite spectrum
+    /// off the audio thread and swaps the freshly-seeded voices into the engine
+    /// under the processing lock. This is the console's real audio path.
+    void setUiRegistration(const std::vector<model::RegistrationRank>& ranks);
+
 private:
     void updateLatency() noexcept;
 
@@ -140,6 +146,10 @@ private:
     /// Choose a sensible opening registration (a principal chorus + flute on the
     /// primary manual) and the manual MIDI is routed to. Off-thread.
     void chooseDefaultRegistration();
+
+    /// Build a fresh voice bank seeded with @p composite and swap it into the
+    /// engine under the processing lock (RT-safe hand-off). Message thread.
+    void swapVoicesFromComposite(const synth::SpectralModel& composite);
 
     // --- pure engine (owns all DSP/synthesis behind the core seam) ----------
     core::engine::AudioEngine engine_;

@@ -109,6 +109,26 @@ namespace caecilia::model
 [[nodiscard]] synth::SpectralModel buildRegistrationCompositeSpectrum(
     const Organ& organ, std::span<const core::StopId> engagedStops);
 
+/// One drawn rank as described by the UI: its tonal family and sounding footage
+/// (compound = a multi-rank mixture/cornet, whose partials are 8'-referenced).
+struct RegistrationRank
+{
+    core::TonalFamily family   = core::TonalFamily::Principal;
+    core::Footage     footage  = core::footage::kEight;
+    bool              compound = false;
+};
+
+/// Composite spectrum from a UI registration (list of family+footage ranks),
+/// decoupled from any specific Organ/StopId so the WebView console can drive the
+/// engine directly. Same voicing math as @ref buildRegistrationCompositeSpectrum.
+/// Off-thread only (allocates).
+[[nodiscard]] synth::SpectralModel buildCompositeFromRegistration(
+    std::span<const RegistrationRank> ranks);
+
+/// Nearest standard organ @ref Footage for a decimal length in feet (8.0 -> 8',
+/// 2.667 -> 2 2/3', 1.6 -> 1 3/5', ...). Off-thread.
+[[nodiscard]] core::Footage footageFromFeet(double feet) noexcept;
+
 // ---------------------------------------------------------------------------
 // Registration -> ready-to-bind voices.
 // ---------------------------------------------------------------------------
