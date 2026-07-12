@@ -1,12 +1,12 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Contributing to Ceciliae
+# Contributing to Caecilia
 
-Ceciliae is proprietary, closed-source software (see [LICENSE](LICENSE)).
+Caecilia is proprietary, closed-source software (see [LICENSE](LICENSE)).
 Contribution is restricted to the copyright owner and expressly authorized
 collaborators. These conventions keep the history clean, reviewable, and
 professional. **All wording — commits, branches, PRs, comments, docs — is in
@@ -87,7 +87,7 @@ just what changed (the diff already shows what). Wrap at ~72 columns.
 
 - Code style is enforced by [`.clang-format`](.clang-format) (LLVM-based,
   C++20). Run `clang-format` before committing; CI will reject unformatted code.
-- Respect the strict layering: `ceciliae_core` is pure and **JUCE-free**; only
+- Respect the strict layering: `caecilia_core` is pure and **JUCE-free**; only
   `plugin` and `ui` may include JUCE. Never allocate, lock, log, or throw on any
   `process()` / `render()` / `step()` audio path.
 - Every source, header, and CMake file begins with the exact proprietary header

@@ -1,10 +1,10 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — Wind Model
+# Caecilia — Wind Model
 
 The shared wind supply is the single realism moat neither GrandOrgue nor Aeolus
 reaches. This document specifies the reservoir/bellows ODE, per-windchest
@@ -24,7 +24,7 @@ A real organ's pipes share a finite air supply. Draw more pipes and the reservoi
 level. Because pressure drives the pipe's excitation, a pressure change couples
 into pitch, level, brightness, harmonic development and speech **together**.
 
-Ceciliae models exactly that: `WindModel` integrates a reservoir ODE **once per
+Caecilia models exactly that: `WindModel` integrates a reservoir ODE **once per
 audio block** under the real, summed flow demand of the sounding voices, and
 publishes an **immutable per-block snapshot** with sample-accurate pressure taps.
 An amplitude LFO on the output can never reproduce this coupling.

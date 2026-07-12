@@ -1,13 +1,13 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — UI Mockups
+# Caecilia — UI Mockups
 
 Interactive, self-contained HTML mockups that are the **visual and behavioural
-design reference** for the JUCE `ceciliae::ui` module. They are not shipped
+design reference** for the JUCE `caecilia::ui` module. They are not shipped
 code and pull in nothing external — open any file directly in a browser.
 
 | File | What it specifies |
@@ -24,7 +24,7 @@ semantic-identity** philosophy the real module must implement.
 
 ### What it demonstrates (mapped to the module design)
 
-| Mockup element | `ceciliae::ui` counterpart |
+| Mockup element | `caecilia::ui` counterpart |
 |----------------|----------------------------|
 | Console built from the `DIVISIONS` data object | `ConsoleLayoutModel` auto-laid-out from `OrganSpec` |
 | **Wood** (photoreal) vs **Flat** (modern vector) — one markup, two restyles | `ISkin` → `PhotorealSkin` / `FlatVectorSkin` over one model |

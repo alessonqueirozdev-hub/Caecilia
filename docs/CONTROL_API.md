@@ -1,13 +1,13 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — Control API Reference
+# Caecilia — Control API Reference
 
 The programmability surface: how external tools (Talon-style voice control,
-scripts, custom hardware, accessibility software) drive Ceciliae through **one**
+scripts, custom hardware, accessibility software) drive Caecilia through **one**
 command bus, spoken over three transports — **OSC**, **JSON-RPC 2.0** and
 **MIDI** — that all share the same verbs and the same selector grammar. Zero
 behavioural drift between surfaces, by construction.
@@ -147,23 +147,23 @@ are reported through `status`.
 ## 5. OSC transport (`OscControlTransport`)
 
 The OSC address space is derived **mechanically** from `opcodeName` — replace
-`'.'` with `'/'` under a common `/ceciliae` root — so it can never drift from the
+`'.'` with `'/'` under a common `/caecilia` root — so it can never drift from the
 other transports (`addressFor(opcode)`).
 
 ```
 ; --- inbound ---
-/ceciliae/stops/engage      "family:reed & pitch:8"        ; s
-/ceciliae/stops/disengage   "div:swell"                    ; s
-/ceciliae/note/on           <division:int> <note:int> <vel:int>
-/ceciliae/note/off          <division:int> <note:int>
-/ceciliae/general/recall    <index:int>
-/ceciliae/sequencer/next
-/ceciliae/query/resolve     "family:reed"                  ; -> /ceciliae/reply
-/ceciliae/meta/ping         <requestId:int>
+/caecilia/stops/engage      "family:reed & pitch:8"        ; s
+/caecilia/stops/disengage   "div:swell"                    ; s
+/caecilia/note/on           <division:int> <note:int> <vel:int>
+/caecilia/note/off          <division:int> <note:int>
+/caecilia/general/recall    <index:int>
+/caecilia/sequencer/next
+/caecilia/query/resolve     "family:reed"                  ; -> /caecilia/reply
+/caecilia/meta/ping         <requestId:int>
 
 ; --- outbound feedback ---
-/ceciliae/state/stop        <stopId:int> <engaged:int> "Great Principal 8'"
-/ceciliae/reply             <requestId:int> <status:string> "<payload>"
+/caecilia/state/stop        <stopId:int> <engaged:int> "Great Principal 8'"
+/caecilia/reply             <requestId:int> <status:string> "<payload>"
 ```
 
 The codec seam (`decodeAddress(address, selectorArg)` / `encodeFeedback`) is pure
@@ -172,28 +172,28 @@ and dependency-free, so it is unit-testable without a socket. Default listen por
 
 > Status: the OSC codec seam is real and testable; the concrete UDP backend
 > (`start`/`stop` opening a socket) lands in **v0.8** as an isolated shell so
-> **no networking dependency is pulled into `ceciliae_core`.**
+> **no networking dependency is pulled into `caecilia_core`.**
 
 ---
 
 ## 6. JSON-RPC 2.0 transport (`JsonRpcControlTransport`)
 
-Methods are named `ceciliae.<token>`, where `<token>` is exactly `opcodeName`, so
+Methods are named `caecilia.<token>`, where `<token>` is exactly `opcodeName`, so
 the method set never drifts from the OSC address space.
 
 ```jsonc
 // engage
---> {"jsonrpc":"2.0","id":7,"method":"ceciliae.stops.engage",
+--> {"jsonrpc":"2.0","id":7,"method":"caecilia.stops.engage",
      "params":{"selector":"family:reed & pitch:8"}}
 <-- {"jsonrpc":"2.0","id":7,"result":{"status":"ok"}}
 
 // query (answer in result.payload)
---> {"jsonrpc":"2.0","id":8,"method":"ceciliae.query.resolve",
+--> {"jsonrpc":"2.0","id":8,"method":"caecilia.query.resolve",
      "params":{"selector":"family:principal"}}
 <-- {"jsonrpc":"2.0","id":8,"result":{"status":"ok","payload":"[...]"}}
 
 // note event
---> {"jsonrpc":"2.0","id":9,"method":"ceciliae.note.on",
+--> {"jsonrpc":"2.0","id":9,"method":"caecilia.note.on",
      "params":{"division":1,"note":60,"velocity":100}}
 <-- {"jsonrpc":"2.0","id":9,"result":{"status":"ok"}}
 
@@ -201,7 +201,7 @@ the method set never drifts from the OSC address space.
 <-- {"jsonrpc":"2.0","id":9,"error":{"code":101,"message":"parseError: ..."}}
 
 // outbound state change → JSON-RPC notification (no id)
-<-- {"jsonrpc":"2.0","method":"ceciliae.event.stop",
+<-- {"jsonrpc":"2.0","method":"caecilia.event.stop",
      "params":{"stopId":42,"engaged":true,"label":"Great Principal 8'"}}
 ```
 
@@ -211,14 +211,14 @@ returns an empty response. Default listen port `9010`.
 
 > Status: routing and `status → error` mapping are real; the JSON
 > parse/serialise steps land in **v0.8** — **no third-party JSON library is
-> pulled into `ceciliae_core`.**
+> pulled into `caecilia_core`.**
 
 The pure command algebra stays headless-testable through `LoopbackTransport`, an
 in-proc transport with no OS glue.
 
 ---
 
-## 7. MIDI control (`ceciliae::midi`)
+## 7. MIDI control (`caecilia::midi`)
 
 MIDI is a first-class control surface: raw bytes become either voice events or
 `RegistrationCommand`s, honouring the user's real workflow. The plugin feeds
@@ -286,23 +286,23 @@ Other `midi` pieces: `ChannelToDivisionMap` (channel → manual), `VelocityCurve
 
 ```bash
 # Talon / shell over JSON-RPC: draw the full Swell reed chorus
-ceciliae.stops.engage  {"selector":"family:reed & div:swell"}
+caecilia.stops.engage  {"selector":"family:reed & div:swell"}
 
 # Build the Great plenum, mutations excluded (default), scoped by selector
-ceciliae.stops.plenum  {"selector":"div:great"}
+caecilia.stops.plenum  {"selector":"div:great"}
 
 # Ask what a selector currently matches (query → payload)
-ceciliae.query.resolve {"selector":"family:principal & pitch:8"}
+caecilia.query.resolve {"selector":"family:principal & pitch:8"}
 
 # Why is stop 42 on? (provenance)
-ceciliae.query.explain {"targetId":42}
+caecilia.query.explain {"targetId":42}
 ```
 
 ```
 # OSC equivalents
-/ceciliae/stops/engage  "family:reed & div:swell"
-/ceciliae/stops/plenum  "div:great"
-/ceciliae/query/resolve "family:principal & pitch:8"
+/caecilia/stops/engage  "family:reed & div:swell"
+/caecilia/stops/plenum  "div:great"
+/caecilia/query/resolve "family:principal & pitch:8"
 ```
 
 ---
@@ -315,7 +315,7 @@ ceciliae.query.explain {"targetId":42}
 | Audio seam    | Only the fixed-capacity `registration::StateDelta` crosses the SPSC ring       |
 | MIDI hot path | The router reads only the *published, immutable* binding tables (`noexcept`)   |
 | No throw      | Sinks/transports report failures via `ControlStatus`, never exceptions         |
-| Dependencies  | Socket/JSON glue is isolated in shells; `ceciliae_core` stays dependency-free  |
+| Dependencies  | Socket/JSON glue is isolated in shells; `caecilia_core` stays dependency-free  |
 
 ---
 

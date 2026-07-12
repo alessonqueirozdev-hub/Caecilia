@@ -1,12 +1,12 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
 #include "partial-extractor/PartialExtractor.h"
 
-namespace ceciliae::tools
+namespace caecilia::tools
 {
 
 PartialExtractor::PartialExtractor(PartialExtractorOptions options)
@@ -46,4 +46,4 @@ PartialBank PartialExtractor::extract(const WavData& sample) const
     return bank;
 }
 
-} // namespace ceciliae::tools
+} // namespace caecilia::tools

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -8,7 +8,7 @@
 
 #include <cmath>
 
-namespace ceciliae::tools
+namespace caecilia::tools
 {
 
 SampleSetAnalyzer::SampleSetAnalyzer(SampleSetAnalyzerOptions options)
@@ -94,4 +94,4 @@ SampleAnalysis SampleSetAnalyzer::analyze(const WavData& sample) const
     return result;
 }
 
-} // namespace ceciliae::tools
+} // namespace caecilia::tools

@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
 #pragma once
 
-#include "ceciliae/core/EngineTypes.h"
+#include "caecilia/core/EngineTypes.h"
 
 #include <cstddef>
 #include <string>
 #include <vector>
 
-namespace ceciliae::tools
+namespace caecilia::tools
 {
 
 /**
@@ -23,7 +23,7 @@ namespace ceciliae::tools
  *
  * This is a host-side container: allocation and standard-library use are fine
  * here (it never crosses the RT AudioEngine seam). When a tool needs to hand a
- * region to core DSP it wraps a @ref ceciliae::core::AudioBlock over a
+ * region to core DSP it wraps a @ref caecilia::core::AudioBlock over a
  * deinterleaved copy; @ref WavData itself stays interleaved for simple file I/O.
  */
 struct WavData
@@ -53,7 +53,7 @@ struct WavData
  *
  * Reading understands canonical PCM (16/24/32-bit integer) and IEEE-float
  * (32-bit) @c WAVE files, including @c WAVE_FORMAT_EXTENSIBLE. Writing always
- * emits canonical 32-bit float. Assumes a little-endian host (all Ceciliae
+ * emits canonical 32-bit float. Assumes a little-endian host (all Caecilia
  * target architectures are). No third-party or GPL code is used — this is a
  * fresh implementation of the public RIFF layout.
  */
@@ -78,4 +78,4 @@ bool read(const std::string& path, WavData& out, std::string* error = nullptr);
 bool write(const std::string& path, const WavData& data, std::string* error = nullptr);
 } // namespace WavFile
 
-} // namespace ceciliae::tools
+} // namespace caecilia::tools

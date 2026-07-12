@@ -1,32 +1,32 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae tests
+# Caecilia tests
 
 Headless [Catch2](https://github.com/catchorg/Catch2) unit tests for the pure
-`ceciliae_core` static library. The suite links **only** `ceciliae::core` plus
+`caecilia_core` static library. The suite links **only** `caecilia::core` plus
 Catch2 — no JUCE, no plugin host, no audio device — so every DSP, tuning,
 registration, model and wind decision is exercised entirely off the audio thread,
 exactly as the real-time contract intends.
 
-Because all pure modules compile into the single `ceciliae_core` target, one test
+Because all pure modules compile into the single `caecilia_core` target, one test
 executable reaches every module's implementation.
 
 ## Building & running
 
-The suite is gated by the top-level `CECILIAE_BUILD_TESTS` option (ON by default),
+The suite is gated by the top-level `CAECILIA_BUILD_TESTS` option (ON by default),
 which also fetches Catch2 via `FetchContent`.
 
 ```sh
-cmake -B build -DCECILIAE_BUILD_TESTS=ON
+cmake -B build -DCAECILIA_BUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-`CECILIAE_CORE_ONLY=ON` keeps JUCE out of the configure entirely while still
+`CAECILIA_CORE_ONLY=ON` keeps JUCE out of the configure entirely while still
 building and running these tests — the fastest inner loop for pure-core work.
 
 ## Layout
@@ -45,7 +45,7 @@ building and running these tests — the fastest inner loop for pure-core work.
 ## Conventions
 
 - One `TEST_CASE` per behaviour, tagged by module (`[dsp]`, `[wind]`, …) so a
-  subset runs with e.g. `ctest -R '\[reverb\]'` or `./ceciliae_tests "[wind]"`.
+  subset runs with e.g. `ctest -R '\[reverb\]'` or `./caecilia_tests "[wind]"`.
 - Assertions are meaningful and self-contained: they encode the *contract*
   (exact rationals, energy decay, sag equilibrium), not incidental scaffold
   values, so they stay valid as the `// TODO(phaseN)` implementations deepen.

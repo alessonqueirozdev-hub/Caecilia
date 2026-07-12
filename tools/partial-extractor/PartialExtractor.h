@@ -1,19 +1,19 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
 #pragma once
 
-#include "ceciliae/core/EngineTypes.h"
+#include "caecilia/core/EngineTypes.h"
 
 #include "common/AnalysisTypes.h"
 #include "common/WavFile.h"
 
 #include <cstddef>
 
-namespace ceciliae::tools
+namespace caecilia::tools
 {
 
 /**
@@ -60,4 +60,4 @@ private:
     PartialExtractorOptions options_;
 };
 
-} // namespace ceciliae::tools
+} // namespace caecilia::tools

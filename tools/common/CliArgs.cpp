@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -9,7 +9,7 @@
 #include <cstdlib>
 #include <string>
 
-namespace ceciliae::tools
+namespace caecilia::tools
 {
 
 namespace
@@ -122,4 +122,4 @@ std::optional<long long> CliArgs::integer(std::string_view key) const
     }
 }
 
-} // namespace ceciliae::tools
+} // namespace caecilia::tools

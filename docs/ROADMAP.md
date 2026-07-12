@@ -1,10 +1,10 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — Roadmap
+# Caecilia — Roadmap
 
 The phased plan from scaffold to v1. Each phase is a **shippable, testable
 increment** that keeps the real-time contract green and the license boundary
@@ -26,7 +26,7 @@ always a working instrument.
   `process()` / `render()` / `step()` path; a CI allocator/lock trap enforces it.
 - **License boundary stays clean.** Only `plugin` / `ui` include JUCE (no-JUCE
   lint on `core`); no GPL source ingested; `THIRD_PARTY_NOTICES.md` documents
-  JUCE/Catch2 separately from Ceciliae's proprietary license.
+  JUCE/Catch2 separately from Caecilia's proprietary license.
 - **Numerical parity.** Every SIMD backend is bit/ULP-compared against a scalar
   reference in CI.
 
@@ -53,8 +53,8 @@ always a working instrument.
 
 ## v0 — Scaffold & contract  *(current)*
 
-Create the `C:\Ceciliae` CMake tree: `ceciliae_core` STATIC lib (std-lib only) +
-`Ceciliae` JUCE target via FetchContent + Catch2. Write the core vocabulary and
+Create the `C:\Caecilia` CMake tree: `caecilia_core` STATIC lib (std-lib only) +
+`Caecilia` JUCE target via FetchContent + Catch2. Write the core vocabulary and
 interfaces as headers with coherent stub bodies — `Footage` (exact rational),
 `TonalFamily`/`ChorusRole`/`PitchClass`, `PipeId`/`StopId`, `IVoice`/`IVoiceLayer`,
 `RenderContext`, `WindState`/`IWindSupply`, `SpscRing`, `VoiceHandle`,

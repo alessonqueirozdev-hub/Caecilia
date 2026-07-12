@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace ceciliae::tools
+namespace caecilia::tools
 {
 
 /**
@@ -28,7 +28,7 @@ namespace ceciliae::tools
  * allocate and use the standard library liberally.
  *
  * @code
- *   ceciliae::tools::CliArgs args(argc, argv);
+ *   caecilia::tools::CliArgs args(argc, argv);
  *   if (args.has("help")) { printUsage(); return 0; }
  *   const std::string in = args.value("input");
  *   const auto fft = args.integer("fft-size").value_or(4096);
@@ -72,4 +72,4 @@ private:
     std::map<std::string, std::string> options_; ///< key -> value ("" for a flag).
 };
 
-} // namespace ceciliae::tools
+} // namespace caecilia::tools

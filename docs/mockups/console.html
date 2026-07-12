@@ -1,12 +1,12 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 
-Ceciliae — Console Mockup
+Caecilia — Console Mockup
 =========================
 A single self-contained, interactive visual design reference for the JUCE
-`ceciliae::ui` module. It is NOT production code: it is the pixel/behaviour
+`caecilia::ui` module. It is NOT production code: it is the pixel/behaviour
 target that ConsoleLayoutModel + ISkin (PhotorealSkin / FlatVectorSkin) must
 reproduce, driven by the same data-driven, semantic-identity philosophy.
 
@@ -29,7 +29,7 @@ reproduce, driven by the same data-driven, semantic-identity philosophy.
 Everything is inline (no external fetch): resolution-independent CSS + a couple
 of inline SVG data-URI textures. Open directly in any modern browser.
 -->
-<title>Ceciliae — Console Mockup</title>
+<title>Caecilia — Console Mockup</title>
 <style>
   /* ============================================================= *
    *  DESIGN TOKENS                                                 *
@@ -513,7 +513,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
     <!-- ============================ TOP BAR ============================ -->
     <header class="topbar">
       <div class="brand">
-        <span class="mark">Ceciliae</span>
+        <span class="mark">Caecilia</span>
         <span class="sub">Console</span>
       </div>
       <div class="omni">
@@ -615,7 +615,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
 <script>
 "use strict";
 /* ================================================================= *
- *  DATA MODEL — the mock ceciliae::model::OrganSpec.                 *
+ *  DATA MODEL — the mock caecilia::model::OrganSpec.                 *
  *  Each stop carries TonalFamily + Footage + ChorusRole + PitchClass *
  *  (the semantic taxonomy the registration brain resolves against).  *
  * ================================================================= */
@@ -674,7 +674,7 @@ const DIVISIONS = [
 const ALL = [];
 DIVISIONS.forEach(d => d.stops.forEach((st, i) => {
   st.id = d.id + ":" + i; st.div = d.id; st.divName = d.name; st.rn = d.rn;
-  st.osc = "/ceciliae/" + d.id + "/" + st.n.toLowerCase().replace(/[^a-z]/g,"") + "/" + (st.feet||st.ft);
+  st.osc = "/caecilia/" + d.id + "/" + st.n.toLowerCase().replace(/[^a-z]/g,"") + "/" + (st.feet||st.ft);
   ALL.push(st);
 }));
 const byId = Object.fromEntries(ALL.map(x => [x.id, x]));
@@ -1158,5 +1158,5 @@ requestAnimationFrame(frame);
 
 /* ---- First-paint sanity ------------------------------------------------- */
 updateStatus();
-console.log(`Ceciliae console mockup — ${ALL.length} stops across ${DIVISIONS.length} divisions loaded.`);
+console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.length} divisions loaded.`);
 </script>

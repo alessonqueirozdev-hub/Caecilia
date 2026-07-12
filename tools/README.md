@@ -1,12 +1,12 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — offline analysis tools
+# Caecilia — offline analysis tools
 
-Host-side command-line utilities that make up Ceciliae's **off-line analysis
+Host-side command-line utilities that make up Caecilia's **off-line analysis
 toolchain**. They turn raw recordings into the proprietary metadata the runtime
 engine later ingests (loop points, per-pipe pitch, additive `PartialBank`s that
 seed the modeled sustain, and conditioned impulse responses for the convolution
@@ -14,7 +14,7 @@ reverb).
 
 These tools are deliberately **separate from the real-time signal path**:
 
-- They **link `ceciliae_core`** to share its exact vocabulary
+- They **link `caecilia_core`** to share its exact vocabulary
   (`PipeId`, `Footage`, `SampleRate`, `versionString`, …) so an artefact carries
   the very same identity keys the engine will use.
 - They are **JUCE-free**, exactly like the pure core. Only the `plugin` and `ui`
@@ -26,23 +26,23 @@ These tools are deliberately **separate from the real-time signal path**:
 
 | Executable | Purpose | Status |
 |---|---|---|
-| `ceciliae-sampleset-analyzer` | Extract loop points and pitch from a recorded pipe sample. | Scaffold: level/peak scan real; pitch + loop search are `TODO(phase04)`. |
-| `ceciliae-partial-extractor`  | FFT a steady pipe tone into an additive `PartialBank` (off-line `SpectralModel`). | Scaffold: bank plumbing real; STFT + partial tracking are `TODO(phase05/06)`. |
-| `ceciliae-ir-tool`            | Inspect and condition impulse responses for the convolution reverb. | Scaffold: `info` + `normalise` real; `trim`/`resample`/`deconvolve` are `TODO(phase03/95)`. |
+| `caecilia-sampleset-analyzer` | Extract loop points and pitch from a recorded pipe sample. | Scaffold: level/peak scan real; pitch + loop search are `TODO(phase04)`. |
+| `caecilia-partial-extractor`  | FFT a steady pipe tone into an additive `PartialBank` (off-line `SpectralModel`). | Scaffold: bank plumbing real; STFT + partial tracking are `TODO(phase05/06)`. |
+| `caecilia-ir-tool`            | Inspect and condition impulse responses for the convolution reverb. | Scaffold: `info` + `normalise` real; `trim`/`resample`/`deconvolve` are `TODO(phase03/95)`. |
 
 ## Usage
 
 ```sh
 # Analyse one pipe recording, print JSON to stdout
-ceciliae-sampleset-analyzer --input pipe_C4.wav --rank 3 --note 60 --f0 261.63
+caecilia-sampleset-analyzer --input pipe_C4.wav --rank 3 --note 60 --f0 261.63
 
 # Extract an additive partial bank for a 2 2/3' quint, write to a file
-ceciliae-partial-extractor --input quint.wav --footage-num 8 --footage-den 3 \
+caecilia-partial-extractor --input quint.wav --footage-num 8 --footage-den 3 \
     --fft-size 4096 --max-partials 48 --output quint.partials.json
 
 # Describe an impulse response, then normalise it to -1 dBFS
-ceciliae-ir-tool info      --input hall.wav
-ceciliae-ir-tool normalise --input hall.wav --output hall_-1dB.wav --peak-db -1
+caecilia-ir-tool info      --input hall.wav
+caecilia-ir-tool normalise --input hall.wav --output hall_-1dB.wav --peak-db -1
 ```
 
 Every tool supports `--help`. Options use `--key value` or `--key=value`; bare
@@ -54,7 +54,7 @@ Every tool supports `--help`. Options use `--key value` or `--key=value`; bare
 tools/
   CMakeLists.txt              # 3 executables + a shared helper static lib
   common/
-    AnalysisTypes.h           # POD result types (in ceciliae::tools, not core)
+    AnalysisTypes.h           # POD result types (in caecilia::tools, not core)
     CliArgs.{h,cpp}           # tiny dependency-free argument parser
     WavFile.{h,cpp}           # minimal RIFF/WAVE reader + float32 writer
   sampleset-analyzer/
@@ -73,10 +73,10 @@ so each transform stays trivially unit-testable against synthetic buffers.
 
 ## Build
 
-Enabled by default via the top-level `CECILIAE_BUILD_TOOLS` option:
+Enabled by default via the top-level `CAECILIA_BUILD_TOOLS` option:
 
 ```sh
-cmake -B build -DCECILIAE_BUILD_TOOLS=ON
+cmake -B build -DCAECILIA_BUILD_TOOLS=ON
 cmake --build build
 # binaries land in build/tools/
 ```
@@ -84,4 +84,4 @@ cmake --build build
 The include convention differs slightly from the pure `src/` modules: tool
 sources include their siblings relative to the tools root (`common/WavFile.h`)
 and pull core headers through the standard project root
-(`ceciliae/core/EngineTypes.h`).
+(`caecilia/core/EngineTypes.h`).

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -12,7 +12,7 @@
 // a band-limited sinusoid to high accuracy in KaiserSinc16 mode (beating linear).
 //
 
-#include "ceciliae/dsp/Resampler.h"
+#include "caecilia/dsp/Resampler.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -21,7 +21,7 @@
 #include <vector>
 
 using Catch::Approx;
-namespace dsp = ceciliae::dsp;
+namespace dsp = caecilia::dsp;
 
 namespace
 {

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -12,10 +12,10 @@
 // distinguishes a temperament (quarter-comma meantone's near-pure major third).
 //
 
-#include "ceciliae/core/EngineTypes.h"
-#include "ceciliae/tuning/Temperament.h"
-#include "ceciliae/tuning/TemperamentLibrary.h"
-#include "ceciliae/tuning/TuningModel.h"
+#include "caecilia/core/EngineTypes.h"
+#include "caecilia/tuning/Temperament.h"
+#include "caecilia/tuning/TemperamentLibrary.h"
+#include "caecilia/tuning/TuningModel.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -23,8 +23,8 @@
 #include <array>
 
 using Catch::Approx;
-namespace core   = ceciliae::core;
-namespace tuning = ceciliae::tuning;
+namespace core   = caecilia::core;
+namespace tuning = caecilia::tuning;
 
 TEST_CASE("Equal temperament yields standard reference pitches", "[tuning][equal]")
 {

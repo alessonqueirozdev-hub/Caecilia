@@ -1,12 +1,12 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — DSP Design
+# Caecilia — DSP Design
 
-The independently-authored DSP building blocks of `ceciliae::dsp` and the master
+The independently-authored DSP building blocks of `caecilia::dsp` and the master
 signal chain: the dual reverb (algorithmic FDN + convolution), fractional-delay
 interpolation and resampling, the filter family, oversampling for the nonlinear
 synthesis island, per-pipe spatialization, and the SIMD kernel seam.
@@ -126,7 +126,7 @@ affordable.
   partitions the IR **off the audio thread**; a length of `0` clears it (the
   reverb then passes audio through dry).
 - `latencySamples()` returns the first-partition delay so the host can apply PDC.
-- Only Ceciliae's own / public-domain impulse responses are used; **no GPL
+- Only Caecilia's own / public-domain impulse responses are used; **no GPL
   sample set or GPL convolution code is referenced.**
 
 ---
@@ -238,7 +238,7 @@ POD (`panNorm`, `distanceNorm`, `depthMs`, `earlyLevel`) is adapted from
 
 ## 8. The SIMD kernel seam
 
-`ceciliae::dsp::kernels` is the one place inner loops are vectorised. Each kernel
+`caecilia::dsp::kernels` is the one place inner loops are vectorised. Each kernel
 has a portable **scalar reference** in `Kernels.cpp`; architecture backends
 (SSE/AVX2 on x86-64, NEON on Apple Silicon) are selected by compile-time/runtime
 dispatch and **bit/ULP-compared against the scalar reference in CI** within a

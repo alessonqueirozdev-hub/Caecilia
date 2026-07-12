@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -12,10 +12,10 @@
 // as wind-pressure modulation (a within-supply oscillation, not an output gain).
 //
 
-#include "ceciliae/core/EngineTypes.h"
-#include "ceciliae/core/IWindSupply.h"
-#include "ceciliae/wind/WindModel.h"
-#include "ceciliae/wind/WindTypes.h"
+#include "caecilia/core/EngineTypes.h"
+#include "caecilia/core/IWindSupply.h"
+#include "caecilia/wind/WindModel.h"
+#include "caecilia/wind/WindTypes.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -23,8 +23,8 @@
 #include <algorithm>
 
 using Catch::Approx;
-namespace core = ceciliae::core;
-namespace wind = ceciliae::wind;
+namespace core = caecilia::core;
+namespace wind = caecilia::wind;
 
 namespace
 {

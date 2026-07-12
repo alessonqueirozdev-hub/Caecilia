@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -11,7 +11,7 @@
 #include <fstream>
 #include <ios>
 
-namespace ceciliae::tools::WavFile
+namespace caecilia::tools::WavFile
 {
 
 namespace
@@ -253,4 +253,4 @@ bool write(const std::string& path, const WavData& data, std::string* error)
     return true;
 }
 
-} // namespace ceciliae::tools::WavFile
+} // namespace caecilia::tools::WavFile

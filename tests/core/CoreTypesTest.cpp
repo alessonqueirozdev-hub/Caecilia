@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -14,9 +14,9 @@
 // pinned too.
 //
 
-#include "ceciliae/core/EngineTypes.h"
-#include "ceciliae/core/Version.h"
-#include "ceciliae/engine/SpscRing.h"
+#include "caecilia/core/EngineTypes.h"
+#include "caecilia/core/Version.h"
+#include "caecilia/engine/SpscRing.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -24,7 +24,7 @@
 #include <string>
 
 using Catch::Approx;
-namespace core = ceciliae::core;
+namespace core = caecilia::core;
 
 TEST_CASE("Footage stores an exact reduced rational", "[core][footage]")
 {
@@ -83,7 +83,7 @@ TEST_CASE("Footage::octaveClassFrom8 counts octaves from unison", "[core][footag
 
 TEST_CASE("SpscRing is a bounded FIFO with one reserved slot", "[core][spsc]")
 {
-    ceciliae::core::engine::SpscRing<int, 4> ring; // usable capacity == 3
+    caecilia::core::engine::SpscRing<int, 4> ring; // usable capacity == 3
 
     CHECK(ring.capacity() == 3);
     CHECK(ring.empty());

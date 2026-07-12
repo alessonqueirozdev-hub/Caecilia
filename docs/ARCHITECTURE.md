@@ -1,24 +1,24 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — Architecture
+# Caecilia — Architecture
 
 This is the master architecture document: the layering model, module
 responsibilities, the four load-bearing design decisions (hybrid voice, wind,
 RT contract, semantic registration), the end-to-end data flow, and the
 real-time safety rules every module must obey.
 
-> Status: early scaffold. The contract types in `src/ceciliae/core` are real;
+> Status: early scaffold. The contract types in `src/caecilia/core` are real;
 > the downstream modules described here are planned per the roadmap.
 
 ---
 
 ## 1. The two-tier layering
 
-Ceciliae is split into a **pure core** and a thin **JUCE shell**.
+Caecilia is split into a **pure core** and a thin **JUCE shell**.
 
 ```
                         ┌───────────────────────────────────────────┐
@@ -29,7 +29,7 @@ Ceciliae is split into a **pure core** and a thin **JUCE shell**.
                                         │  lock-free snapshots (read)
                                         ▼
    ┌───────────────────────────────────────────────────────────────────┐
-   │  ceciliae_core  (pure STATIC lib — links ONLY the std library)     │
+   │  caecilia_core  (pure STATIC lib — links ONLY the std library)     │
    │                                                                     │
    │  core ─ shared vocabulary + RT contract (this is the seam)         │
    │   ├─ engine        RT scheduler, voice pool, AudioEngine seam      │
@@ -47,7 +47,7 @@ Ceciliae is split into a **pure core** and a thin **JUCE shell**.
 **Rules of the layering**
 
 - `core` depends on **nothing** but the C++ standard library and must not depend
-  on any other Ceciliae module. Every other module depends on `core`.
+  on any other Caecilia module. Every other module depends on `core`.
 - Only `plugin` and `ui` may include JUCE. A no-JUCE lint guards the core target
   so no `juce::File/String/ValueTree/AudioBuffer` leaks in.
 - The JUCE shell **never** mutates engine state directly. It writes to
@@ -55,15 +55,15 @@ Ceciliae is split into a **pure core** and a thin **JUCE shell**.
   lock-free snapshots (`WindState`, `MeterSnapshot`, generation-tagged handles).
 
 **Namespaces.** Each module maps to a single sibling sub-namespace under
-`ceciliae` (`dsp` → `ceciliae::dsp`, `wind` → `ceciliae::wind`, …). The one
+`caecilia` (`dsp` → `caecilia::dsp`, `wind` → `caecilia::wind`, …). The one
 recorded exception is **`engine`**, which nests under `core` as
-`ceciliae::core::engine`: it is the real-time seam of the pure core library, not
+`caecilia::core::engine`: it is the real-time seam of the pure core library, not
 a peer domain module. The nesting is intentional and does **not** imply that
 `core` depends on `engine` (the dependency runs engine → core).
 
 ---
 
-## 2. The core contract (`src/ceciliae/core`)
+## 2. The core contract (`src/caecilia/core`)
 
 `core` defines the shared vocabulary and the RT-contract types every module
 compiles against. Present today:

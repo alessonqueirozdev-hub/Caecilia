@@ -1,10 +1,10 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — Registration Design
+# Caecilia — Registration Design
 
 The queryable, relational registration brain: the clearest structural win over
 every mainstream organ VST. This document specifies the three layers
@@ -25,9 +25,9 @@ semantic **intent** across *different* organs with a confidence score.
 The idea of treating organ registration as a **queryable, semantic, voice- and
 script-driven** system — rather than a flat list of on/off drawknobs — is
 inspired by the open **talon-organteq** community's registration-by-voice work.
-Ceciliae credits that inspiration for the *concept*.
+Caecilia credits that inspiration for the *concept*.
 
-Ceciliae's implementation is an **independent re-implementation of the concept**,
+Caecilia's implementation is an **independent re-implementation of the concept**,
 not a port: it uses a purpose-built, terminating `Selector`/rules engine in
 C++20. **No talon-organteq Prolog (or any GPL source) is copied or referenced**;
 the selector algebra, rules derivation and porting are original work (see

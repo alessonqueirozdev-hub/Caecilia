@@ -1,10 +1,10 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — Tuning Design
+# Caecilia — Tuning Design
 
 Historical temperaments and micro-tuning, computed **off the audio thread** into
 per-pipe sounding frequencies the voices read. This document specifies the

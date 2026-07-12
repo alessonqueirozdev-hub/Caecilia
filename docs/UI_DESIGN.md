@@ -1,16 +1,16 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — UI Design
+# Caecilia — UI Design
 
 The UI is a first-class pillar, not an afterthought. This document specifies the
 three-layer split (data-driven model / lock-free state mirror / pluggable skin),
 the vector rendering strategy, live audio-thread feedback, the token-based theme
 system, the registration-by-intent palette, accessibility, and — explicitly —
-the **Organteq benchmark and how Ceciliae beats it**.
+the **Organteq benchmark and how Caecilia beats it**.
 
 > Scope: complements [`ARCHITECTURE.md`](ARCHITECTURE.md), [`REGISTRATION.md`](REGISTRATION.md)
 > (the palette drives that brain) and the engine metering in
@@ -19,14 +19,14 @@ the **Organteq benchmark and how Ceciliae beats it**.
 
 ---
 
-## 1. Benchmark: Organteq, and how Ceciliae wins
+## 1. Benchmark: Organteq, and how Caecilia wins
 
 Modartt Organteq sets the bar for polish: crisp vector graphics, a clean console,
-smooth interaction. Ceciliae's stated goal is to **match Organteq on polish** and
+smooth interaction. Caecilia's stated goal is to **match Organteq on polish** and
 **beat everyone on programmable, portable, explainable registration**, while the
 audio pillars (hybrid voice + wind) beat GrandOrgue and Aeolus on sound.
 
-| Capability                         | GrandOrgue        | Aeolus        | Organteq        | **Ceciliae**                                   |
+| Capability                         | GrandOrgue        | Aeolus        | Organteq        | **Caecilia**                                   |
 |------------------------------------|-------------------|---------------|-----------------|------------------------------------------------|
 | Vector, crisp-at-4K console        | ✗ (bitmap themes) | ✗ (utilitarian)| ✓              | ✓ (pure vector + texture brushes)              |
 | Photoreal **and** flat skins       | partial (skins)   | ✗             | one look        | ✓ two skins over **one** model + feed          |
@@ -37,7 +37,7 @@ audio pillars (hybrid voice + wind) beat GrandOrgue and Aeolus on sound.
 | One identity → tooltip/SR/MIDI/OSC | ✗                 | ✗             | ✗               | ✓ pillar-5 `SemanticId`                        |
 | Programmable console (OSC/RPC)     | ✗                 | ✗             | ✗               | ✓ omnibar shares the control grammar           |
 
-Ceciliae doesn't merely draw prettier drawknobs — it makes the console a
+Caecilia doesn't merely draw prettier drawknobs — it makes the console a
 **window into a queryable instrument**: every element knows what it *is*, why it
 is on, and how to be driven by a script.
 
@@ -104,7 +104,7 @@ struct SemanticId {
   ElementRole role; StopId stop; DivisionId division; CouplerId coupler;
   TonalFamily family;
   std::string label;      // "Great Principal 8'"
-  std::string oscAddress; // "/ceciliae/great/principal-8"
+  std::string oscAddress; // "/caecilia/great/principal-8"
 };
 ```
 
@@ -172,7 +172,7 @@ class ISkin {
   procedural shading**, crisp at 4K (no bitmap themes to pixelate).
 - **`FlatVectorSkin`** — modern minimal flat-vector look.
 
-`juce::LookAndFeel` (`CeciliaeLookAndFeel`) is confined to standard dialogs only;
+`juce::LookAndFeel` (`CaeciliaLookAndFeel`) is confined to standard dialogs only;
 the console itself is fully custom.
 
 ---
@@ -252,7 +252,7 @@ The **tonal-family tint table is a first-class token**: a drawstop is always
 tinted by what it *is* (a red reed, a blue-ish principal), consistently across
 both skins and both light/dark variants (`tintFor(family)`). `ThemeManager`
 registers named themes, exposes the active one, and fans a change notification to
-every listener (`ConsoleView`, `CeciliaeLookAndFeel`, open panels), with built-in
+every listener (`ConsoleView`, `CaeciliaLookAndFeel`, open panels), with built-in
 `makeDefaultFlatDark()` / `makeDefaultFlatLight()` / `makeDefaultPhotoreal()`.
 
 ---

@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
-// ceciliae-ir-tool
+// caecilia-ir-tool
 //
 // Offline CLI: inspect and condition impulse responses for the convolution
 // reverb. Host-side tool; console/file I/O and heap use are all fine here.
 //
-//   ceciliae-ir-tool info      --input hall.wav
-//   ceciliae-ir-tool normalise --input hall.wav --output hall_norm.wav --peak-db -1
-//   ceciliae-ir-tool trim      --input hall.wav --output hall_trim.wav
+//   caecilia-ir-tool info      --input hall.wav
+//   caecilia-ir-tool normalise --input hall.wav --output hall_norm.wav --peak-db -1
+//   caecilia-ir-tool trim      --input hall.wav --output hall_trim.wav
 
-#include "ceciliae/core/EngineTypes.h"
-#include "ceciliae/core/Version.h"
+#include "caecilia/core/EngineTypes.h"
+#include "caecilia/core/Version.h"
 
 #include "common/CliArgs.h"
 #include "common/WavFile.h"
@@ -25,12 +25,12 @@
 
 namespace
 {
-using namespace ceciliae;
+using namespace caecilia;
 
 void printUsage(std::string_view program)
 {
     std::cout
-        << "ceciliae-ir-tool (ceciliae_core " << core::versionString() << ")\n"
+        << "caecilia-ir-tool (caecilia_core " << core::versionString() << ")\n"
         << "Inspect and condition impulse responses for the convolution reverb.\n\n"
         << "Usage:\n  " << program << " <command> --input <file.wav> [options]\n\n"
         << "Commands:\n"
@@ -73,7 +73,7 @@ void printInfo(const tools::ImpulseResponseInfo& info)
 
 int main(int argc, char** argv)
 {
-    using namespace ceciliae;
+    using namespace caecilia;
     const tools::CliArgs args(argc, argv);
 
     if (args.has("help") || argc == 1)

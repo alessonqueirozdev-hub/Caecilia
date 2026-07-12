@@ -1,12 +1,12 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae — Synthesis Design
+# Caecilia — Synthesis Design
 
-How `ceciliae::synth` turns a keypress into sound: the **layered voice pipeline**
+How `caecilia::synth` turns a keypress into sound: the **layered voice pipeline**
 (attack → sustain → release), the two physical synthesis engines plus the
 CPU-cheap partial bank, per-pipe hand-voicing, the attack-splice hybrid, and how
 every layer **breathes** by reading the shared wind supply.
@@ -21,7 +21,7 @@ every layer **breathes** by reading the shared wind supply.
 ## 1. The thesis: a voice is a *composition*, not an engine
 
 GrandOrgue plays dead looped samples; Aeolus plays uniform synthetic additive
-tone. Each captures in isolation what a real pipe does together. Ceciliae's
+tone. Each captures in isolation what a real pipe does together. Caecilia's
 answer is that a voice is **not** "a rank picks one engine" — it is a layered
 pipeline, so realism can live in the two places a monolithic engine cannot
 express:
@@ -64,10 +64,10 @@ isActive() const noexcept
 
 Two specialisations refine it:
 
-- **`ISampleSource`** — a read-only provider of recorded material in Ceciliae's
+- **`ISampleSource`** — a read-only provider of recorded material in Caecilia's
   **own** proprietary format (`channelCount`, `sourceSampleRate`,
   `rootFrequencyHz`, `frameCount`, `loopStart`, `loopEnd`, `sampleAt`).
-  Ceciliae prefers a loop-free modeled sustain, so `loopEnd == 0` signals a
+  Caecilia prefers a loop-free modeled sustain, so `loopEnd == 0` signals a
   one-shot recording whose tail hands off to a modeled sustain. Streaming/loading
   lives in `model` off the audio thread; the RT path only reads frames through a
   `dsp::Resampler`.
@@ -198,7 +198,7 @@ both references lack. Every layer reads the immutable per-block `WindState`
 (the single curve type, owned by the `wind` module and consumed here):
 
 ```cpp
-struct WindResponseCurve {           // ceciliae::wind
+struct WindResponseCurve {           // caecilia::wind
     float centsPerDeviation;      // pitch   → FM
     float dbPerDeviation;         // level   → AM
     float brightnessPerDeviation; // harmonic development

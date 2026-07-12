@@ -1,10 +1,10 @@
 <!--
 Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Ceciliae is proprietary and confidential; unauthorized copying,
+Caecilia is proprietary and confidential; unauthorized copying,
 distribution, or use of any part is prohibited. See LICENSE.
 -->
 
-# Ceciliae
+# Caecilia
 
 **A proprietary hybrid pipe-organ virtual instrument (VST3 / AU / Standalone).**
 
@@ -13,17 +13,17 @@ distribution, or use of any part is prohibited. See LICENSE.
 > engine is wired yet — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 > the roadmap below.
 
-Ceciliae aims to beat GrandOrgue and Aeolus **on sound simultaneously**, match
+Caecilia aims to beat GrandOrgue and Aeolus **on sound simultaneously**, match
 Organteq **on polish**, and beat everyone on **programmable, portable,
 explainable registration**.
 
 ---
 
-## Why Ceciliae wins
+## Why Caecilia wins
 
 GrandOrgue ships dead, looped samples with no wind response. Aeolus ships
 uniform synthetic additive tone with a single global tremulant. Each does in
-isolation what a real instrument does together. Ceciliae unifies them and
+isolation what a real instrument does together. Caecilia unifies them and
 exposes the result through a registration brain no mainstream organ VST has.
 
 ### 1. Hybrid, layered voice engine
@@ -79,14 +79,14 @@ with zero API drift.
 ## Repository layout
 
 ```
-Ceciliae/
+Caecilia/
 ├─ CMakeLists.txt            Top-level build (core lib + optional JUCE plugin + tests)
 ├─ LICENSE                   Proprietary, All Rights Reserved
 ├─ THIRD_PARTY_NOTICES.md    JUCE / Catch2 — their own separate licenses
 ├─ CONTRIBUTING.md           Conventional Commits, branch/PR flow, formatting
 ├─ docs/
 │  └─ ARCHITECTURE.md        Master architecture: layering, voice/wind/registration, data flow
-├─ src/ceciliae/
+├─ src/caecilia/
 │  ├─ core/                  Pure, JUCE-free contract: enums, Footage, IDs, IVoice, IWindSupply, ...
 │  ├─ engine/               (planned) RT scheduler + voice pool + AudioEngine seam
 │  ├─ synthesis/            (planned) layered voices, sample/additive/waveguide/modal engines
@@ -99,12 +99,12 @@ Ceciliae/
 │  ├─ control/              (planned) OSC + JSON-RPC over one command sink
 │  ├─ plugin/               (planned, JUCE) VST3/AU/Standalone AudioProcessor
 │  └─ ui/                   (planned, JUCE) dual-mode console, skins, wind gauges
-└─ tests/                    (planned) headless Catch2 unit tests linking ceciliae_core
+└─ tests/                    (planned) headless Catch2 unit tests linking caecilia_core
 ```
 
 ### Strict two-tier layering
 
-- **`ceciliae_core`** is a pure, **JUCE-free**, allocation/lock/exception-free
+- **`caecilia_core`** is a pure, **JUCE-free**, allocation/lock/exception-free
   **static library** holding *all* DSP / engine / synth / wind / model / tuning
   / midi / registration / control logic. It links only the C++ standard library
   and is fully unit-testable headless.
@@ -126,7 +126,7 @@ cmake -S . -B build
 cmake --build build
 
 # Pure-core only (no JUCE fetched at all) — ideal for headless CI of the DSP
-cmake -S . -B build-core -DCECILIAE_CORE_ONLY=ON
+cmake -S . -B build-core -DCAECILIA_CORE_ONLY=ON
 cmake --build build-core
 
 # Tests
@@ -137,9 +137,9 @@ ctest --test-dir build --output-on-failure
 
 | Option                  | Default | Effect                                                         |
 |-------------------------|---------|----------------------------------------------------------------|
-| `CECILIAE_BUILD_PLUGIN` | `ON`    | Build the JUCE VST3/AU/Standalone `Ceciliae` target            |
-| `CECILIAE_BUILD_TESTS`  | `ON`    | Build headless Catch2 unit tests                               |
-| `CECILIAE_CORE_ONLY`    | `OFF`   | Build only `ceciliae_core`; **no JUCE fetched**, plugin forced off |
+| `CAECILIA_BUILD_PLUGIN` | `ON`    | Build the JUCE VST3/AU/Standalone `Caecilia` target            |
+| `CAECILIA_BUILD_TESTS`  | `ON`    | Build headless Catch2 unit tests                               |
+| `CAECILIA_CORE_ONLY`    | `OFF`   | Build only `caecilia_core`; **no JUCE fetched**, plugin forced off |
 
 ---
 
@@ -148,11 +148,11 @@ ctest --test-dir build --output-on-failure
 **PROPRIETARY / CLOSED-SOURCE. All Rights Reserved.**
 Copyright (c) 2026 Alesson Queiroz.
 
-Ceciliae is proprietary and confidential; no permission is granted to use, copy,
+Caecilia is proprietary and confidential; no permission is granted to use, copy,
 modify, distribute, sublicense, or sell any part except by the copyright owner.
 See [LICENSE](LICENSE).
 
 JUCE is a **third-party dependency under its own separate license**, documented
 in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and never conflated with
-Ceciliae's license. All Ceciliae DSP is implemented independently from public
+Caecilia's license. All Caecilia DSP is implemented independently from public
 literature and contains **no GPL code**.

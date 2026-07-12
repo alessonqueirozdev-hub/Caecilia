@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -14,22 +14,22 @@
 
 #include "support/TestOrgan.h"
 
-#include "ceciliae/registration/RegistrationCommand.h"
-#include "ceciliae/registration/RegistrationState.h"
-#include "ceciliae/registration/Selector.h"
-#include "ceciliae/registration/SelectorParser.h"
-#include "ceciliae/registration/StateDelta.h"
-#include "ceciliae/registration/StopQuery.h"
-#include "ceciliae/registration/StopSet.h"
+#include "caecilia/registration/RegistrationCommand.h"
+#include "caecilia/registration/RegistrationState.h"
+#include "caecilia/registration/Selector.h"
+#include "caecilia/registration/SelectorParser.h"
+#include "caecilia/registration/StateDelta.h"
+#include "caecilia/registration/StopQuery.h"
+#include "caecilia/registration/StopSet.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <span>
 #include <vector>
 
-namespace core  = ceciliae::core;
-namespace reg   = ceciliae::registration;
-namespace tests = ceciliae::tests;
+namespace core  = caecilia::core;
+namespace reg   = caecilia::registration;
+namespace tests = caecilia::tests;
 
 namespace
 {
@@ -42,7 +42,7 @@ reg::StopSet setOf(std::vector<core::StopId> ids)
 /// Kept minimal — enough to demonstrate the undo/redo semantics against real types.
 reg::RegistrationState applyCommand(reg::RegistrationState state,
                                     const reg::RegistrationCommand& cmd,
-                                    const ceciliae::model::Organ& organ)
+                                    const caecilia::model::Organ& organ)
 {
     using Kind = reg::RegistrationCommand::Kind;
     switch (cmd.kind)
@@ -92,7 +92,7 @@ TEST_CASE("StopSet is a sorted, deduplicated set with in-place algebra", "[regis
 
 TEST_CASE("Selectors resolve registration intent by family", "[registration][selector]")
 {
-    const ceciliae::model::Organ organ = tests::buildTestOrgan();
+    const caecilia::model::Organ organ = tests::buildTestOrgan();
     REQUIRE(organ.stops().size() == tests::stops::count);
 
     const reg::RegistrationState state; // nothing engaged
@@ -139,7 +139,7 @@ TEST_CASE("Selectors resolve registration intent by family", "[registration][sel
 
 TEST_CASE("SelectorParser handles the empty query and rejects bad input", "[registration][parser]")
 {
-    const ceciliae::model::Organ organ = tests::buildTestOrgan();
+    const caecilia::model::Organ organ = tests::buildTestOrgan();
     const reg::RegistrationState state;
     const reg::SelectorParser    parser;
 
@@ -163,7 +163,7 @@ TEST_CASE("SelectorParser handles the empty query and rejects bad input", "[regi
 
 TEST_CASE("Registration supports command-sourced undo and redo", "[registration][history]")
 {
-    const ceciliae::model::Organ organ = tests::buildTestOrgan();
+    const caecilia::model::Organ organ = tests::buildTestOrgan();
     const reg::SelectorParser    parser;
 
     // The command log and the snapshot history (state == fold of the log).

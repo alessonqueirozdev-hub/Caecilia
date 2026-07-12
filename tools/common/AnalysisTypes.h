@@ -1,12 +1,12 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
 #pragma once
 
-#include "ceciliae/core/EngineTypes.h"
+#include "caecilia/core/EngineTypes.h"
 
 #include <cstddef>
 #include <vector>
@@ -15,19 +15,19 @@
  * @file AnalysisTypes.h
  * @brief Plain-old-data result types produced by the offline analysis tools.
  *
- * These structures live in @c ceciliae::tools (NOT in @c ceciliae::core): they
+ * These structures live in @c caecilia::tools (NOT in @c caecilia::core): they
  * are host-side, off-line artefacts written to disk by the command-line
  * toolchain and later re-ingested by the synthesis/model modules as the
  * proprietary SpectralModel / sample-set metadata. Nothing here ever touches
  * the audio thread, so unlike the RT core these types are free to own
  * heap-backed containers (@c std::vector).
  *
- * They intentionally reuse the shared core vocabulary (@ref ceciliae::core::PipeId,
- * @ref ceciliae::core::Footage, @ref ceciliae::core::MidiNote) so a partial bank
+ * They intentionally reuse the shared core vocabulary (@ref caecilia::core::PipeId,
+ * @ref caecilia::core::Footage, @ref caecilia::core::MidiNote) so a partial bank
  * or loop analysis carries the exact same identity keys the engine will use.
  */
 
-namespace ceciliae::tools
+namespace caecilia::tools
 {
 
 /**
@@ -129,4 +129,4 @@ struct ImpulseResponseInfo
     std::size_t      onsetFrame  = 0;   ///< First frame carrying significant energy.
 };
 
-} // namespace ceciliae::tools
+} // namespace caecilia::tools

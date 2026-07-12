@@ -1,15 +1,15 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
 #pragma once
 
-#include "ceciliae/core/EngineTypes.h"
-#include "ceciliae/model/Organ.h"
-#include "ceciliae/model/OrganDefinition.h"
-#include "ceciliae/model/OrganLoader.h"
+#include "caecilia/core/EngineTypes.h"
+#include "caecilia/model/Organ.h"
+#include "caecilia/model/OrganDefinition.h"
+#include "caecilia/model/OrganLoader.h"
 
 /**
  * @file TestOrgan.h
@@ -35,7 +35,7 @@
  * By family:  Principal = {0,1}, Flute = {2,5}, Reed = {3,4}.
  */
 
-namespace ceciliae::tests
+namespace caecilia::tests
 {
 
 /// Stable stop ids of @ref buildTestDefinition (index == id, see the file docs).
@@ -68,7 +68,7 @@ inline constexpr core::DivisionId swell{1};
 
     model::OrganDefinition def;
     def.name    = "Test Organ";
-    def.builder = "Ceciliae Test Bench";
+    def.builder = "Caecilia Test Bench";
     def.year    = 2026;
 
     WindchestDef chest;
@@ -150,4 +150,4 @@ inline constexpr core::DivisionId swell{1};
     return result.organ ? std::move(*result.organ) : model::Organ{};
 }
 
-} // namespace ceciliae::tests
+} // namespace caecilia::tests

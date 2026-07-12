@@ -1,18 +1,18 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
-// ceciliae-sampleset-analyzer
+// caecilia-sampleset-analyzer
 //
 // Offline CLI: extract loop points and pitch from one recorded pipe sample.
-// Links ceciliae_core for the shared vocabulary (PipeId, Footage, ...). It is a
+// Links caecilia_core for the shared vocabulary (PipeId, Footage, ...). It is a
 // host-side tool, so console/file I/O and heap use are all fine here; none of
 // this runs on the audio thread.
 
-#include "ceciliae/core/EngineTypes.h"
-#include "ceciliae/core/Version.h"
+#include "caecilia/core/EngineTypes.h"
+#include "caecilia/core/Version.h"
 
 #include "common/CliArgs.h"
 #include "common/WavFile.h"
@@ -25,12 +25,12 @@
 
 namespace
 {
-using namespace ceciliae;
+using namespace caecilia;
 
 void printUsage(std::string_view program)
 {
     std::cout
-        << "ceciliae-sampleset-analyzer (ceciliae_core " << core::versionString() << ")\n"
+        << "caecilia-sampleset-analyzer (caecilia_core " << core::versionString() << ")\n"
         << "Extract loop points and pitch from a recorded pipe sample.\n\n"
         << "Usage:\n  " << program << " --input <file.wav> [options]\n\n"
         << "Options:\n"
@@ -72,7 +72,7 @@ void writeJson(std::ostream& os, const tools::SampleAnalysis& a)
 
 int main(int argc, char** argv)
 {
-    using namespace ceciliae;
+    using namespace caecilia;
     const tools::CliArgs args(argc, argv);
 
     if (args.has("help") || argc == 1)

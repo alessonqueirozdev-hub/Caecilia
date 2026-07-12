@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Ceciliae is proprietary and confidential; unauthorized copying,
+ * Caecilia is proprietary and confidential; unauthorized copying,
  * distribution, or use of any part is prohibited. See LICENSE.
  */
 
@@ -8,7 +8,7 @@
 
 #include <cmath>
 
-namespace ceciliae::tools
+namespace caecilia::tools
 {
 
 ImpulseResponseTool::ImpulseResponseTool(IrToolOptions options)
@@ -103,4 +103,4 @@ bool ImpulseResponseTool::processInPlace(WavData& ir, std::string* error) const
     return false;
 }
 
-} // namespace ceciliae::tools
+} // namespace caecilia::tools
