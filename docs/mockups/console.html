@@ -52,13 +52,13 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   }
 
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+  html, body { margin: 0; padding: 0; height: 100%; }
   body {
-    min-height: 100vh;
+    height: 100vh;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    overflow-x: hidden;
+    overflow: hidden;
   }
 
   /* ---- WOOD (photoreal) theme -------------------------------------------- */
@@ -101,7 +101,10 @@ of inline SVG data-URI textures. Open directly in any modern browser.
    *  STAGE / SHELL                                                *
    * ============================================================= */
   #app {
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
     background: var(--bg);
     color: var(--ink);
     padding: clamp(10px, 2vw, 26px);
@@ -109,7 +112,9 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   }
   .stage {
     max-width: 1360px;
-    margin: 0 auto;
+    margin: 0;
+    transform-origin: center center;
+    will-change: transform;
     display: flex;
     flex-direction: column;
     gap: clamp(10px, 1.6vw, 18px);
@@ -1155,6 +1160,22 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+/* ---- Fit the whole console to the viewport — everything visible, no scroll */
+const stageEl = document.querySelector('.stage');
+function fitStage() {
+  const app = document.getElementById('app');
+  stageEl.style.transform = 'none';
+  const cs = getComputedStyle(app);
+  const availW = app.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH = app.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const s = Math.min(1, availW / stageEl.offsetWidth, availH / stageEl.offsetHeight);
+  stageEl.style.transform = 'scale(' + s + ')';
+}
+window.addEventListener('resize', fitStage);
+window.addEventListener('load', fitStage);
+if (window.ResizeObserver) new ResizeObserver(fitStage).observe(stageEl);
+requestAnimationFrame(fitStage);
 
 /* ---- First-paint sanity ------------------------------------------------- */
 updateStatus();
