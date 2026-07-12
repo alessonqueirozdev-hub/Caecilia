@@ -1224,6 +1224,8 @@ requestAnimationFrame(frame);
     const conv = actx.createConvolver(); conv.buffer = buf;
     const wet = actx.createGain(); wet.gain.value = 0.5;
     master.connect(conv); conv.connect(wet); wet.connect(actx.destination); master.connect(actx.destination);
+    window.__cae = { actx, master, conv, wet, buildIR(sec, pow){ const n = Math.max(1, Math.floor(actx.sampleRate * sec)); const b = actx.createBuffer(2, n, actx.sampleRate); for (let ch = 0; ch < 2; ch++){ const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, pow); } conv.buffer = b; } };
+    if (window.__caeApplySettings) window.__caeApplySettings();
     const N = 18, real = new Float32Array(N), imag = new Float32Array(N);
     const amps = [0,1,.5,.4,.3,.1,.2,.06,.12,0,.05,0,.06,0,0,.03,0,.02];
     for (let i = 0; i < N; i++) imag[i] = amps[i] || 0;
@@ -1320,4 +1322,147 @@ requestAnimationFrame(frame);
 /* ---- First-paint sanity ------------------------------------------------- */
 updateStatus();
 console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.length} divisions loaded.`);
+</script>
+
+<!-- ============ Caecilia: settings panel + i18n (appended) ============ -->
+<style>
+  .cae-icobtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 30px; border-radius: 8px; color: #f2e7cf; font-size: 15px;
+    background: linear-gradient(180deg,#33271c,#221a12); border: 1px solid var(--panel-edge,#2a2018); }
+  .cae-icobtn:hover { filter: brightness(1.12); }
+  .cae-lang { -webkit-appearance: none; appearance: none; cursor: pointer;
+    font: 600 11px var(--font-sans); color: #f2e7cf; background: linear-gradient(180deg,#33271c,#221a12);
+    border: 1px solid var(--panel-edge,#2a2018); border-radius: 8px; padding: 6px 10px; }
+  .cae-lang option { color:#f2e7cf; background:#221a12; }
+  .cae-scrim { position: fixed; inset: 0; background: rgba(6,8,12,.55); opacity: 0; pointer-events: none;
+    transition: opacity .22s; z-index: 60; }
+  .cae-scrim.open { opacity: 1; pointer-events: auto; }
+  .cae-panel { position: fixed; top: 0; right: 0; height: 100%; width: min(360px, 92vw);
+    transform: translateX(102%); transition: transform .26s cubic-bezier(.4,0,.2,1); z-index: 61;
+    background: linear-gradient(180deg,#241a12,#160f09); border-left: 1px solid #3a2a1a;
+    box-shadow: -12px 0 40px rgba(0,0,0,.5); padding: 20px 20px 28px; overflow-y: auto;
+    color: #efe3cb; font-family: var(--font-sans); }
+  .cae-panel.open { transform: none; }
+  .cae-panel h2 { font: 700 15px var(--font-serif, serif); letter-spacing: .4px; color: #f6dd9f; margin: 4px 0 2px; }
+  .cae-panel .cae-sub { font-size: 11px; color: #b9a680; margin-bottom: 16px; }
+  .cae-grp { margin: 14px 0; padding: 12px; border-radius: 10px; background: rgba(255,255,255,.03); border:1px solid #33261a; }
+  .cae-grp > label { display:block; font-size: 11px; letter-spacing:.4px; text-transform: uppercase; color:#caa85f; margin-bottom: 8px; }
+  .cae-row { display:flex; align-items:center; gap:10px; margin: 9px 0; font-size: 12px; }
+  .cae-row span.k { flex: 0 0 96px; color:#d9cba8; }
+  .cae-row input[type=range] { flex: 1; accent-color: #d9ad57; }
+  .cae-row output { flex:0 0 42px; text-align:right; color:#f2e7cf; font-variant-numeric: tabular-nums; }
+  .cae-row select { flex:1; -webkit-appearance:none; appearance:none; color:#f2e7cf; background:#221a12; border:1px solid #3a2a1a; border-radius:8px; padding:6px 8px; }
+  .cae-row select option { background:#221a12; }
+  .cae-toggle { margin-left:auto; width:40px; height:22px; border-radius:11px; background:#3a2a1a; position:relative; cursor:pointer; transition:background .2s; }
+  .cae-toggle.on { background: linear-gradient(90deg,#d9ad57,#f6dd9f); }
+  .cae-toggle::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:left .2s; }
+  .cae-toggle.on::after { left:20px; }
+  .cae-close { all:unset; cursor:pointer; float:right; color:#b9a680; font-size:18px; line-height:1; }
+  .cae-close:hover { color:#f2e7cf; }
+</style>
+<script>
+(function(){
+  const I18N = {
+    en:{ lang:"English", settings:"Settings", settingsSub:"Reverb, output and expression",
+         releaseKeys:"Release keys", enterDraw:"Enter to draw", output:"Output", master:"Master volume",
+         reverb:"Reverb", mix:"Mix", space:"Space", tremulant:"Tremulant", on:"On", off:"Off",
+         hint:"Draw a stop, then play — the wind will breathe under the load",
+         room:"Room", chamber:"Chamber", hall:"Hall", cathedral:"Cathedral", plate:"Plate" },
+    pt:{ lang:"Português (BR)", settings:"Ajustes", settingsSub:"Reverb, saída e expressão",
+         releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Saída", master:"Volume geral",
+         reverb:"Reverb", mix:"Mistura", space:"Espaço", tremulant:"Tremulante", on:"Ligado", off:"Desligado",
+         hint:"Puxe um registro e toque — o vento respira sob a carga",
+         room:"Sala", chamber:"Câmara", hall:"Salão", cathedral:"Catedral", plate:"Placa" },
+    es:{ lang:"Español", settings:"Ajustes", settingsSub:"Reverb, salida y expresión",
+         releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Salida", master:"Volumen general",
+         reverb:"Reverb", mix:"Mezcla", space:"Espacio", tremulant:"Trémolo", on:"Activado", off:"Desactivado",
+         hint:"Registra y toca — el viento respira bajo la carga",
+         room:"Sala", chamber:"Cámara", hall:"Salón", cathedral:"Catedral", plate:"Placa" },
+    de:{ lang:"Deutsch", settings:"Einstellungen", settingsSub:"Hall, Ausgang und Expression",
+         releaseKeys:"Tasten lösen", enterDraw:"Enter zum Registrieren", output:"Ausgang", master:"Gesamtlautstärke",
+         reverb:"Hall", mix:"Anteil", space:"Raum", tremulant:"Tremulant", on:"An", off:"Aus",
+         hint:"Zieh ein Register und spiele — der Wind atmet unter Last",
+         room:"Raum", chamber:"Kammer", hall:"Saal", cathedral:"Kathedrale", plate:"Platte" },
+  };
+  let lang = "en";
+  const t = k => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
+
+  const SPACES = { room:[1.1,3.0], chamber:[1.7,2.8], hall:[2.8,2.6], cathedral:[4.6,2.2], plate:[1.0,3.5] };
+  const S = { master:0.15, mix:0.5, space:"hall", trem:false };
+
+  function emit(name, val){ try { const f = window.__JUCE__ && window.__JUCE__.getNativeFunction && window.__JUCE__.getNativeFunction(name); if (f) f(val); } catch(e){} }
+
+  window.__caeApplySettings = function(){
+    const a = window.__cae; if (!a) return;
+    a.master.gain.value = S.master;
+    a.wet.gain.value = S.mix;
+    const sp = SPACES[S.space] || SPACES.hall; a.buildIR(sp[0], sp[1]);
+  };
+
+  function build(){
+    const header = document.querySelector("header.topbar"); if (!header) return;
+
+    // Language selector + gear, inserted before the Wood/Flat segment.
+    const seg = header.querySelector(".seg");
+    const langSel = document.createElement("select"); langSel.className = "cae-lang"; langSel.title = "Language";
+    ["en","pt","es","de"].forEach(l => { const o=document.createElement("option"); o.value=l; o.textContent=I18N[l].lang; langSel.append(o); });
+    const gear = document.createElement("button"); gear.className = "cae-icobtn"; gear.innerHTML = "⚙"; gear.title = "Settings";
+    if (seg) { header.insertBefore(langSel, seg); header.insertBefore(gear, seg); }
+    else { header.append(langSel); header.append(gear); }
+
+    // Panel
+    const scrim = document.createElement("div"); scrim.className = "cae-scrim";
+    const panel = document.createElement("div"); panel.className = "cae-panel";
+    panel.innerHTML =
+      '<button class="cae-close" aria-label="Close">✕</button>'+
+      '<h2 id="cae-t-settings"></h2><div class="cae-sub" id="cae-t-settingsSub"></div>'+
+      '<div class="cae-grp"><label id="cae-t-output"></label>'+
+        '<div class="cae-row"><span class="k" id="cae-t-master"></span><input type="range" id="cae-master" min="0" max="0.6" step="0.005"><output id="cae-master-o"></output></div></div>'+
+      '<div class="cae-grp"><label id="cae-t-reverb"></label>'+
+        '<div class="cae-row"><span class="k" id="cae-t-space"></span><select id="cae-space">'+
+          '<option value="room" id="cae-t-room"></option><option value="chamber" id="cae-t-chamber"></option>'+
+          '<option value="hall" id="cae-t-hall"></option><option value="cathedral" id="cae-t-cathedral"></option>'+
+          '<option value="plate" id="cae-t-plate"></option></select></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-mix"></span><input type="range" id="cae-mix" min="0" max="1" step="0.01"><output id="cae-mix-o"></output></div></div>'+
+      '<div class="cae-grp"><label id="cae-t-tremulant"></label>'+
+        '<div class="cae-row"><span class="k" id="cae-t-tremstate"></span><div class="cae-toggle" id="cae-trem"></div></div></div>';
+    document.body.append(scrim); document.body.append(panel);
+
+    const $ = id => panel.querySelector("#"+id) || document.getElementById(id);
+    const open = v => { scrim.classList.toggle("open", v); panel.classList.toggle("open", v); };
+    gear.onclick = () => open(true); scrim.onclick = () => open(false);
+    panel.querySelector(".cae-close").onclick = () => open(false);
+
+    const master = $("cae-master"), masterO = $("cae-master-o"), mix = $("cae-mix"), mixO = $("cae-mix-o"), space = $("cae-space"), trem = $("cae-trem");
+    master.value = S.master; mix.value = S.mix; space.value = S.space;
+    const pct = v => Math.round(v*100)+"%";
+    function refresh(){ masterO.textContent = pct(S.master/0.6); mixO.textContent = pct(S.mix); trem.classList.toggle("on", S.trem); }
+    master.oninput = () => { S.master = +master.value; window.__caeApplySettings(); emit("caeciliaSetMaster", S.master); refresh(); };
+    mix.oninput = () => { S.mix = +mix.value; window.__caeApplySettings(); emit("caeciliaSetReverbMix", S.mix); refresh(); };
+    space.onchange = () => { S.space = space.value; window.__caeApplySettings(); emit("caeciliaSetReverbSpace", S.space); };
+    trem.onclick = () => { S.trem = !S.trem; try { if (window.state) window.state.trem = S.trem; } catch(e){} emit("caeciliaSetTremulant", S.trem?1:0); refresh(); applyLang(); };
+
+    function applyLang(){
+      langSel.value = lang;
+      const set = (id,key) => { const e = document.getElementById(id); if (e) e.textContent = t(key); };
+      set("cae-t-settings","settings"); set("cae-t-settingsSub","settingsSub");
+      set("cae-t-output","output"); set("cae-t-master","master");
+      set("cae-t-reverb","reverb"); set("cae-t-space","space"); set("cae-t-mix","mix");
+      set("cae-t-tremulant","tremulant"); set("cae-t-tremstate", S.trem ? "on" : "off");
+      set("cae-t-room","room"); set("cae-t-chamber","chamber"); set("cae-t-hall","hall");
+      set("cae-t-cathedral","cathedral"); set("cae-t-plate","plate");
+      const panicBtn = document.getElementById("panic"); if (panicBtn) panicBtn.textContent = t("releaseKeys");
+      const oh = document.getElementById("omni-hint"); if (oh && /Enter/i.test(oh.textContent)) oh.textContent = t("enterDraw");
+      gear.title = t("settings");
+      // footer status hint (only if it's the default, so we don't clobber live explanations)
+      const fh = document.querySelector("footer.status .hint, footer.status em, footer.status i");
+      if (fh && fh.dataset.caeDefault !== "0") { fh.textContent = t("hint"); fh.dataset.caeDefault = "1"; }
+    }
+    langSel.onchange = () => { lang = langSel.value; applyLang(); };
+    refresh(); applyLang();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build);
+  else build();
+})();
 </script>

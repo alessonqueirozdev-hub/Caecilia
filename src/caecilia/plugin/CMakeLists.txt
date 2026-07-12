@@ -63,6 +63,10 @@ set_target_properties(CaeciliaWebUI PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # --- compile-time JUCE configuration ---------------------------------------
 target_compile_definitions(Caecilia PUBLIC
     JUCE_WEB_BROWSER=1
+    # NEEDS_WEBVIEW2 links the SDK but does not define this — without it the
+    # Chromium backend and Options::withResourceProvider are compiled out on
+    # Windows (C2039). Ignored on Linux/macOS.
+    JUCE_USE_WIN_WEBVIEW2=1
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
