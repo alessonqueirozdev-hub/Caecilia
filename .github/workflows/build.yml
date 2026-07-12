@@ -14,6 +14,18 @@ on:
   workflow_dispatch:
 
 jobs:
+  verify:
+    name: Registration audio checks (JUCE-free)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (core + tools, no plugin/JUCE)
+        run: cmake -B build-verify -DCMAKE_BUILD_TYPE=Release -DCAECILIA_BUILD_PLUGIN=OFF -DCAECILIA_BUILD_TESTS=OFF -DCAECILIA_BUILD_TOOLS=ON
+      - name: Build the registration verifier
+        run: cmake --build build-verify --config Release --target caecilia-verify-registration --parallel 4
+      - name: Run registration audio checks
+        run: ./build-verify/tools/caecilia-verify-registration
+
   windows:
     name: Windows (VST3 + Standalone, MSVC)
     runs-on: windows-latest

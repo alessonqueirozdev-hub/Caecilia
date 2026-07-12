@@ -21,76 +21,19 @@ namespace
 /// Total simultaneous voices. Each key grabs one composite voice, so this is the
 /// polyphony ceiling across every manual and the pedal at once.
 constexpr std::size_t kPolyphony = 96;
-
-/// Voicing balance for one drawn rank within the composite: a base level per
-/// tonal family, darkened by an octave for every pitch step above 8' so upperwork
-/// crowns the chorus without swamping the foundations. Mirrors the hand-tuned
-/// plenum the render harness was validated against.
-float rankGainDb(const model::Stop& stop) noexcept
-{
-    const bool unisonReferenced = stop.family() == core::TonalFamily::Mixture
-                               || stop.isCompound()
-                               || stop.footage().isMutation();
-    if (unisonReferenced)
-        return -11.0f; // mixtures/mutations sit under the foundations
-
-    float base = -3.0f;
-    switch (stop.family())
-    {
-        case core::TonalFamily::Principal:  base =  0.0f; break;
-        case core::TonalFamily::Flute:      base = -1.5f; break;
-        case core::TonalFamily::String:     base = -4.0f; break;
-        case core::TonalFamily::Reed:       base = -2.0f; break;
-        case core::TonalFamily::Hybrid:     base = -2.0f; break;
-        case core::TonalFamily::Mixture:    // handled above via unisonReferenced
-        case core::TonalFamily::Percussion:
-        case core::TonalFamily::Undefined:
-        default:                            base = -3.0f; break;
-    }
-    // octaveClassFrom8(): 0 for 8', +1 for 4', +2 for 2', -1 for 16'.
-    return base - 3.3f * static_cast<float>(stop.footage().octaveClassFrom8());
-}
 } // namespace
 
 synth::SpectralModel CaeciliaAudioProcessor::compositeSpectrum() const
 {
-    synth::SpectralModel composite;
-
-    std::size_t drawn = 0;
-    for (bool b : engaged_)
-        drawn += b ? 1u : 0u;
-    if (drawn == 0)
-        return composite; // silence: no stop drawn
-
-    // Gentle global trim so stacking more ranks never clips the master bus.
-    const float stackTrimDb = -5.0f * std::log10(static_cast<float>(drawn));
-
+    // Collect the drawn StopIds and delegate to the shared pure-core builder, so
+    // the plugin and the headless render/verification harness voice identically.
+    std::vector<core::StopId> engagedIds;
+    engagedIds.reserve(engaged_.size());
     for (const model::Stop& stop : organ_.stops())
-    {
-        if (stop.id().value >= engaged_.size() || ! engaged_[stop.id().value])
-            continue;
+        if (stop.id().value < engaged_.size() && engaged_[stop.id().value])
+            engagedIds.push_back(stop.id());
 
-        // Fold the footage into the partial ratios ourselves — EXACTLY as the
-        // engine's per-stop voicing does (unison-referenced recipes stay at 8').
-        const bool unisonReferenced = stop.family() == core::TonalFamily::Mixture
-                                   || stop.isCompound()
-                                   || stop.footage().isMutation();
-        const double feet = stop.footage().feet();
-        const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
-        const float  gainDb = rankGainDb(stop) + stackTrimDb;
-
-        const synth::SpectralModel recipe = model::spectralModelForStop(stop);
-        for (const synth::PartialTrack& p : recipe.partials)
-        {
-            synth::PartialTrack t = p;
-            t.ratioToF0 = static_cast<float>(static_cast<double>(p.ratioToF0) * fold);
-            t.ampDb     = p.ampDb + gainDb;
-            composite.partials.push_back(t);
-        }
-    }
-
-    composite.fundamentalHz = 0.0f; // set per note by the voice at noteOn
-    return composite;
+    return model::buildRegistrationCompositeSpectrum(organ_, engagedIds);
 }
 
 void CaeciliaAudioProcessor::buildInstrument(double sampleRate, std::size_t maxBlockFrames)

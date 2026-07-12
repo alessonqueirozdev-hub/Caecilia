@@ -261,6 +261,76 @@ synth::SpectralModel spectralModelForStop(const Stop& stop)
     }
 }
 
+namespace
+{
+/// Voicing balance for one drawn rank inside the composite (see header): a base
+/// level per tonal family, darkened an octave per pitch step above 8'. Mixtures
+/// and mutations sit under the foundations.
+float compositeRankGainDb(const Stop& stop) noexcept
+{
+    const bool unisonReferenced = stop.family() == core::TonalFamily::Mixture
+                               || stop.isCompound()
+                               || stop.footage().isMutation();
+    if (unisonReferenced)
+        return -11.0f;
+
+    float base = -3.0f;
+    switch (stop.family())
+    {
+        case core::TonalFamily::Principal:  base =  0.0f; break;
+        case core::TonalFamily::Flute:      base = -1.5f; break;
+        case core::TonalFamily::String:     base = -4.0f; break;
+        case core::TonalFamily::Reed:       base = -2.0f; break;
+        case core::TonalFamily::Hybrid:     base = -2.0f; break;
+        case core::TonalFamily::Mixture:
+        case core::TonalFamily::Percussion:
+        case core::TonalFamily::Undefined:
+        default:                            base = -3.0f; break;
+    }
+    // octaveClassFrom8(): 0 for 8', +1 for 4', +2 for 2', -1 for 16'.
+    return base - 3.3f * static_cast<float>(stop.footage().octaveClassFrom8());
+}
+} // namespace
+
+synth::SpectralModel buildRegistrationCompositeSpectrum(
+    const Organ& organ, std::span<const core::StopId> engagedStops)
+{
+    synth::SpectralModel composite;
+    if (engagedStops.empty())
+        return composite;
+
+    // Gentle global trim so stacking more ranks never clips the master bus.
+    const float stackTrimDb = -5.0f * std::log10(static_cast<float>(engagedStops.size()));
+
+    for (const core::StopId sid : engagedStops)
+    {
+        const Stop* stop = organ.stop(sid);
+        if (stop == nullptr)
+            continue;
+
+        // Fold the footage into the partial ratios ourselves — EXACTLY as the
+        // per-stop voicing does (unison-referenced recipes already sit at 8').
+        const bool unisonReferenced = stop->family() == core::TonalFamily::Mixture
+                                   || stop->isCompound()
+                                   || stop->footage().isMutation();
+        const double feet = stop->footage().feet();
+        const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
+        const float  gainDb = compositeRankGainDb(*stop) + stackTrimDb;
+
+        const synth::SpectralModel recipe = spectralModelForStop(*stop);
+        for (const synth::PartialTrack& p : recipe.partials)
+        {
+            synth::PartialTrack t = p;
+            t.ratioToF0 = static_cast<float>(static_cast<double>(p.ratioToF0) * fold);
+            t.ampDb     = p.ampDb + gainDb;
+            composite.partials.push_back(t);
+        }
+    }
+
+    composite.fundamentalHz = 0.0f; // set per note by the voice at noteOn
+    return composite;
+}
+
 // ---------------------------------------------------------------------------
 // The demo instrument.
 // ---------------------------------------------------------------------------

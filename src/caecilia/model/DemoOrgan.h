@@ -98,6 +98,17 @@ namespace caecilia::model
 /// (allocates); the returned Organ is thereafter immutable and RT-safe to read.
 [[nodiscard]] Organ buildCaeciliaDemoOrgan();
 
+/// Sum every engaged stop's family recipe into ONE composite spectrum referenced
+/// to 8' unison: each rank's footage is folded into the partial ratios (except the
+/// already-unison-referenced mixture/mutation recipes), levels are balanced per
+/// tonal family and darkened an octave per pitch step above 8', and a gentle global
+/// trim keeps stacked ranks from clipping. A single AdditiveVoice seeded with this
+/// (context footage 8') sounds the WHOLE drawn registration cleanly and
+/// polyphonically. Off-thread only (allocates). Shared by the plugin's registration
+/// rebuild and the headless render/verification harness so both voice identically.
+[[nodiscard]] synth::SpectralModel buildRegistrationCompositeSpectrum(
+    const Organ& organ, std::span<const core::StopId> engagedStops);
+
 // ---------------------------------------------------------------------------
 // Registration -> ready-to-bind voices.
 // ---------------------------------------------------------------------------

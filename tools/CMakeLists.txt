@@ -62,5 +62,11 @@ caecilia_add_tool(caecilia-ir-tool
     ir-tool/ImpulseResponseTool.cpp
     ir-tool/Main.cpp)
 
+# 4) Registration render/verification harness: proves the shared composite
+#    voicing actually sounds (RMS + Goertzel) and guards the 64-partial-cap fix.
+caecilia_add_tool(caecilia-verify-registration
+    verify-registration/Main.cpp)
+
 message(STATUS "Caecilia: offline tools enabled "
-               "(caecilia-sampleset-analyzer, caecilia-partial-extractor, caecilia-ir-tool)")
+               "(caecilia-sampleset-analyzer, caecilia-partial-extractor, "
+               "caecilia-ir-tool, caecilia-verify-registration)")
