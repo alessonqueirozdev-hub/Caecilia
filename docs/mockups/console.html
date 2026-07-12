@@ -1,0 +1,1162 @@
+<!--
+Copyright (c) 2026 Alesson Queiroz. All rights reserved.
+Ceciliae is proprietary and confidential; unauthorized copying,
+distribution, or use of any part is prohibited. See LICENSE.
+
+Ceciliae — Console Mockup
+=========================
+A single self-contained, interactive visual design reference for the JUCE
+`ceciliae::ui` module. It is NOT production code: it is the pixel/behaviour
+target that ConsoleLayoutModel + ISkin (PhotorealSkin / FlatVectorSkin) must
+reproduce, driven by the same data-driven, semantic-identity philosophy.
+
+  - Data-driven: the console is generated from an ORGAN definition object
+    (divisions -> stops with TonalFamily + Footage + ChorusRole + PitchClass),
+    the analogue of OrganSpec / ConsoleLayoutModel.
+  - Semantic identity (pillar 5): every drawstop carries one fact
+    ("Grand-Orgue Trompette 8', reed, drawn") reused for the label, the
+    aria/screen-reader text and the (mock) OSC address in the tooltip.
+  - Two skins over ONE model + ONE live-state feed: the "Wood" (photoreal) and
+    "Flat" (modern vector) themes are pure restyles of identical markup — the
+    ISkin contract in miniature.
+  - Live feedback: a rAF loop mimics StateMirror — held keys + drawn stops feed
+    a VU meter and a wind model whose reservoir pressure SAGS under polyphony,
+    the single realism moat GrandOrgue/Aeolus lack.
+  - Selector algebra (marquee feature): the omnibar parses `family & footage`
+    style queries (e.g. `reed & 8`) live-highlighting matches; Enter draws them.
+    The same grammar powers the combination pistons.
+
+Everything is inline (no external fetch): resolution-independent CSS + a couple
+of inline SVG data-URI textures. Open directly in any modern browser.
+-->
+<title>Ceciliae — Console Mockup</title>
+<style>
+  /* ============================================================= *
+   *  DESIGN TOKENS                                                 *
+   * ============================================================= */
+  :root {
+    /* Tonal-family tint tokens — a first-class token in ThemeManager. */
+    --fam-Principal: #5b8def;
+    --fam-Flute:     #23b39b;
+    --fam-String:    #a273f0;
+    --fam-Reed:      #e5603f;
+    --fam-Mixture:   #e0a327;
+    --fam-Cornet:    #d8579b;
+    --fam-Hybrid:    #38b6d9;
+
+    --ease: cubic-bezier(.22,.61,.36,1);
+    --radius: 12px;
+    --font-serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --font-sans: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "SF Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  /* ---- WOOD (photoreal) theme -------------------------------------------- */
+  #app[data-theme="wood"] {
+    --bg: radial-gradient(120% 90% at 50% -10%, #4a2f1c 0%, #2c1a0f 55%, #180d07 100%);
+    --panel: linear-gradient(180deg, #4d3220 0%, #3a2416 60%, #2c1a0f 100%);
+    --panel-edge: #6b4526;
+    --panel-hi: rgba(255,214,150,.14);
+    --panel-lo: rgba(0,0,0,.55);
+    --ink: #f3e2c4;
+    --ink-dim: #b9a079;
+    --ink-faint: #8a7355;
+    --brass: linear-gradient(160deg, #f6e4a8 0%, #caa15a 30%, #b98b3f 60%, #7c5a24 100%);
+    --keybed: linear-gradient(180deg, #241610, #140b06);
+    --card: linear-gradient(180deg, #5a3c26, #3f2818);
+    --stop-face: radial-gradient(120% 120% at 35% 25%, #fbf3e2 0%, #efe0c4 45%, #d8c39a 100%);
+    --meter-well: linear-gradient(180deg, #1c1009, #0d0703);
+    --font-plate: var(--font-serif);
+    --chrome-shadow: 0 22px 60px rgba(0,0,0,.6), inset 0 1px 0 var(--panel-hi);
+  }
+  /* ---- FLAT (modern vector) theme ---------------------------------------- */
+  #app[data-theme="flat"] {
+    --bg: radial-gradient(130% 100% at 50% -10%, #171b22 0%, #0f1319 60%, #0a0d12 100%);
+    --panel: linear-gradient(180deg, #1a1f27 0%, #141920 100%);
+    --panel-edge: #2b333f;
+    --panel-hi: rgba(255,255,255,.05);
+    --panel-lo: rgba(0,0,0,.4);
+    --ink: #e7edf5;
+    --ink-dim: #9aa7b8;
+    --ink-faint: #66717f;
+    --keybed: linear-gradient(180deg, #10141a, #0a0d12);
+    --card: linear-gradient(180deg, #1d232c, #161b22);
+    --stop-face: linear-gradient(180deg, #232a34, #1a2029);
+    --meter-well: linear-gradient(180deg, #0c0f14, #070a0e);
+    --font-plate: var(--font-sans);
+    --chrome-shadow: 0 18px 50px rgba(0,0,0,.55), inset 0 1px 0 var(--panel-hi);
+  }
+
+  /* ============================================================= *
+   *  STAGE / SHELL                                                *
+   * ============================================================= */
+  #app {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    padding: clamp(10px, 2vw, 26px);
+    transition: background .5s var(--ease), color .35s var(--ease);
+  }
+  .stage {
+    max-width: 1360px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(10px, 1.6vw, 18px);
+  }
+
+  /* ---- Top bar ----------------------------------------------------------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--radius);
+    box-shadow: var(--chrome-shadow);
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand .mark {
+    font-family: var(--font-serif);
+    font-size: 26px;
+    letter-spacing: .5px;
+    font-weight: 700;
+    background: linear-gradient(180deg, #ffe9bf, #d8ab5e);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  #app[data-theme="flat"] .brand .mark {
+    background: linear-gradient(180deg, #eaf1fb, #9fb6d6);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .brand .sub { font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--ink-faint); }
+
+  .omni { position: relative; flex: 1 1 260px; min-width: 200px; }
+  .omni input {
+    width: 100%;
+    padding: 9px 12px 9px 34px;
+    border-radius: 9px;
+    border: 1px solid var(--panel-edge);
+    background: var(--meter-well);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .omni input:focus { border-color: var(--fam-Principal); box-shadow: 0 0 0 3px rgba(91,141,239,.22); }
+  .omni .ic { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ink-faint); font-size: 13px; }
+  .omni .hint {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    font-size: 10.5px; color: var(--ink-faint); pointer-events: none; letter-spacing: .3px;
+  }
+
+  .seg {
+    display: inline-flex; padding: 3px; gap: 3px;
+    background: var(--meter-well); border: 1px solid var(--panel-edge); border-radius: 10px;
+  }
+  .seg button {
+    border: 0; background: transparent; color: var(--ink-dim);
+    font: 600 12px/1 var(--font-sans); letter-spacing: .4px;
+    padding: 7px 13px; border-radius: 7px; cursor: pointer; transition: all .2s var(--ease);
+  }
+  .seg button.active { color: #1a1206; background: linear-gradient(180deg,#f6dd9f,#d9ad57); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+  #app[data-theme="flat"] .seg button.active { color: #0c1016; background: linear-gradient(180deg,#cfe0fb,#7ea3e0); }
+
+  .tool-btn {
+    border: 1px solid var(--panel-edge); background: var(--card); color: var(--ink-dim);
+    font: 600 12px/1 var(--font-sans); padding: 8px 12px; border-radius: 8px; cursor: pointer;
+    transition: all .18s var(--ease); letter-spacing: .3px;
+  }
+  .tool-btn:hover { color: var(--ink); border-color: var(--fam-Reed); }
+  .tool-btn:active { transform: translateY(1px); }
+
+  /* ============================================================= *
+   *  METER BRIDGE                                                 *
+   * ============================================================= */
+  .bridge {
+    display: grid;
+    grid-template-columns: 1.15fr 1.55fr;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--radius);
+    box-shadow: var(--chrome-shadow);
+  }
+  .bridge .cluster { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .cluster > .cap { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); display:flex; justify-content:space-between; align-items:center;}
+  .cluster > .cap b { color: var(--ink-dim); font-family: var(--font-mono); font-weight: 500; letter-spacing:.5px; }
+
+  /* VU meter */
+  .vu { display: grid; grid-template-columns: 18px 1fr; gap: 8px 8px; align-items: center; }
+  .vu .lbl { font: 600 11px var(--font-mono); color: var(--ink-faint); }
+  .vu .track {
+    position: relative; height: 13px; border-radius: 7px; overflow: hidden;
+    background: var(--meter-well); box-shadow: inset 0 1px 3px rgba(0,0,0,.6);
+  }
+  .vu .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    background: linear-gradient(90deg, #29c06a 0%, #8fd14f 55%, #ffcf3f 78%, #ff6b4a 92%, #ff3b30 100%);
+    border-radius: 7px 4px 4px 7px;
+    transition: width .04s linear;
+  }
+  .vu .peak {
+    position: absolute; top: -1px; bottom: -1px; width: 2px; left: 0%;
+    background: #fff; opacity: .85; box-shadow: 0 0 6px rgba(255,255,255,.7);
+  }
+  .vu .scale { grid-column: 2; display: flex; justify-content: space-between; font: 500 9px var(--font-mono); color: var(--ink-faint); margin-top: -2px; }
+
+  /* Wind gauges */
+  .wind { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 10px; align-items: end; }
+  .gauge { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .gauge .well {
+    position: relative; width: 100%; max-width: 46px; height: 88px; border-radius: 8px;
+    background: var(--meter-well); box-shadow: inset 0 2px 6px rgba(0,0,0,.6);
+    overflow: hidden;
+  }
+  .gauge .col {
+    position: absolute; left: 4px; right: 4px; bottom: 4px; height: 60%;
+    border-radius: 5px;
+    background: linear-gradient(180deg, #7fd0ff, #3f95e6);
+    transition: height .08s linear, background .3s;
+  }
+  .gauge .nom {
+    position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed rgba(255,255,255,.42);
+    bottom: 84%;
+  }
+  .gauge .nom::after { content: "nom"; position: absolute; right: 3px; top: -11px; font: 500 8px var(--font-mono); color: var(--ink-faint); }
+  .gauge .g-lbl { font: 600 10px var(--font-sans); color: var(--ink-dim); letter-spacing: .5px; }
+  .gauge .g-val { font: 500 9.5px var(--font-mono); color: var(--ink-faint); }
+
+  .trem {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    padding-left: 8px; border-left: 1px solid var(--panel-edge);
+  }
+  .trem .dot {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--meter-well); box-shadow: inset 0 2px 5px rgba(0,0,0,.6);
+    border: 1px solid var(--panel-edge); transition: all .2s;
+  }
+  .trem.on .dot { background: radial-gradient(circle at 50% 40%, #ffd98a, #d99a2e); box-shadow: 0 0 16px rgba(224,163,39,.7); animation: tremPulse 1.1s var(--ease) infinite; }
+  @keyframes tremPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(.86); } }
+  .trem button { all: unset; cursor: pointer; font: 600 10px var(--font-sans); letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-faint); }
+  .trem.on button { color: var(--fam-Mixture); }
+
+  /* ============================================================= *
+   *  CONSOLE GRID                                                 *
+   * ============================================================= */
+  .console {
+    display: grid;
+    grid-template-columns: minmax(196px, 236px) 1fr minmax(196px, 236px);
+    gap: clamp(10px, 1.4vw, 18px);
+    align-items: start;
+  }
+  .jamb {
+    display: flex; flex-direction: column; gap: 16px;
+    padding: 16px 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--radius);
+    box-shadow: var(--chrome-shadow);
+  }
+
+  .division .div-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-bottom: 8px; margin-bottom: 12px;
+    border-bottom: 1px solid var(--panel-edge);
+  }
+  .division .div-name {
+    font-family: var(--font-plate); font-weight: 700; font-size: 14px; letter-spacing: .4px;
+  }
+  .division .div-tag { font: 600 9.5px var(--font-mono); color: var(--ink-faint); letter-spacing: 1px; text-transform: uppercase; }
+  .division.enclosed .div-name::after { content: " ⛓"; font-size: 10px; color: var(--ink-faint); }
+
+  .stops { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 10px; }
+  .jamb.single .stops { grid-template-columns: 1fr; }
+
+  /* ---- A drawstop (shared markup, dual skin) ----------------------------- */
+  .stop {
+    all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    text-align: center; -webkit-tap-highlight-color: transparent;
+  }
+  .stop:focus-visible { outline: 2px solid var(--fam-Principal); outline-offset: 4px; border-radius: 8px; }
+  .stop .knob {
+    position: relative; width: 52px; height: 52px; border-radius: 50%;
+    display: grid; place-items: center;
+    transition: transform .28s var(--ease), box-shadow .28s var(--ease), background .28s;
+  }
+  .stop .ft { font-family: var(--font-plate); font-weight: 700; font-size: 13px; line-height: 1; }
+  .stop .plate { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .stop .nm { font-family: var(--font-plate); font-size: 11.5px; line-height: 1.15; color: var(--ink); max-width: 82px; }
+  .stop .fam { font: 700 8px var(--font-mono); letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-faint); transition: color .25s; }
+
+  /* WOOD drawstop: ivory dome on a stem; drawn = pulled toward viewer */
+  #app[data-theme="wood"] .stop .knob {
+    background: var(--stop-face);
+    box-shadow: 0 6px 12px rgba(0,0,0,.5), inset 0 2px 3px rgba(255,255,255,.85), inset 0 -6px 10px rgba(120,90,50,.4);
+    border: 1px solid rgba(120,84,44,.5);
+  }
+  #app[data-theme="wood"] .stop .ft { color: #3a2410; }
+  #app[data-theme="wood"] .stop:hover .knob { transform: translateY(-2px); }
+  #app[data-theme="wood"] .stop.on .knob {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 16px 22px rgba(0,0,0,.55),
+                inset 0 2px 3px rgba(255,255,255,.9),
+                0 0 0 3px color-mix(in srgb, var(--fam) 55%, transparent),
+                0 0 20px color-mix(in srgb, var(--fam) 60%, transparent);
+  }
+  #app[data-theme="wood"] .stop.on .fam { color: color-mix(in srgb, var(--fam) 78%, #6a4a24); }
+  #app[data-theme="wood"] .stop.on .nm { text-shadow: 0 0 10px color-mix(in srgb, var(--fam) 45%, transparent); }
+
+  /* FLAT drawstop: rounded family-tinted badge; drawn = filled + lifted */
+  #app[data-theme="flat"] .stop .knob {
+    border-radius: 14px;
+    background: var(--stop-face);
+    border: 1.5px solid color-mix(in srgb, var(--fam) 40%, var(--panel-edge));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  #app[data-theme="flat"] .stop .ft { color: color-mix(in srgb, var(--fam) 82%, var(--ink)); }
+  #app[data-theme="flat"] .stop:hover .knob { border-color: var(--fam); transform: translateY(-1px); }
+  #app[data-theme="flat"] .stop.on .knob {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--fam) 92%, #fff 4%), var(--fam));
+    border-color: var(--fam);
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--fam) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
+    transform: translateY(-2px);
+  }
+  #app[data-theme="flat"] .stop.on .ft { color: #0b0f14; }
+  #app[data-theme="flat"] .stop.on .fam { color: var(--fam); }
+  #app[data-theme="flat"] .stop.on .nm { color: #fff; }
+
+  /* Crescendo-engaged (auto) — a distinct amber ring, does not toggle .on */
+  .stop.cresc .knob { box-shadow: 0 0 0 2px rgba(224,163,39,.55), 0 0 14px rgba(224,163,39,.4) !important; }
+  /* Omnibar match highlight */
+  .stop.match .knob { outline: 2px dashed var(--fam-Principal); outline-offset: 3px; }
+  .stop.dim { opacity: .32; filter: saturate(.5); }
+
+  /* Recall cascade pop */
+  @keyframes pop { 0% { transform: scale(.8); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+  .stop.pop .knob { animation: pop .34s var(--ease); }
+
+  /* ============================================================= *
+   *  CENTER — manuals, combination bar, pedals                    *
+   * ============================================================= */
+  .center { display: flex; flex-direction: column; gap: clamp(10px,1.4vw,16px); min-width: 0; }
+  .keydesk {
+    padding: clamp(12px,1.6vw,20px);
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--radius);
+    box-shadow: var(--chrome-shadow);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .manuals { display: flex; flex-direction: column; gap: 10px; }
+  .manual { display: grid; grid-template-columns: 74px 1fr; gap: 12px; align-items: stretch; }
+  .manual .name-plate {
+    display: flex; flex-direction: column; justify-content: center; gap: 3px;
+    padding: 8px 10px; border-radius: 8px;
+    background: var(--card); border: 1px solid var(--panel-edge);
+  }
+  .manual .name-plate .rn { font-family: var(--font-plate); font-weight: 700; font-size: 17px; }
+  .manual .name-plate .dn { font: 600 9.5px var(--font-mono); letter-spacing: .5px; color: var(--ink-faint); text-transform: uppercase; }
+  .manual .name-plate .encl { font: 500 8.5px var(--font-mono); color: var(--fam-Mixture); }
+
+  .kb-wrap { overflow-x: auto; overflow-y: hidden; border-radius: 8px; padding: 5px; background: var(--keybed); box-shadow: inset 0 2px 8px rgba(0,0,0,.55); }
+  .keyboard { position: relative; height: 78px; min-width: 520px; display: flex; }
+  .keyboard.enclosed { transition: filter .3s; }
+  .wk {
+    position: relative; flex: 1 1 0; height: 100%;
+    background: linear-gradient(180deg, #fdfaf2 0%, #efe7d4 90%, #dcd0b6 100%);
+    border: 1px solid #b7ab90; border-top: 0; border-radius: 0 0 4px 4px;
+    margin: 0 .5px; cursor: pointer; transition: background .05s, box-shadow .08s;
+    box-shadow: inset 0 -6px 8px rgba(0,0,0,.06);
+  }
+  .wk:active, .wk.held {
+    background: linear-gradient(180deg, #ffe9b8 0%, #f7cf7c 100%);
+    box-shadow: inset 0 -3px 8px rgba(160,110,20,.35), inset 0 3px 6px rgba(0,0,0,.12);
+    transform: translateY(0);
+  }
+  .wk.held { background: linear-gradient(180deg, color-mix(in srgb, var(--accent,#f7cf7c) 88%, #fff), var(--accent,#f0b955)); }
+  .bk {
+    position: absolute; top: 0; width: 3.4%; height: 62%; z-index: 3;
+    background: linear-gradient(180deg, #3a3129 0%, #141210 70%, #000 100%);
+    border-radius: 0 0 3px 3px; cursor: pointer;
+    box-shadow: 0 3px 4px rgba(0,0,0,.6), inset 0 -3px 3px rgba(255,255,255,.08);
+    transition: background .05s, height .06s;
+  }
+  .bk:active, .bk.held { background: linear-gradient(180deg, #8a6a2a, #5a3f12); height: 60%; }
+  .bk.held { background: linear-gradient(180deg, var(--accent,#a97f2a), color-mix(in srgb, var(--accent,#a97f2a) 70%, #000)); }
+
+  #app[data-theme="flat"] .wk { background: linear-gradient(180deg,#e9edf3,#cdd5e0); border-color:#9aa6b6; }
+  #app[data-theme="flat"] .wk.held { background: linear-gradient(180deg, color-mix(in srgb,var(--accent,#5b8def) 55%,#fff), var(--accent,#5b8def)); }
+  #app[data-theme="flat"] .bk { background: linear-gradient(180deg,#2a323d,#0e1319); }
+  #app[data-theme="flat"] .bk.held { background: linear-gradient(180deg, var(--accent,#5b8def), color-mix(in srgb,var(--accent,#5b8def) 60%,#000)); }
+
+  /* ---- Combination bar --------------------------------------------------- */
+  .comb {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 12px 14px;
+    background: var(--panel); border: 1px solid var(--panel-edge);
+    border-radius: var(--radius); box-shadow: var(--chrome-shadow);
+  }
+  .comb .grp { display: flex; align-items: center; gap: 6px; }
+  .comb .divider { width: 1px; align-self: stretch; background: var(--panel-edge); margin: 0 4px; }
+  .comb .cap { font: 600 9.5px var(--font-mono); letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-faint); margin-right: 2px; }
+  .piston {
+    all: unset; cursor: pointer; width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center; position: relative;
+    background: radial-gradient(120% 120% at 35% 25%, #fbf3e2, #d8c39a);
+    box-shadow: 0 4px 8px rgba(0,0,0,.45), inset 0 2px 2px rgba(255,255,255,.8), inset 0 -4px 6px rgba(120,90,50,.35);
+    color: #3a2410; font: 700 13px var(--font-plate); border: 1px solid rgba(120,84,44,.4);
+    transition: transform .12s var(--ease), box-shadow .12s;
+  }
+  #app[data-theme="flat"] .piston { background: linear-gradient(180deg,#232a34,#171c24); color: var(--ink); border:1px solid var(--panel-edge); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+  .piston:hover { transform: translateY(-1px); }
+  .piston:active, .piston.flash { transform: translateY(2px) scale(.94); box-shadow: 0 1px 3px rgba(0,0,0,.5) inset; }
+  .piston.flash { box-shadow: 0 0 0 3px rgba(224,163,39,.6), 0 0 16px rgba(224,163,39,.5); }
+  .piston.wide { width: auto; height: 34px; border-radius: 17px; padding: 0 13px; font-size: 11px; letter-spacing: .5px; }
+  .piston.arm { box-shadow: 0 0 0 3px rgba(229,96,63,.6), 0 0 16px rgba(229,96,63,.45); color: var(--fam-Reed); }
+  .piston.latched { background: linear-gradient(180deg,#f6dd9f,#d9ad57); color:#1a1206; }
+  #app[data-theme="flat"] .piston.latched { background: linear-gradient(180deg,#cfe0fb,#7ea3e0); color:#0c1016; }
+  .piston .sub { position:absolute; bottom:-14px; font:600 8px var(--font-mono); color:var(--ink-faint); letter-spacing:.5px; white-space:nowrap; }
+  .comb .grp.gen { padding-bottom: 14px; }
+
+  /* ---- Bottom row: expression + pedalboard ------------------------------- */
+  .bottom { display: grid; grid-template-columns: 1fr 168px; gap: clamp(10px,1.4vw,16px); align-items: stretch; }
+  .pedalboard-wrap {
+    padding: 14px; background: var(--panel); border: 1px solid var(--panel-edge);
+    border-radius: var(--radius); box-shadow: var(--chrome-shadow);
+    display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  }
+  .pedalboard-wrap .cap { font: 600 9.5px var(--font-mono); letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); }
+  .pedals { position: relative; height: 66px; display: flex; overflow-x: auto; padding: 4px; background: var(--keybed); border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,.5); }
+  .pk { position: relative; flex: 1 1 0; min-width: 15px; margin: 0 1px; border-radius: 0 0 4px 4px; cursor: pointer;
+    background: linear-gradient(180deg,#6b4a2c,#3c2714); border: 1px solid #24160a; box-shadow: inset 0 -4px 6px rgba(0,0,0,.35);
+    transition: background .05s; }
+  .pk.sharp { background: linear-gradient(180deg,#2a1c10,#150d06); height: 62%; }
+  .pk.held { background: linear-gradient(180deg,#e5a94d,#b9791f); }
+  #app[data-theme="flat"] .pk { background: linear-gradient(180deg,#2a323d,#1a2029); border-color:#0e1319; }
+  #app[data-theme="flat"] .pk.sharp { background: linear-gradient(180deg,#151a20,#0c1015); }
+  #app[data-theme="flat"] .pk.held { background: linear-gradient(180deg, var(--fam-Principal), #35538f); }
+
+  .expr { display: flex; gap: 12px; padding: 14px; background: var(--panel); border: 1px solid var(--panel-edge); border-radius: var(--radius); box-shadow: var(--chrome-shadow); }
+  .shoe { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .shoe .track {
+    position: relative; width: 44px; height: 150px; border-radius: 12px;
+    background: var(--meter-well); box-shadow: inset 0 2px 8px rgba(0,0,0,.6); cursor: ns-resize; overflow: hidden;
+    touch-action: none;
+  }
+  .shoe .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 60%;
+    background: linear-gradient(180deg, color-mix(in srgb,var(--sc,#5b8def) 70%, transparent), var(--sc,#5b8def)); transition: height .05s; }
+  .shoe .pad {
+    position: absolute; left: 3px; right: 3px; height: 22px; border-radius: 7px;
+    background: linear-gradient(180deg,#5a3c26,#33200f); border: 1px solid #24160a;
+    box-shadow: 0 3px 6px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,214,150,.2);
+    bottom: 60%; transform: translateY(50%); pointer-events: none;
+  }
+  #app[data-theme="flat"] .shoe .pad { background: linear-gradient(180deg,#2b333f,#171c24); border-color:#0e1319; }
+  .shoe .s-lbl { font: 600 10px var(--font-sans); color: var(--ink-dim); letter-spacing: .5px; }
+  .shoe .s-val { font: 500 9.5px var(--font-mono); color: var(--ink-faint); }
+
+  /* ============================================================= *
+   *  FOOTER / LEGEND / STATUS                                     *
+   * ============================================================= */
+  .status {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 11px 16px; background: var(--panel); border: 1px solid var(--panel-edge);
+    border-radius: var(--radius); box-shadow: var(--chrome-shadow); font-size: 12px;
+  }
+  .status .reg { font-family: var(--font-mono); color: var(--ink-dim); }
+  .status .reg b { color: var(--ink); }
+  .status .explain { color: var(--ink-faint); font-style: italic; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-left: auto; }
+  .legend .item { display: flex; align-items: center; gap: 5px; font: 600 10px var(--font-mono); color: var(--ink-dim); letter-spacing: .5px; }
+  .legend .sw { width: 11px; height: 11px; border-radius: 3px; }
+
+  .tip {
+    position: fixed; z-index: 50; pointer-events: none; opacity: 0; transform: translateY(4px);
+    padding: 7px 10px; border-radius: 7px; font: 500 11px var(--font-mono);
+    background: #000d; color: #fff; border: 1px solid #ffffff22;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5); transition: opacity .12s, transform .12s; max-width: 260px;
+  }
+  .tip.show { opacity: 1; transform: translateY(0); }
+  .tip .addr { color: #7fd0ff; }
+
+  /* ---- Responsive -------------------------------------------------------- */
+  @media (max-width: 940px) {
+    .console { grid-template-columns: 1fr; }
+    .jamb { flex-direction: row; flex-wrap: wrap; }
+    .division { flex: 1 1 260px; }
+    .bridge { grid-template-columns: 1fr; }
+    .bottom { grid-template-columns: 1fr; }
+    .expr { justify-content: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001s !important; transition-duration: .05s !important; }
+  }
+</style>
+
+<div id="app" data-theme="wood">
+  <div class="stage">
+
+    <!-- ============================ TOP BAR ============================ -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark">Ceciliae</span>
+        <span class="sub">Console</span>
+      </div>
+      <div class="omni">
+        <span class="ic">⌕</span>
+        <input id="omni" type="text" spellcheck="false" autocomplete="off"
+               placeholder="selector:  reed &amp; 8   ·   principal | mixture   ·   rec &amp; !reed">
+        <span class="hint" id="omni-hint">Enter to draw</span>
+      </div>
+      <button class="tool-btn" id="panic" title="All notes off">Release keys</button>
+      <div class="seg" role="group" aria-label="Console skin">
+        <button id="th-wood" class="active">Wood</button>
+        <button id="th-flat">Flat</button>
+      </div>
+    </header>
+
+    <!-- ========================== METER BRIDGE ========================= -->
+    <section class="bridge" aria-label="Meters">
+      <div class="cluster">
+        <div class="cap"><span>Output · VU</span><b id="vu-read">−∞ dB</b></div>
+        <div class="vu">
+          <span class="lbl">L</span>
+          <div class="track"><div class="fill" id="vuL"></div><div class="peak" id="pkL"></div></div>
+          <span class="lbl">R</span>
+          <div class="track"><div class="fill" id="vuR"></div><div class="peak" id="pkR"></div></div>
+          <div class="scale"><span>−40</span><span>−20</span><span>−12</span><span>−6</span><span>−3</span><span>0</span></div>
+        </div>
+      </div>
+      <div class="cluster">
+        <div class="cap"><span>Wind · reservoir pressure (mm H₂O)</span><b id="sag-read">stable</b></div>
+        <div class="wind" id="wind"></div>
+      </div>
+    </section>
+
+    <!-- =========================== CONSOLE ============================= -->
+    <div class="console">
+      <aside class="jamb single" id="jamb-left"  aria-label="Left stop jamb"></aside>
+
+      <section class="center">
+        <div class="keydesk">
+          <div class="manuals" id="manuals"></div>
+        </div>
+
+        <!-- Combination bar -->
+        <div class="comb" aria-label="Combination action">
+          <div class="grp">
+            <span class="cap">Seq</span>
+            <button class="piston" id="seq-prev" title="Sequencer previous (mapped to Si5)">◀</button>
+            <button class="piston" id="seq-next" title="Sequencer next (mapped to Do6)">▶</button>
+          </div>
+          <div class="divider"></div>
+          <div class="grp gen" id="generals"></div>
+          <div class="divider"></div>
+          <div class="grp">
+            <button class="piston wide" id="p-set"  title="Arm capture, then press a general to store">SET</button>
+            <button class="piston wide" id="p-canc" title="General cancel">0</button>
+            <button class="piston wide" id="p-tutti" title="Tutti (reversible)">TUTTI</button>
+          </div>
+        </div>
+
+        <!-- Expression + pedalboard -->
+        <div class="bottom">
+          <div class="pedalboard-wrap">
+            <span class="cap">Pédale — 30 notes</span>
+            <div class="pedals" id="pedals"></div>
+          </div>
+          <div class="expr">
+            <div class="shoe" id="shoe-swell">
+              <div class="track" data-shoe="swell" style="--sc:var(--fam-String)">
+                <div class="fill"></div><div class="pad"></div>
+              </div>
+              <div class="s-lbl">Swell</div>
+              <div class="s-val" id="swell-val">75%</div>
+            </div>
+            <div class="shoe" id="shoe-cresc">
+              <div class="track" data-shoe="cresc" style="--sc:var(--fam-Mixture)">
+                <div class="fill"></div><div class="pad"></div>
+              </div>
+              <div class="s-lbl">Cresc.</div>
+              <div class="s-val" id="cresc-val">0%</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="jamb single" id="jamb-right" aria-label="Right stop jamb"></aside>
+    </div>
+
+    <!-- =========================== STATUS ============================== -->
+    <footer class="status">
+      <span class="reg">Drawn <b id="stat-drawn">0</b> · Keys <b id="stat-keys">0</b> · Polyphony <b id="stat-poly">0</b></span>
+      <span class="explain" id="explain">Draw a stop, then play — the wind will breathe under the load.</span>
+      <div class="legend" id="legend"></div>
+    </footer>
+  </div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+"use strict";
+/* ================================================================= *
+ *  DATA MODEL — the mock ceciliae::model::OrganSpec.                 *
+ *  Each stop carries TonalFamily + Footage + ChorusRole + PitchClass *
+ *  (the semantic taxonomy the registration brain resolves against).  *
+ * ================================================================= */
+const FAM = ["Principal","Flute","String","Reed","Mixture","Cornet","Hybrid"];
+const FAM_COLOR = {
+  Principal:"var(--fam-Principal)", Flute:"var(--fam-Flute)", String:"var(--fam-String)",
+  Reed:"var(--fam-Reed)", Mixture:"var(--fam-Mixture)", Cornet:"var(--fam-Cornet)", Hybrid:"var(--fam-Hybrid)"
+};
+// ft: display string · feet: numeric feet (null for compound mixtures)
+const s = (n, fam, ft, feet, role, pc) => ({ n, fam, ft, feet, role, pc });
+
+const DIVISIONS = [
+  { id:"ped", rn:"Péd", name:"Pédale", manual:null, enclosed:false, side:"left", chest:"ped", nominal:95, stops:[
+    s("Soubasse",     "Flute",     "16′", 16, "Foundation", "Sub"),
+    s("Contrebasse",  "Principal", "16′", 16, "Foundation", "Sub"),
+    s("Octavebasse",  "Principal", "8′",   8, "Foundation", "Unison"),
+    s("Bourdon",      "Flute",     "8′",   8, "Foundation", "Unison"),
+    s("Bombarde",     "Reed",      "16′", 16, "Chorus",     "Sub"),
+    s("Trompette",    "Reed",      "8′",   8, "Chorus",     "Unison"),
+  ]},
+  { id:"pos", rn:"III", name:"Positif", manual:2, enclosed:false, side:"left", chest:"pos", nominal:78, stops:[
+    s("Montre",       "Principal", "8′",   8, "Foundation", "Unison"),
+    s("Bourdon",      "Flute",     "8′",   8, "Foundation", "Unison"),
+    s("Prestant",     "Principal", "4′",   4, "Chorus",     "Octave"),
+    s("Flûte",        "Flute",     "4′",   4, "Color",      "Octave"),
+    s("Doublette",    "Principal", "2′",   2, "Chorus",     "Super"),
+    s("Larigot",      "Flute",     "1⅓′",  1.333, "Mutation","Mutation"),
+    s("Cromorne",     "Reed",      "8′",   8, "Color",      "Unison"),
+  ]},
+  { id:"go", rn:"I", name:"Grand-Orgue", manual:0, enclosed:false, side:"right", chest:"go", nominal:85, stops:[
+    s("Montre",       "Principal", "16′", 16, "Foundation", "Sub"),
+    s("Montre",       "Principal", "8′",   8, "Foundation", "Unison"),
+    s("Bourdon",      "Flute",     "8′",   8, "Foundation", "Unison"),
+    s("Prestant",     "Principal", "4′",   4, "Chorus",     "Octave"),
+    s("Doublette",    "Principal", "2′",   2, "Chorus",     "Super"),
+    s("Fourniture",   "Mixture",   "IV",   null, "MixtureCrown","Compound"),
+    s("Cornet",       "Cornet",    "V",    null, "Solo",     "Compound"),
+    s("Trompette",    "Reed",      "8′",   8, "Chorus",     "Unison"),
+  ]},
+  { id:"rec", rn:"II", name:"Récit", manual:1, enclosed:true, side:"right", chest:"rec", nominal:80, stops:[
+    s("Bourdon",      "Flute",     "8′",   8, "Foundation", "Unison"),
+    s("Viole de Gambe","String",   "8′",   8, "Color",      "Unison"),
+    s("Voix Céleste", "String",    "8′",   8, "Color",      "Unison"),
+    s("Flûte octav.", "Flute",     "4′",   4, "Chorus",     "Octave"),
+    s("Nazard",       "Flute",     "2⅔′",  2.667, "Mutation","Mutation"),
+    s("Octavin",      "Flute",     "2′",   2, "Chorus",     "Super"),
+    s("Tierce",       "Flute",     "1⅗′",  1.6, "Mutation", "Mutation"),
+    s("Plein Jeu",    "Mixture",   "IV",   null, "MixtureCrown","Compound"),
+    s("Trompette",    "Reed",      "8′",   8, "Chorus",     "Unison"),
+    s("Hautbois",     "Reed",      "8′",   8, "Color",      "Unison"),
+    s("Voix Humaine", "Reed",      "8′",   8, "Color",      "Unison"),
+  ]},
+];
+
+// Assign stable ids + flatten. id = "<div>:<index>" ~ StopId.
+const ALL = [];
+DIVISIONS.forEach(d => d.stops.forEach((st, i) => {
+  st.id = d.id + ":" + i; st.div = d.id; st.divName = d.name; st.rn = d.rn;
+  st.osc = "/ceciliae/" + d.id + "/" + st.n.toLowerCase().replace(/[^a-z]/g,"") + "/" + (st.feet||st.ft);
+  ALL.push(st);
+}));
+const byId = Object.fromEntries(ALL.map(x => [x.id, x]));
+const DIV = Object.fromEntries(DIVISIONS.map(d => [d.id, d]));
+
+/* ================================================================= *
+ *  SELECTOR ALGEBRA (mini) — the marquee feature in miniature.      *
+ *  Grammar: OR groups on `|`, AND atoms on `&`, `!`/`-` negation.    *
+ *  Atoms match family · role · pitch-class · division · footage int *
+ *  · substring of the stop name.  Shared by omnibar + generals.      *
+ * ================================================================= */
+const DIV_ALIAS = {
+  ped:["ped","pedal","pedale","pédale"], pos:["pos","positif","choir","chair"],
+  go:["go","great","grand","grandorgue","hauptwerk"], rec:["rec","recit","récit","swell","schwell"]
+};
+function atomMatch(st, atomRaw) {
+  const a = atomRaw.trim().toLowerCase();
+  if (!a) return false;
+  if (/^\d+$/.test(a)) return Number.isInteger(st.feet) && st.feet === +a;   // footage (integers only)
+  for (const k in DIV_ALIAS) if (st.div === k && DIV_ALIAS[k].includes(a)) return true;
+  if (st.fam.toLowerCase() === a) return true;
+  if (st.role.toLowerCase() === a) return true;
+  if (st.pc.toLowerCase() === a) return true;
+  if (st.n.toLowerCase().includes(a)) return true;
+  return false;
+}
+function selectStops(query) {
+  const q = (query || "").trim().toLowerCase();
+  const out = new Set();
+  if (!q) return out;
+  if (q === "*" || q === "all" || q === "tutti") { ALL.forEach(x => out.add(x.id)); return out; }
+  for (const group of q.split("|")) {
+    const atoms = group.split("&").map(x => x.trim()).filter(Boolean);
+    if (!atoms.length) continue;
+    for (const st of ALL) {
+      let ok = true;
+      for (let atom of atoms) {
+        let neg = false;
+        if (atom[0] === "!" || atom[0] === "-") { neg = true; atom = atom.slice(1); }
+        let m = atomMatch(st, atom);
+        if (neg) m = !m;
+        if (!m) { ok = false; break; }
+      }
+      if (ok) out.add(st.id);
+    }
+  }
+  return out;
+}
+// union of several selector strings
+const selectUnion = (arr) => arr.reduce((acc, q) => { selectStops(q).forEach(x => acc.add(x)); return acc; }, new Set());
+
+/* Generals — each is a portable INTENT expressed as selector unions,   *
+ * exactly how a Piston(Intent) resolves lazily against the OrganSpec.  */
+const GENERALS = [
+  { tag:"pp", sel:["flute & 8 & !pedal"] },
+  { tag:"p",  sel:["flute & 8", "string"] },
+  { tag:"mp", sel:["flute & 8", "string", "principal & 8"] },
+  { tag:"mf", sel:["flute & 8", "string", "principal & 8", "principal & 4", "flute & 4"] },
+  { tag:"f",  sel:["principal & 8", "principal & 4", "flute & 8", "2", "reed & color"] },
+  { tag:"ff", sel:["principal", "flute & 8", "mixture", "reed & chorus"] },
+  { tag:"T",  sel:["*"] },
+  { tag:"So", sel:["cornet", "go & bourdon", "pos & 8"] },
+];
+
+/* Crescendo (Walze) — an ordered Selector sequence; raising the shoe   *
+ * progressively engages stops softest-to-loudest.                      */
+const CRESC_ORDER = (() => {
+  const rank = st => {
+    let r = 0;
+    r += ({Flute:0,String:1,Principal:2,Cornet:3,Mixture:4,Reed:5,Hybrid:2})[st.fam] * 10;
+    r += st.feet === 16 ? -3 : st.feet === 8 ? 0 : st.feet === 4 ? 2 : st.feet === 2 ? 4 : st.feet === null ? 8 : 5;
+    if (st.role === "MixtureCrown") r += 6;
+    if (st.role === "Chorus") r += 1;
+    return r;
+  };
+  return [...ALL].sort((a, b) => rank(a) - rank(b)).map(x => x.id);
+})();
+
+/* ================================================================= *
+ *  RUNTIME STATE — the mock StateMirror.                            *
+ * ================================================================= */
+const state = {
+  drawn: new Set(),          // user-engaged stops
+  cresc: new Set(),          // crescendo-engaged (auto) stops
+  held: new Set(),           // held key ids "<div>:<midi>"
+  swell: 75, crescPos: 0,
+  trem: false, setArmed: false, seqIndex: -1,
+};
+
+/* ================================================================= *
+ *  RENDER — build the data-driven console (ConsoleLayoutModel).     *
+ * ================================================================= */
+const $ = sel => document.querySelector(sel);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+
+function stopEl(st) {
+  const b = el("button", "stop");
+  b.dataset.id = st.id;
+  b.style.setProperty("--fam", FAM_COLOR[st.fam]);
+  b.setAttribute("aria-pressed", "false");
+  b.setAttribute("aria-label", `${st.divName} ${st.n} ${st.ft}, ${st.fam}, off`);
+  b.innerHTML =
+    `<span class="knob"><span class="ft">${st.ft}</span></span>` +
+    `<span class="plate"><span class="nm">${st.n}</span><span class="fam">${st.fam}</span></span>`;
+  b.addEventListener("click", () => toggleStop(st.id));
+  b.addEventListener("pointerenter", e => showTip(e, st));
+  b.addEventListener("pointermove", e => moveTip(e));
+  b.addEventListener("pointerleave", hideTip);
+  return b;
+}
+function divisionEl(d) {
+  const wrap = el("div", "division" + (d.enclosed ? " enclosed" : ""));
+  const head = el("div", "div-head");
+  head.append(el("span", "div-name", d.name), el("span", "div-tag", d.rn === "Péd" ? "Pedal" : "Man " + d.rn));
+  const stops = el("div", "stops");
+  d.stops.forEach(st => stops.append(stopEl(st)));
+  wrap.append(head, stops);
+  return wrap;
+}
+// Jambs: left = Pédale + Positif · right = Grand-Orgue + Récit
+DIVISIONS.filter(d => d.side === "left").forEach(d => $("#jamb-left").append(divisionEl(d)));
+DIVISIONS.filter(d => d.side === "right").forEach(d => $("#jamb-right").append(divisionEl(d)));
+
+/* ---- Keyboards ---------------------------------------------------------- */
+const BLACK_AFTER = new Set([0, 1, 3, 4, 5]);   // natural indices that have a sharp after them
+const NAT = [0, 2, 4, 5, 7, 9, 11];
+function buildKeyboard(container, { start, octaves, div, accent }) {
+  container.style.setProperty("--accent", accent);
+  const totalWhite = octaves * 7 + 1;
+  const blacks = [];
+  let wi = 0;
+  for (let o = 0; o < octaves; o++) {
+    for (let n = 0; n < 7; n++) {
+      const midi = start + o * 12 + NAT[n];
+      const w = el("div", "wk"); w.dataset.midi = midi; w.dataset.div = div;
+      container.append(w);
+      if (BLACK_AFTER.has(n)) blacks.push({ leftPct: ((wi + 1) / totalWhite) * 100, midi: midi + 1 });
+      wi++;
+    }
+  }
+  // extra top C
+  const wc = el("div", "wk"); wc.dataset.midi = start + octaves * 12; wc.dataset.div = div; container.append(wc);
+  blacks.forEach(bk => {
+    const b = el("div", "bk"); b.dataset.midi = bk.midi; b.dataset.div = div;
+    b.style.left = `calc(${bk.leftPct}% - 1.7%)`;
+    container.append(b);
+  });
+  container.addEventListener("pointerdown", e => {
+    const k = e.target.closest(".wk,.bk"); if (!k) return;
+    e.preventDefault(); toggleKey(k);
+  });
+}
+// Manuals terraced III (top) → I (bottom); each bound to its division.
+const MANUAL_ORDER = ["pos", "rec", "go"];
+const manualsHost = $("#manuals");
+MANUAL_ORDER.forEach(id => {
+  const d = DIV[id];
+  const row = el("div", "manual");
+  const plate = el("div", "name-plate");
+  plate.innerHTML = `<span class="rn">${d.rn}</span><span class="dn">${d.name}</span>` +
+                    (d.enclosed ? `<span class="encl">enclosed</span>` : "");
+  const wrap = el("div", "kb-wrap");
+  const kb = el("div", "keyboard" + (d.enclosed ? " enclosed" : ""));
+  kb.id = "kb-" + id;
+  wrap.append(kb);
+  row.append(plate, wrap);
+  manualsHost.append(row);
+  buildKeyboard(kb, { start: 36, octaves: 4, div: id, accent: FAM_COLOR.Mixture });
+});
+// Pedalboard (30 notes, C2 up), simplified straight.
+(function () {
+  const host = $("#pedals"); const start = 36, octaves = 2, extra = 6;
+  const total = octaves * 12 + extra;
+  const NAME = [0,1,2,3,4,5,6,7,8,9,10,11];
+  const isSharp = m => [1,3,6,8,10].includes(((m % 12) + 12) % 12);
+  // whites first for layout
+  let whites = 0;
+  for (let m = start; m < start + total; m++) if (!isSharp(m)) whites++;
+  let wi = 0;
+  const blacks = [];
+  for (let m = start; m < start + total; m++) {
+    if (isSharp(m)) continue;
+    const k = el("div", "pk"); k.dataset.midi = m; k.dataset.div = "ped"; host.append(k);
+    if (isSharp(m + 1) && m + 1 < start + total) blacks.push({ left: ((wi + 1) / whites) * 100, midi: m + 1 });
+    wi++;
+  }
+  blacks.forEach(b => { const k = el("div", "pk sharp"); k.dataset.midi = b.midi; k.dataset.div = "ped";
+    k.style.position = "absolute"; k.style.left = `calc(${b.left}% - 1.4%)`; k.style.width = "2.8%"; k.style.zIndex = 2; host.append(k); });
+  host.style.position = "relative";
+  host.addEventListener("pointerdown", e => { const k = e.target.closest(".pk"); if (!k) return; e.preventDefault(); toggleKey(k); });
+})();
+
+/* ---- Generals + legend -------------------------------------------------- */
+const genHost = $("#generals");
+GENERALS.forEach((g, i) => {
+  const b = el("button", "piston", String(i + 1));
+  b.append(el("span", "sub", g.tag));
+  b.title = `General ${i + 1} — recall intent (${g.tag})`;
+  b.addEventListener("click", () => pressGeneral(i));
+  genHost.append(b);
+});
+(function () {
+  const host = $("#legend");
+  FAM.filter(f => f !== "Hybrid").forEach(f => {
+    const it = el("div", "item");
+    const sw = el("span", "sw"); sw.style.background = FAM_COLOR[f];
+    it.append(sw, document.createTextNode(f));
+    host.append(it);
+  });
+})();
+
+/* ================================================================= *
+ *  INTERACTION                                                      *
+ * ================================================================= */
+function refreshStop(id) {
+  const st = byId[id];
+  const node = document.querySelector(`.stop[data-id="${id}"]`);
+  if (!node) return;
+  const on = state.drawn.has(id);
+  node.classList.toggle("on", on);
+  node.classList.toggle("cresc", state.cresc.has(id) && !on);
+  node.setAttribute("aria-pressed", on ? "true" : "false");
+  node.setAttribute("aria-label", `${st.divName} ${st.n} ${st.ft}, ${st.fam}, ${on ? "drawn" : "off"}`);
+}
+function toggleStop(id, silent) {
+  if (state.drawn.has(id)) state.drawn.delete(id); else state.drawn.add(id);
+  refreshStop(id);
+  if (!silent) explain(`${byId[id].divName} ${byId[id].n} ${byId[id].ft} ${state.drawn.has(id) ? "drawn" : "retired"}`);
+  updateStatus();
+}
+function setDrawn(newSet, label) {
+  // staggered cascade recall (click-free crossfade, visually)
+  const changing = [];
+  ALL.forEach(st => { if (newSet.has(st.id) !== state.drawn.has(st.id)) changing.push(st.id); });
+  state.drawn = new Set(newSet);
+  ALL.forEach((st, i) => {
+    const node = document.querySelector(`.stop[data-id="${st.id}"]`);
+    refreshStop(st.id);
+    if (changing.includes(st.id) && node) {
+      node.classList.remove("pop"); void node.offsetWidth;
+      setTimeout(() => node.classList.add("pop"), Math.min(changing.indexOf(st.id) * 22, 400));
+    }
+  });
+  if (label) explain(label);
+  updateStatus();
+}
+function toggleKey(k) {
+  const id = k.dataset.div + ":" + k.dataset.midi;
+  if (state.held.has(id)) { state.held.delete(id); k.classList.remove("held"); }
+  else { state.held.add(id); k.classList.add("held"); }
+  updateStatus();
+}
+function releaseAll() {
+  state.held.clear();
+  document.querySelectorAll(".held").forEach(n => n.classList.remove("held"));
+  explain("All notes off (panic)"); updateStatus();
+}
+
+/* ---- Combination action ------------------------------------------------- */
+function pressGeneral(i) {
+  const g = GENERALS[i];
+  const btn = genHost.children[i];
+  btn.classList.add("flash"); setTimeout(() => btn.classList.remove("flash"), 260);
+  if (state.setArmed) {                       // SET was armed → capture current into this general
+    g.sel = ["__captured__" + i];
+    CAPTURED[i] = new Set(state.drawn);
+    state.setArmed = false; $("#p-set").classList.remove("arm");
+    explain(`Captured ${state.drawn.size} stops → General ${i + 1}`);
+    return;
+  }
+  const set = g.sel[0] && g.sel[0].startsWith("__captured__") ? new Set(CAPTURED[i]) : selectUnion(g.sel);
+  state.seqIndex = i;
+  const touched = [...new Set([...set].map(id => byId[id].divName))];
+  setDrawn(set, `General ${i + 1} · ${g.tag} · ${set.size} stops · ${touched.join(" + ")}`);
+}
+const CAPTURED = {};
+function pressTutti() {
+  const isFull = state.drawn.size === ALL.length;
+  const btn = $("#p-tutti");
+  if (isFull) { setDrawn(new Set(), "Tutti released"); btn.classList.remove("latched"); }
+  else { setDrawn(new Set(ALL.map(x => x.id)), "Tutti · full organ · " + ALL.length + " stops"); btn.classList.add("latched"); }
+}
+function seqStep(dir) {
+  let i = state.seqIndex + dir;
+  i = (i + GENERALS.length) % GENERALS.length;
+  pressGeneral(i);
+}
+
+/* ---- Crescendo & swell shoes -------------------------------------------- */
+function applyCresc() {
+  const n = Math.round(state.crescPos / 100 * CRESC_ORDER.length);
+  const set = new Set(CRESC_ORDER.slice(0, n));
+  const prev = state.cresc;
+  state.cresc = set;
+  // refresh any stop whose cresc flag changed
+  new Set([...prev, ...set]).forEach(id => refreshStop(id));
+  updateStatus();
+}
+function setShoe(which, pct) {
+  pct = Math.max(0, Math.min(100, pct));
+  if (which === "swell") {
+    state.swell = pct; $("#swell-val").textContent = Math.round(pct) + "%";
+    $("#shoe-swell .fill").style.height = pct + "%";
+    $("#shoe-swell .pad").style.bottom = pct + "%";
+    // enclosed manual dims as shades close
+    const kb = $("#kb-rec"); if (kb) kb.style.filter = `brightness(${0.55 + pct / 100 * 0.45})`;
+  } else {
+    state.crescPos = pct; $("#cresc-val").textContent = Math.round(pct) + "%";
+    $("#shoe-cresc .fill").style.height = pct + "%";
+    $("#shoe-cresc .pad").style.bottom = pct + "%";
+    applyCresc();
+    if (pct > 0) explain(`Crescendo ${Math.round(pct)}% · ${state.cresc.size} stops engaged`);
+  }
+}
+document.querySelectorAll(".shoe .track").forEach(track => {
+  const which = track.dataset.shoe;
+  const fromEvent = e => {
+    const r = track.getBoundingClientRect();
+    setShoe(which, (1 - (e.clientY - r.top) / r.height) * 100);
+  };
+  let dragging = false;
+  track.addEventListener("pointerdown", e => { dragging = true; track.setPointerCapture(e.pointerId); fromEvent(e); });
+  track.addEventListener("pointermove", e => { if (dragging) fromEvent(e); });
+  track.addEventListener("pointerup",   () => dragging = false);
+  track.addEventListener("pointercancel", () => dragging = false);
+  track.addEventListener("wheel", e => { e.preventDefault(); setShoe(which, (which === "swell" ? state.swell : state.crescPos) - Math.sign(e.deltaY) * 6); }, { passive: false });
+});
+setShoe("swell", 75); setShoe("cresc", 0);
+
+/* ---- Omnibar ------------------------------------------------------------ */
+const omni = $("#omni");
+function applyOmni() {
+  const q = omni.value;
+  const set = q.trim() ? selectStops(q) : null;
+  ALL.forEach(st => {
+    const node = document.querySelector(`.stop[data-id="${st.id}"]`);
+    if (!node) return;
+    node.classList.toggle("match", !!set && set.has(st.id));
+    node.classList.toggle("dim", !!set && set.size > 0 && !set.has(st.id));
+  });
+  $("#omni-hint").textContent = set ? `${set.size} match${set.size === 1 ? "" : "es"} · Enter to draw` : "Enter to draw";
+}
+omni.addEventListener("input", applyOmni);
+omni.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const set = selectStops(omni.value);
+    if (set.size) { setDrawn(new Set([...state.drawn, ...set]), `Selector \`${omni.value.trim()}\` → drew ${set.size} stops`); }
+    omni.value = ""; applyOmni();
+  } else if (e.key === "Escape") { omni.value = ""; applyOmni(); omni.blur(); }
+});
+
+/* ---- Buttons ------------------------------------------------------------ */
+$("#panic").addEventListener("click", releaseAll);
+$("#p-canc").addEventListener("click", () => setDrawn(new Set(), "General cancel · all stops retired"));
+$("#p-tutti").addEventListener("click", pressTutti);
+$("#p-set").addEventListener("click", () => {
+  state.setArmed = !state.setArmed;
+  $("#p-set").classList.toggle("arm", state.setArmed);
+  explain(state.setArmed ? "SET armed — press a general to capture the current registration" : "SET disarmed");
+});
+$("#seq-prev").addEventListener("click", () => seqStep(-1));
+$("#seq-next").addEventListener("click", () => seqStep(1));
+
+// Tremulant toggle lives on the wind cluster (built below)
+/* ---- Theme switch ------------------------------------------------------- */
+function setTheme(t) {
+  $("#app").dataset.theme = t;
+  $("#th-wood").classList.toggle("active", t === "wood");
+  $("#th-flat").classList.toggle("active", t === "flat");
+}
+$("#th-wood").addEventListener("click", () => setTheme("wood"));
+$("#th-flat").addEventListener("click", () => setTheme("flat"));
+
+/* ---- Tooltip (semantic identity — pillar 5) ----------------------------- */
+const tip = $("#tip");
+function showTip(e, st) {
+  const on = state.drawn.has(st.id);
+  tip.innerHTML = `<b>${st.divName} ${st.n} ${st.ft}</b><br>` +
+    `${st.fam} · ${st.role} · ${st.pc}${st.feet ? " · " + st.feet.toFixed(st.feet % 1 ? 3 : 0) + "′" : ""}<br>` +
+    `<span class="addr">${st.osc}</span> · ${on ? "drawn" : "off"}`;
+  tip.classList.add("show"); moveTip(e);
+}
+function moveTip(e) {
+  const pad = 14; let x = e.clientX + pad, y = e.clientY + pad;
+  const r = tip.getBoundingClientRect();
+  if (x + r.width > innerWidth) x = e.clientX - r.width - pad;
+  if (y + r.height > innerHeight) y = e.clientY - r.height - pad;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.classList.remove("show"); }
+
+/* ---- Status readout ----------------------------------------------------- */
+function heldInDiv(divId) { let c = 0; state.held.forEach(id => { if (id.split(":")[0] === divId) c++; }); return c; }
+function drawnInDiv(divId) {
+  let c = 0;
+  state.drawn.forEach(id => { if (byId[id].div === divId) c++; });
+  state.cresc.forEach(id => { if (byId[id].div === divId && !state.drawn.has(id)) c++; });
+  return c;
+}
+function updateStatus() {
+  $("#stat-drawn").textContent = state.drawn.size;
+  $("#stat-keys").textContent = state.held.size;
+  let poly = 0; DIVISIONS.forEach(d => poly += heldInDiv(d.id) * (drawnInDiv(d.id) > 0 ? drawnInDiv(d.id) : 0));
+  $("#stat-poly").textContent = poly;
+}
+let explainTimer;
+function explain(txt) { $("#explain").textContent = txt; clearTimeout(explainTimer);
+  explainTimer = setTimeout(() => $("#explain").textContent = "Draw a stop, then play — the wind will breathe under the load.", 6000); }
+
+/* ================================================================= *
+ *  WIND CLUSTER + LIVE SIMULATION LOOP (mock StateMirror poll).     *
+ *  Wind is an audio-rate control signal: reservoir pressure SAGS    *
+ *  as summed flow demand (held keys × drawn stops) rises.           *
+ * ================================================================= */
+const windHost = $("#wind");
+const gaugeNodes = {};
+DIVISIONS.forEach(d => {
+  const g = el("div", "gauge");
+  g.innerHTML = `<div class="well"><div class="nom"></div><div class="col"></div></div>` +
+                `<div class="g-lbl">${d.rn === "Péd" ? "Péd" : d.name.slice(0,3)}</div>` +
+                `<div class="g-val">${d.nominal}</div>`;
+  windHost.append(g);
+  gaugeNodes[d.id] = { col: g.querySelector(".col"), val: g.querySelector(".g-val") };
+});
+// tremulant control
+const tremWrap = el("div", "trem");
+tremWrap.innerHTML = `<div class="dot"></div><button>Tremulant</button>`;
+tremWrap.addEventListener("click", () => { state.trem = !state.trem; tremWrap.classList.toggle("on", state.trem);
+  explain(state.trem ? "Tremulant on — wind modulation (AM+FM+timbral) on Récit" : "Tremulant off"); });
+windHost.append(tremWrap);
+
+const sim = { vuL: 0, vuR: 0, pkL: 0, pkR: 0, p: { ped:1, pos:1, go:1, rec:1 } };
+function dbFmt(x) { if (x <= 0.001) return "−∞ dB"; const db = 20 * Math.log10(x); return (db >= 0 ? "+" : "") + db.toFixed(1) + " dB"; }
+let t0 = performance.now();
+function frame(now) {
+  const t = (now - t0) / 1000;
+  let activity = 0; const demand = {};
+  for (const d of DIVISIONS) {
+    const held = heldInDiv(d.id), drawn = drawnInDiv(d.id);
+    let a = held * drawn;
+    if (d.enclosed) a *= (0.22 + 0.78 * state.swell / 100);
+    demand[d.id] = held * drawn;
+    activity += a;
+  }
+  const target = Math.min(1, activity / 16);
+  // per-channel with liveliness + tremulant shimmer
+  const trem = state.trem ? (0.5 + 0.5 * Math.sin(t * 6.3)) * 0.12 : 0;
+  const nL = target * (0.94 + 0.12 * Math.random()) * (1 - trem);
+  const nR = target * (0.94 + 0.12 * Math.random()) * (1 - trem * 0.7);
+  sim.vuL += (nL - sim.vuL) * (nL > sim.vuL ? 0.55 : 0.09);
+  sim.vuR += (nR - sim.vuR) * (nR > sim.vuR ? 0.55 : 0.09);
+  sim.pkL = Math.max(sim.pkL * 0.98, sim.vuL);
+  sim.pkR = Math.max(sim.pkR * 0.98, sim.vuR);
+  $("#vuL").style.width = (sim.vuL * 100) + "%";
+  $("#vuR").style.width = (sim.vuR * 100) + "%";
+  $("#pkL").style.left = Math.min(100, sim.pkL * 100) + "%";
+  $("#pkR").style.left = Math.min(100, sim.pkR * 100) + "%";
+  $("#vu-read").textContent = dbFmt(Math.max(sim.vuL, sim.vuR));
+
+  // wind sag: saturating drop + tremulant on Récit
+  let maxSag = 0;
+  for (const d of DIVISIONS) {
+    const K = 5, DROP = 0.34;
+    let sag = DROP * demand[d.id] / (demand[d.id] + K);
+    let p = 1 - sag;
+    if (state.trem && d.id === "rec") p += 0.035 * Math.sin(t * 6.3);
+    sim.p[d.id] += (p - sim.p[d.id]) * 0.14;
+    maxSag = Math.max(maxSag, 1 - sim.p[d.id]);
+    const g = gaugeNodes[d.id];
+    const frac = sim.p[d.id];                 // fraction of nominal (well is 84% = nominal line)
+    g.col.style.height = (frac * 84) + "%";
+    // colour shifts blue → amber → red as it sags
+    const hue = 205 - Math.min(1, (1 - frac) / 0.3) * 180;
+    g.col.style.background = `linear-gradient(180deg, hsl(${hue} 85% 68%), hsl(${hue} 80% 50%))`;
+    g.val.textContent = Math.round(d.nominal * frac);
+  }
+  $("#sag-read").textContent = maxSag > 0.02 ? `sag −${Math.round(maxSag * 100)}%` : "stable";
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---- First-paint sanity ------------------------------------------------- */
+updateStatus();
+console.log(`Ceciliae console mockup — ${ALL.length} stops across ${DIVISIONS.length} divisions loaded.`);
+</script>
