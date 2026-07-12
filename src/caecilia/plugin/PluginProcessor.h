@@ -123,11 +123,23 @@ public:
     /// event is queued lock-free and merged into the next block's MIDI.
     void uiNote(core::DivisionId division, core::MidiNote note, bool down);
 
+    /// All-notes-off / panic from the console (stopping a demo, Release keys).
+    /// Message thread: sets a flag the audio thread acts on next block.
+    void uiAllNotesOff() noexcept { uiPanic_.store(true, std::memory_order_relaxed); }
+
     /// Set the whole sounding registration from the WebView console (a list of
     /// drawn family+footage ranks). Message thread: builds the composite spectrum
     /// off the audio thread and swaps the freshly-seeded voices into the engine
     /// under the processing lock. This is the console's real audio path.
     void setUiRegistration(const std::vector<model::RegistrationRank>& ranks);
+
+    /// Console settings -> engine. Master is a linear output trim; reverb space is
+    /// a preset index (0=Room..4=Plate) and mix is 0..1. RT-safe / message thread.
+    void setUiMaster(float linearGain) noexcept
+    {
+        uiMaster_.store(juce::jlimit(0.0f, 2.0f, linearGain), std::memory_order_relaxed);
+    }
+    void setUiReverb(int spaceIndex, float mix);
 
 private:
     void updateLatency() noexcept;
@@ -190,6 +202,13 @@ private:
     /// and smoothed to avoid zipper noise. // TODO(phase0.3): fold gain staging into
     /// the engine master chain if a pre-reverb trim is ever wanted.
     juce::LinearSmoothedValue<float> masterGain_;
+
+    /// Console master trim (0..2, default 1) set from the Settings panel.
+    std::atomic<float> uiMaster_{ 1.0f };
+
+    /// Set by the console (stop demo / release keys); the audio thread panics and
+    /// clears it. Fixes notes sticking when a demo is stopped mid-phrase.
+    std::atomic<bool> uiPanic_{ false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CaeciliaAudioProcessor)
 };

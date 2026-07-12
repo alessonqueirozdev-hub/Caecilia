@@ -292,10 +292,9 @@ float compositeRankGainDb(const Stop& stop) noexcept
 }
 
 /// Target RMS energy for a seeded voice, INDEPENDENT of how many ranks are drawn.
-/// Chosen with the voice/master gain staging so a single held note sits near
-/// -20 dBFS and a chord stays below clipping. Keeps loudness consistent across
-/// registrations and is the main safeguard against far-too-loud/distorted output.
-constexpr double kCompositeEnergy = 0.55;
+/// Low enough that even a full TUTTI chord stays below the soft-clip threshold, so
+/// nothing ever saturates audibly. Keeps loudness consistent across registrations.
+constexpr double kCompositeEnergy = 0.34;
 
 /// Scale every partial so sqrt(sum(amp^2)) == kCompositeEnergy. Off-thread.
 void normalizeComposite(synth::SpectralModel& c) noexcept
@@ -311,6 +310,28 @@ void normalizeComposite(synth::SpectralModel& c) noexcept
     const float scaleDb = 20.0f * std::log10(static_cast<float>(kCompositeEnergy / std::sqrt(energy)));
     for (synth::PartialTrack& p : c.partials)
         p.ampDb += scaleDb;
+}
+
+/// Break the sterile phase-coherence of a pure additive stack: give each partial a
+/// deterministic pseudo-random start phase and a few cents of detune. Real pipes
+/// are never perfectly harmonic or in phase — this alone pulls the tone away from
+/// the "electronic organ" sound. Deterministic (index-hashed) so it is stable.
+void humanizeComposite(synth::SpectralModel& c) noexcept
+{
+    std::uint32_t h = 0x9E3779B9u;
+    std::size_t i = 0;
+    for (synth::PartialTrack& p : c.partials)
+    {
+        h ^= static_cast<std::uint32_t>(i * 2654435761u);
+        h = (h << 13) | (h >> 19);
+        h *= 0x85EBCA6Bu;
+        const float r1 = static_cast<float>(h & 0xFFFFu) / 65535.0f;         // 0..1
+        const float r2 = static_cast<float>((h >> 16) & 0xFFFFu) / 65535.0f; // 0..1
+        p.phase = r1 * 6.2831853f;                                            // random start phase
+        const float cents = (r2 - 0.5f) * 7.0f;                               // +/- 3.5 cents
+        p.ratioToF0 *= std::pow(2.0f, cents / 1200.0f);
+        ++i;
+    }
 }
 } // namespace
 
@@ -349,6 +370,7 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
         }
     }
 
+    humanizeComposite(composite);
     normalizeComposite(composite);
     composite.fundamentalHz = 0.0f; // set per note by the voice at noteOn
     return composite;
@@ -449,6 +471,7 @@ synth::SpectralModel buildCompositeFromRegistration(std::span<const Registration
         }
     }
 
+    humanizeComposite(composite);
     normalizeComposite(composite);
     composite.fundamentalHz = 0.0f;
     return composite;

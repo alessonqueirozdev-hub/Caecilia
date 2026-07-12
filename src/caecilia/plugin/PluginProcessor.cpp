@@ -148,6 +148,15 @@ void CaeciliaAudioProcessor::setUiRegistration(const std::vector<model::Registra
     swapVoicesFromComposite(model::buildCompositeFromRegistration(ranks));
 }
 
+void CaeciliaAudioProcessor::setUiReverb(int spaceIndex, float mix)
+{
+    const auto preset = static_cast<dsp::ReverbPreset>(juce::jlimit(0, 4, spaceIndex));
+    core::ReverbParams params = dsp::FdnReverb::presetParams(preset);
+    params.mix = juce::jlimit(0.0f, 1.0f, mix);
+    const juce::ScopedLock sl(getCallbackLock());
+    reverb_.setParams(params); // RT-safe snapshot swap
+}
+
 void CaeciliaAudioProcessor::swapVoicesFromComposite(const synth::SpectralModel& composite)
 {
     const double sr = getSampleRate();
@@ -305,6 +314,14 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
     }
 
+    // Console panic (stop demo / release keys): silence every sounding voice and
+    // clear the lit-key display so nothing sticks.
+    if (uiPanic_.exchange(false, std::memory_order_relaxed))
+    {
+        commandBridge_.pushPanic();
+        keys_ = {};
+    }
+
     // Single-producer encode of host intent onto the engine command ring, drained
     // by engine_.processBlock() below. Parameters first (cheap when unchanged),
     // then the host and on-screen note streams (both from THIS thread, so the ring
@@ -331,6 +348,9 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }();
     masterGain_.setTargetValue(juce::Decibels::decibelsToGain(gainDb, -60.0f));
     masterGain_.applyGain(buffer, buffer.getNumSamples());
+
+    // Console master trim (Settings panel).
+    buffer.applyGain(uiMaster_.load(std::memory_order_relaxed));
 
     // Safety soft-clip: tanh is ~transparent below ~0.4 but saturates gracefully
     // and hard-bounds the output to +/-1, so the instrument can NEVER blow up the

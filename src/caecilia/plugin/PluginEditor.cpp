@@ -136,6 +136,27 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                 }
                 proc.setUiRegistration(ranks);
                 complete(juce::var());
+            })
+        // --- Settings panel -> engine (master trim, reverb space + mix) -------
+        .withNativeFunction("caeciliaSetMaster",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (! args.isEmpty())
+                    proc.setUiMaster(static_cast<float>(static_cast<double>(args[0])));
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaSetReverb",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (args.size() >= 2)
+                    proc.setUiReverb(static_cast<int>(args[0]), static_cast<float>(static_cast<double>(args[1])));
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaPanic",
+            [&proc](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                proc.uiAllNotesOff();
+                complete(juce::var());
             });
 }
 

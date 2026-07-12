@@ -997,6 +997,26 @@ if (CAE_BRIDGE) setTimeout(() => {
   else caeSyncReg();
 }, 500);
 
+// C++ -> JS: light the notes the engine is actually sounding (so playing your
+// MIDI keyboard lights the manual) and drive the real output VU.
+if (CAE_BRIDGE) {
+  window.__JUCE__.backend.addEventListener("caeciliaState", (st) => {
+    try {
+      const lit = new Set((st.lit || []).map(Number));
+      document.querySelectorAll('[data-div="go"].wk, [data-div="go"].bk').forEach(k => {
+        const m = +k.dataset.midi;
+        k.classList.toggle("held", lit.has(m) || state.held.has("go:" + m));
+      });
+      const pk = +st.masterPeak || 0;
+      const db = pk > 0.0002 ? 20 * Math.log10(pk) : -100;
+      const vr = document.getElementById("vu-read");
+      if (vr) vr.textContent = (db <= -99 ? "−∞" : db.toFixed(1)) + " dB";
+      const w = Math.max(0, Math.min(100, (db + 48) / 48 * 100)).toFixed(1) + "%";
+      document.querySelectorAll(".vu .fill").forEach(f => { f.style.width = w; });
+    } catch (e) {}
+  });
+}
+
 /* ---- Organ-type presets: draw a characteristic registration ------------- */
 const CAE_PRESETS = {
   // A modest opening foundation (8'+4' principals & flutes, no mixtures/reeds).
@@ -1004,10 +1024,15 @@ const CAE_PRESETS = {
                      (st.feet === 4 && st.fam === "Principal"),
   baroque:     st => st.fam === "Principal" || st.fam === "Mixture",
   renaissance: st => st.fam === "Flute" || (st.fam === "Principal" && st.feet >= 4 && st.feet <= 8),
-  notredame:   st => true,                                   // grand jeu / full organ
-  romantic:    st => st.fam !== "Mixture" && st.feet >= 2,   // foundations + colour
+  classic:     st => (st.fam === "Principal" || st.fam === "Flute") && st.feet >= 2,
+  romantic:    st => st.fam !== "Mixture" && st.feet >= 2,            // foundations + colour
+  pipe1:       st => st.feet === 8 && st.fam !== "Mixture",           // 8' foundations
+  pipe2:       st => (st.fam === "Principal" || st.fam === "Flute") && (st.feet === 8 || st.feet === 4),
   reeds:       st => st.fam === "Reed",
   flutes:      st => st.fam === "Flute",
+  strings:     st => st.fam === "String" || (st.fam === "Flute" && st.feet === 8),
+  notredame:   st => true,                                            // grand jeu
+  tutti:       st => true,                                            // full organ
 };
 function applyPreset(key) {
   const f = CAE_PRESETS[key];
@@ -1047,6 +1072,7 @@ function toggleKey(k) {
 }
 function releaseAll() {
   state.held.clear();
+  caeInvoke("caeciliaPanic", []);
   document.querySelectorAll(".held").forEach(n => n.classList.remove("held"));
   explain("All notes off (panic)"); updateStatus();
 }
@@ -1352,6 +1378,7 @@ requestAnimationFrame(frame);
   let timers = [], playing = false, playBtn = null;
   function stopDemo(){
     timers.forEach(clearTimeout); timers = [];
+    caeInvoke("caeciliaPanic", []);   // kill any notes already sent to the engine
     document.querySelectorAll('.held').forEach(e => e.classList.remove('held'));
     playing = false; if (playBtn){ playBtn.textContent = '▶ Play'; playBtn.classList.remove('playing'); }
   }
@@ -1460,9 +1487,12 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
   const t = k => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
 
   const SPACES = { room:[1.1,3.0], chamber:[1.7,2.8], hall:[2.8,2.6], cathedral:[4.6,2.2], plate:[1.0,3.5] };
-  const S = { master:0.15, mix:0.5, space:"hall", trem:false };
+  const SPACE_IDX = { room:0, chamber:1, hall:2, cathedral:3, plate:4 };
+  const S = { master:1.0, mix:0.5, space:"hall", trem:false };
 
-  function emit(name, val){ try { const f = window.__JUCE__ && window.__JUCE__.getNativeFunction && window.__JUCE__.getNativeFunction(name); if (f) f(val); } catch(e){} }
+  // Raw native-function call (fire-and-forget), works with JUCE's injected backend.
+  function emit(name, params){ try { const b = window.__JUCE__ && window.__JUCE__.backend; if (b) b.emitEvent("__juce__invoke", { name, params, resultId: 0 }); } catch(e){} }
+  function emitReverb(){ emit("caeciliaSetReverb", [SPACE_IDX[S.space] || 0, S.mix]); }
 
   window.__caeApplySettings = function(){
     const a = window.__cae; if (!a) return;
@@ -1477,9 +1507,11 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     // Organ preset + language selector + gear, inserted before the Wood/Flat segment.
     const seg = header.querySelector(".seg");
     const presetSel = document.createElement("select"); presetSel.className = "cae-lang"; presetSel.title = "Organ preset";
-    [["","🎹 Organ…"],["baroque","Baroque Pipe Organ"],["renaissance","Renaissance Organ"],
-     ["notredame","Grand Organ · Notre-Dame"],["romantic","Romantic Cathedral"],
-     ["flutes","Flutes · Chamber"],["reeds","Solo Reeds"]].forEach(([v,t]) => {
+    [["","🎹 Organ preset…"],["default","Foundations (default)"],["baroque","Baroque Organ"],
+     ["renaissance","Renaissance Organ"],["classic","Classic Organ"],["romantic","Romantic Organ"],
+     ["pipe1","Pipe Organ I"],["pipe2","Pipe Organ II"],["strings","String Organ"],
+     ["flutes","Flute Organ"],["reeds","Reed Organ"],["notredame","Notre-Dame · Grand Jeu"],
+     ["tutti","Tutti (Full Organ)"]].forEach(([v,t]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = t; presetSel.append(o); });
     presetSel.onchange = () => { if (presetSel.value && window.applyPreset) window.applyPreset(presetSel.value); };
     const langSel = document.createElement("select"); langSel.className = "cae-lang"; langSel.title = "Language";
@@ -1495,7 +1527,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
       '<button class="cae-close" aria-label="Close">✕</button>'+
       '<h2 id="cae-t-settings"></h2><div class="cae-sub" id="cae-t-settingsSub"></div>'+
       '<div class="cae-grp"><label id="cae-t-output"></label>'+
-        '<div class="cae-row"><span class="k" id="cae-t-master"></span><input type="range" id="cae-master" min="0" max="0.6" step="0.005"><output id="cae-master-o"></output></div></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-master"></span><input type="range" id="cae-master" min="0" max="1.5" step="0.01"><output id="cae-master-o"></output></div></div>'+
       '<div class="cae-grp"><label id="cae-t-reverb"></label>'+
         '<div class="cae-row"><span class="k" id="cae-t-space"></span><select id="cae-space">'+
           '<option value="room" id="cae-t-room"></option><option value="chamber" id="cae-t-chamber"></option>'+
@@ -1514,10 +1546,12 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     const master = $("cae-master"), masterO = $("cae-master-o"), mix = $("cae-mix"), mixO = $("cae-mix-o"), space = $("cae-space"), trem = $("cae-trem");
     master.value = S.master; mix.value = S.mix; space.value = S.space;
     const pct = v => Math.round(v*100)+"%";
-    function refresh(){ masterO.textContent = pct(S.master/0.6); mixO.textContent = pct(S.mix); trem.classList.toggle("on", S.trem); }
-    master.oninput = () => { S.master = +master.value; window.__caeApplySettings(); emit("caeciliaSetMaster", S.master); refresh(); };
-    mix.oninput = () => { S.mix = +mix.value; window.__caeApplySettings(); emit("caeciliaSetReverbMix", S.mix); refresh(); };
-    space.onchange = () => { S.space = space.value; window.__caeApplySettings(); emit("caeciliaSetReverbSpace", S.space); };
+    function refresh(){ masterO.textContent = pct(S.master/1.5); mixO.textContent = pct(S.mix); trem.classList.toggle("on", S.trem); }
+    master.oninput = () => { S.master = +master.value; window.__caeApplySettings(); emit("caeciliaSetMaster", [S.master]); refresh(); };
+    mix.oninput = () => { S.mix = +mix.value; window.__caeApplySettings(); emitReverb(); refresh(); };
+    space.onchange = () => { S.space = space.value; window.__caeApplySettings(); emitReverb(); };
+    // Push the initial settings to the engine so C++ matches the panel.
+    setTimeout(() => { emit("caeciliaSetMaster", [S.master]); emitReverb(); }, 700);
     trem.onclick = () => { S.trem = !S.trem; try { if (window.state) window.state.trem = S.trem; } catch(e){} emit("caeciliaSetTremulant", S.trem?1:0); refresh(); applyLang(); };
 
     function applyLang(){
