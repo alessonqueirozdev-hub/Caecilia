@@ -7,12 +7,19 @@
 #pragma once
 
 #include "caecilia/core/EngineTypes.h"
+#include "caecilia/core/IVoice.h"
+#include "caecilia/dsp/FdnReverb.h"
 #include "caecilia/engine/AudioEngine.h"
+#include "caecilia/model/DemoOrgan.h"
 #include "caecilia/plugin/CommandBridge.h"
 #include "caecilia/plugin/MeterBridge.h"
 #include "caecilia/plugin/ParameterMirror.h"
+#include "caecilia/synthesis/AdditiveVoice.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
+
+#include <memory>
+#include <vector>
 
 namespace caecilia::plugin
 {
@@ -90,8 +97,21 @@ public:
 private:
     void updateLatency() noexcept;
 
+    /// Off-thread: build the default registration's composite voices and the
+    /// master reverb, and bind them into the engine. Called from prepareToPlay.
+    void buildInstrument(double sampleRate, std::size_t maxBlockFrames);
+
     // --- pure engine (owns all DSP/synthesis behind the core seam) ----------
     core::engine::AudioEngine engine_;
+
+    // --- synthesis instance owned by the plugin (pre-allocated, bound in) ---
+    // The concrete voices live here (the engine's pool only borrows pointers),
+    // so they outlive the engine. Every voice is seeded with the same composite
+    // "grand plenum" spectrum, referenced to 8', so any key sounds the full
+    // drawn registration cleanly and polyphonically.
+    std::vector<std::unique_ptr<synth::AdditiveVoice>> voices_;
+    std::vector<core::IVoice*>                          voicePtrs_;
+    dsp::FdnReverb                                      reverb_;
 
     // --- host-facing state + bridges ----------------------------------------
     CaeciliaParameterMirror parameters_;

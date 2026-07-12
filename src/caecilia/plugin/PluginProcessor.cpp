@@ -9,9 +9,71 @@
 #include "caecilia/plugin/PluginEditor.h"
 
 #include <cmath>
+#include <span>
 
 namespace caecilia::plugin
 {
+
+namespace
+{
+
+/// Build the default "grand plenum" composite spectrum, referenced to 8' unison,
+/// by summing several principal ranks (8'/4'/2') and a mixture with each rank's
+/// footage folded into its partial ratios. A voice seeded with this plays the
+/// whole registration at the key pitch, so mutations/mixtures land at their true
+/// intervals instead of an arbitrary per-key stop.
+synth::SpectralModel buildPlenumSpectrum()
+{
+    synth::SpectralModel plenum;
+
+    const auto addStop = [&plenum](const synth::SpectralModel& stop, double feet, float gainDb)
+    {
+        const double ratioShift = feet > 0.0 ? 8.0 / feet : 1.0; // fold footage into ratio
+        for (const synth::PartialTrack& p : stop.partials)
+        {
+            synth::PartialTrack t = p;
+            t.ratioToF0 = static_cast<float>(static_cast<double>(p.ratioToF0) * ratioShift);
+            t.ampDb     = p.ampDb + gainDb;
+            plenum.partials.push_back(t);
+        }
+    };
+
+    addStop(model::makeSpectralPrincipal(core::footage::kEight, 1.0f, 12), 8.0,  0.0f);
+    addStop(model::makeSpectralPrincipal(core::footage::kFour,  1.0f, 10), 4.0, -3.5f);
+    addStop(model::makeSpectralPrincipal(core::footage::kTwo,   1.1f,  8), 2.0, -7.0f);
+
+    const core::Footage mixRanks[] = { core::footage::kTwo, core::footage::kOneAndThird, core::footage::kOne };
+    addStop(model::makeSpectralMixture(std::span<const core::Footage>(mixRanks, 3), 1.2f), 8.0, -11.0f);
+
+    plenum.fundamentalHz = 0.0f; // set per note by the voice at noteOn
+    return plenum;
+}
+
+} // namespace
+
+void CaeciliaAudioProcessor::buildInstrument(double sampleRate, std::size_t maxBlockFrames)
+{
+    const synth::SpectralModel plenum = buildPlenumSpectrum();
+
+    synth::VoiceContext ctx;
+    ctx.family  = core::TonalFamily::Principal;
+    ctx.footage = core::footage::kEight; // composite is already referenced to 8'
+
+    constexpr std::size_t kPolyphony = 64;
+    voices_.clear();
+    voicePtrs_.clear();
+    voices_.reserve(kPolyphony);
+    voicePtrs_.reserve(kPolyphony);
+    for (std::size_t i = 0; i < kPolyphony; ++i)
+    {
+        auto v = std::make_unique<synth::AdditiveVoice>();
+        v->prepare(sampleRate, maxBlockFrames);
+        v->setContext(ctx);
+        v->seedFrom(plenum);
+        voicePtrs_.push_back(v.get());
+        voices_.push_back(std::move(v));
+    }
+}
 
 CaeciliaAudioProcessor::CaeciliaAudioProcessor()
     : juce::AudioProcessor(BusesProperties().withOutput("Output",
@@ -39,10 +101,15 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     commandBridge_.resetChangeTracking();
     meterBridge_.connect(engine_);
 
-    // TODO(phase0.1): bind the synthesis voice arena, wind supply, tuning table
-    // and master reverb into the engine here (all pre-allocated off-thread).
-    //   engine_.bindVoices(...); engine_.setWindSupply(...);
-    //   engine_.setTuning(...);  engine_.setMasterReverb(...);
+    // Build the default registration's voices and bind them into the engine.
+    buildInstrument(sampleRate, frames);
+    engine_.bindVoices(voicePtrs_.data(), voicePtrs_.size());
+
+    // Master reverb: a large-hall preset by default; the parameter bridge then
+    // syncs it to the APVTS reverb controls on the first processed block.
+    reverb_.prepare(sampleRate, frames, channels);
+    reverb_.setPreset(dsp::ReverbPreset::Hall);
+    engine_.setMasterReverb(&reverb_);
 
     masterGain_.reset(sampleRate, 0.02); // 20 ms output-trim ramp
     masterGain_.setCurrentAndTargetValue(1.0f);
