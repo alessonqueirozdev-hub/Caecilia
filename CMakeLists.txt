@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.22)
 project(Caecilia
     VERSION 0.0.1
     DESCRIPTION "Caecilia - proprietary hybrid pipe-organ virtual instrument"
-    LANGUAGES CXX)
+    LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 # Build options
