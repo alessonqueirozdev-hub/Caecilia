@@ -8,10 +8,26 @@ distribution, or use of any part is prohibited. See LICENSE.
 
 **A proprietary hybrid pipe-organ virtual instrument (VST3 / AU / Standalone).**
 
-> Status: **early scaffold.** This repository currently contains the build
-> system, the pure-core contract headers, and project documentation. No audio
-> engine is wired yet — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
-> the roadmap below.
+> Status: **playable alpha (v0.1).** The VST3 / AU / Standalone plugin builds
+> green on Windows (MSVC), macOS and Linux and **makes sound**: a 3-division,
+> 26-stop demo organ with per-tonal-family additive voicing, an algorithmic FDN
+> reverb, and equal-tempered A=440 tuning. The live console UI is mounted — a
+> photoreal skin auto-laid-out from the organ, with a radiating pedalboard, keys
+> that light in real time as you play, and drawstops that re-voice the sound when
+> drawn. A modern, versioned Windows installer (Inno Setup) ships the VST3 and
+> Standalone.
+>
+> **Working now:** cross-platform plugin • live console + on-screen/MIDI keyboard
+> • real-time key lighting • registration that changes timbre • FDN reverb •
+> equal temperament • Windows installer.
+>
+> **Planned next (wired, not yet audible):** wind-model breathing/sag &
+> tremulant as wind modulation • live historical-temperament switching •
+> coupler / combination-piston / expression-shoe action • the hybrid recorded-
+> attack + modeled-sustain voice layer. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+>
+> The sections below describe the **full design target**; not every capability
+> is wired yet — see the roadmap for the current line.
 
 Caecilia aims to beat GrandOrgue and Aeolus **on sound simultaneously**, match
 Organteq **on polish**, and beat everyone on **programmable, portable,
