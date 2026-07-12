@@ -66,12 +66,19 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
 
     auto& proc = processor_;
 
+    // WebView2 requires a WRITABLE user-data folder. %TEMP% can be cleaned or
+    // locked mid-session; a dedicated per-user app-data folder is the robust
+    // choice and is created up front so WebView2 never fails to initialise.
+    auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                       .getChildFile("Caecilia").getChildFile("WebView2");
+    dataDir.createDirectory();
+
     return Options{}
         // WebView2 (Chromium) on Windows; ignored on Linux/macOS which use their
-        // system engine. A writable user-data folder is required by WebView2.
+        // system engine.
         .withBackend(Options::Backend::webview2)
         .withWinWebView2Options(Options::WinWebView2{}
-            .withUserDataFolder(juce::File::getSpecialLocation(juce::File::tempDirectory))
+            .withUserDataFolder(dataDir)
             .withBackgroundColour(juce::Colour(0xff0e1319)))
         .withNativeIntegrationEnabled()
         .withResourceProvider([](const juce::String& url) { return provide(url); })

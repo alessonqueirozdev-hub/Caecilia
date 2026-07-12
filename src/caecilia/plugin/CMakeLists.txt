@@ -63,10 +63,14 @@ set_target_properties(CaeciliaWebUI PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # --- compile-time JUCE configuration ---------------------------------------
 target_compile_definitions(Caecilia PUBLIC
     JUCE_WEB_BROWSER=1
-    # NEEDS_WEBVIEW2 links the SDK but does not define this — without it the
-    # Chromium backend and Options::withResourceProvider are compiled out on
-    # Windows (C2039). Ignored on Linux/macOS.
-    JUCE_USE_WIN_WEBVIEW2=1
+    # STATIC linking of the WebView2 loader (WebView2LoaderStatic.lib, provided by
+    # the NuGet package via FindWebView2). This also implies JUCE_USE_WIN_WEBVIEW2=1
+    # (so Options::withResourceProvider is available). Plain JUCE_USE_WIN_WEBVIEW2
+    # uses DYNAMIC loading, which needs WebView2Loader.dll shipped beside the exe —
+    # and without it the app fails to start with NO window at all. Static linking
+    # embeds the loader so the plugin/standalone runs with only the (Windows-bundled)
+    # WebView2 Runtime present. Ignored on Linux/macOS.
+    JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
