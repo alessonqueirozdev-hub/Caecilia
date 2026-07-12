@@ -1,0 +1,44 @@
+Ceciliae — Proprietary Software License
+Copyright (c) 2026 Alesson Queiroz. All rights reserved.
+
+THIS IS NOT AN OPEN-SOURCE LICENSE.
+
+Ceciliae (the "Software"), including its source code, headers, build scripts,
+documentation, design assets, spectral models, sample formats, and all
+accompanying materials, is proprietary and confidential. It is the exclusive
+property of Alesson Queiroz (the "Owner").
+
+1. All Rights Reserved.
+   No license or right of any kind is granted to any person or entity under
+   this file. All rights are expressly reserved by the Owner.
+
+2. No Grant of Rights.
+   No permission is granted to use, copy, reproduce, compile, execute, modify,
+   adapt, translate, merge, publish, distribute, sublicense, lease, rent, sell,
+   or otherwise exploit the Software or any part of it, in source or binary
+   form, except by the Owner or under a separate written agreement signed by
+   the Owner.
+
+3. Confidentiality.
+   The Software is a trade secret of the Owner. Any person who lawfully or
+   unlawfully obtains access to it must not disclose it to third parties.
+
+4. No Contribution of Third-Party Licenses.
+   The Software is authored independently. Third-party dependencies used only
+   to build or test the Software (for example, JUCE and Catch2) are governed by
+   their own separate licenses, which are documented in THIRD_PARTY_NOTICES.md
+   and are NEVER conflated with this proprietary license. No open-source license
+   (GPL, LGPL, MIT, BSD, Apache, or any other) applies to the Software itself.
+
+5. No Warranty.
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+6. Limitation of Liability.
+   IN NO EVENT SHALL THE OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+   FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+   IN THE SOFTWARE.
+
+For licensing inquiries, contact the Owner.
