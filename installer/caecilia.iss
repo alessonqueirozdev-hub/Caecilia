@@ -49,6 +49,7 @@ ArchitecturesInstallIn64BitMode=x64
 MinVersion=10.0
 PrivilegesRequired=admin
 WizardStyle=modern
+WizardResizable=yes
 ; Branding assets live in assets\installer\ (one level up from this script).
 SetupIconFile=..\assets\installer\caecilia.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -56,17 +57,39 @@ UninstallDisplayName={#MyAppName} {#MyAppVersion}
 WizardImageFile=..\assets\installer\wizard-large.bmp
 WizardSmallImageFile=..\assets\installer\wizard-small.bmp
 WizardImageStretch=no
+; A product-highlights page before the licence, and a guard so we never install
+; over a running Standalone.
+InfoBeforeFile=info-before.txt
+AppMutex=CaeciliaStandaloneRunning
+ShowLanguageDialog=auto
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "english";            MessagesFile: "compiler:Default.isl"
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "spanish";            MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "german";             MessagesFile: "compiler:Languages\German.isl"
+
+[CustomMessages]
+english.Vst3Comp=VST3 plug-in (for your DAW)
+english.SaComp=Standalone application
+english.RescanNote=Installation complete. Rescan your plug-ins in your DAW so Caecilia appears as a VST3 instrument.
+brazilianportuguese.Vst3Comp=Plug-in VST3 (para a sua DAW)
+brazilianportuguese.SaComp=Aplicativo standalone
+brazilianportuguese.RescanNote=Instalação concluída. Reescaneie os plug-ins na sua DAW para o Caecilia aparecer como instrumento VST3.
+spanish.Vst3Comp=Complemento VST3 (para tu DAW)
+spanish.SaComp=Aplicación independiente
+spanish.RescanNote=Instalación completa. Vuelve a escanear los plug-ins en tu DAW para que Caecilia aparezca como instrumento VST3.
+german.Vst3Comp=VST3-Plug-in (für deine DAW)
+german.SaComp=Eigenständige Anwendung
+german.RescanNote=Installation abgeschlossen. Scanne die Plug-ins in deiner DAW neu, damit Caecilia als VST3-Instrument erscheint.
 
 [Types]
 Name: "full"; Description: "Full installation (VST3 + Standalone)"
 Name: "custom"; Description: "Custom installation"; Flags: iscustom
 
 [Components]
-Name: "vst3"; Description: "VST3 plug-in (for your DAW)"; Types: full custom; Flags: checkablealone
-Name: "standalone"; Description: "Standalone application"; Types: full custom
+Name: "vst3"; Description: "{cm:Vst3Comp}"; Types: full custom; Flags: checkablealone
+Name: "standalone"; Description: "{cm:SaComp}"; Types: full custom
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Components: standalone; Flags: unchecked

@@ -1,0 +1,25 @@
+CAECILIA — Hybrid Pipe-Organ Virtual Instrument
+Copyright (c) 2026 Alesson Queiroz. All rights reserved.
+
+Thank you for installing Caecilia.
+
+WHAT YOU ARE INSTALLING
+  •  Caecilia VST3  — load it in any VST3 host (Cubase, Reaper, Studio One,
+     Bitwig, Ableton via VST3, …). Installed into the shared 64-bit VST3 folder.
+  •  Caecilia Standalone  — play the organ without a DAW, straight from the
+     Start menu.
+
+HIGHLIGHTS
+  •  A three-division romantic organ with per-tonal-family voicing.
+  •  A living console: draw a stop and the sound changes; the keys light as
+     you play; the wind breathes under polyphony.
+  •  Algorithmic hall reverb and equal-tempered tuning.
+  •  Built-in demo pieces (J. S. Bach) that play with the keys lighting up.
+
+AFTER INSTALLING
+  •  Rescan your plug-ins in your DAW so Caecilia (VST3, Instrument) appears.
+  •  The Standalone needs the Microsoft Edge WebView2 Runtime, which ships with
+     Windows 10/11. If the console looks blank, install the free "Evergreen
+     WebView2 Runtime" from Microsoft and relaunch.
+
+This is proprietary software. See the license agreement on the next page.
