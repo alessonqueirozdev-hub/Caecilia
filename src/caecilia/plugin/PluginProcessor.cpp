@@ -256,10 +256,13 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
 
     // Master tone-voicing EQ (post-reverb) and the brick-wall limiter (post-trim)
     // — the professional end of the chain. EQ defaults to the pipe-organ voicing;
-    // the limiter holds the bus at -1 dBFS so the Tutti stays loud but clean.
+    // the limiter holds the bus at -3 dBFS. The extra headroom (vs -1.5) leaves room
+    // for the inter-sample overshoot that Windows' SHARED-mode mixer/resampler adds
+    // downstream, which is what made the Standalone distort until users switched to
+    // WASAPI Exclusive; -3 dBFS keeps it clean in shared mode too, at a hair less loudness.
     masterEq_.prepare(sampleRate, frames, channels);
     limiter_.prepare(sampleRate, frames, channels);
-    limiter_.setParams(/*ceilingDb*/ -1.5f, /*lookAheadMs*/ 2.5f, /*releaseMs*/ 90.0f);
+    limiter_.setParams(/*ceilingDb*/ -3.0f, /*lookAheadMs*/ 2.5f, /*releaseMs*/ 90.0f);
 
     // On-screen keyboard -> audio thread: clear any stale queued notes and
     // pre-reserve the scratch MIDI buffer so merging UI notes never allocates on

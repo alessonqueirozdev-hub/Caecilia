@@ -11,6 +11,12 @@
 #include <cstdint>
 #include <cstdio>
 
+// Standalone-only: reach the app's audio device manager to prefer a clean output
+// mode on first run. Guarded so it is entirely absent from the VST3 build.
+#if JucePlugin_Build_Standalone
+ #include <juce_audio_plugin_client/juce_audio_plugin_client.h>
+#endif
+
 namespace caecilia::plugin
 {
 
@@ -211,6 +217,36 @@ CaeciliaEditor::CaeciliaEditor(CaeciliaAudioProcessor& processor)
         "HKEY_CURRENT_USER\\Software\\Caecilia\\Language", juce::String());
    #endif
 
+    // First-run audio safety (Standalone, Windows): Windows' SHARED-mode mixer
+    // resamples and can distort the organ; WASAPI Exclusive (or Low-Latency) hands
+    // the audio straight to the card and stays clean. On the very first launch,
+    // prefer an exclusive device type; a registry flag makes this a ONE-TIME nudge
+    // so the user's later choice (e.g. shared mode to hear other apps) is honoured.
+   #if JucePlugin_Build_Standalone && JUCE_WINDOWS
+    if (auto* holder = juce::StandalonePluginHolder::getInstance())
+    {
+        const juce::String triedKey =
+            "HKEY_CURRENT_USER\\Software\\Caecilia\\AudioExclusiveTried";
+        if (juce::WindowsRegistry::getValue(triedKey, juce::String()).isEmpty())
+        {
+            auto& dm = holder->deviceManager;
+            auto preferType = [&dm](const char* needle) -> bool
+            {
+                for (auto* type : dm.getAvailableDeviceTypes())
+                    if (type->getTypeName().containsIgnoreCase(needle))
+                    {
+                        dm.setCurrentAudioDeviceType(type->getTypeName(), true);
+                        return true;
+                    }
+                return false;
+            };
+            if (! preferType("Exclusive"))
+                preferType("Latency"); // matches "Low Latency"/"Low-Latency" naming
+            juce::WindowsRegistry::setValue(triedKey, juce::String("1"));
+        }
+    }
+   #endif
+
     addAndMakeVisible(web_);
     web_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 
@@ -244,6 +280,13 @@ void CaeciliaEditor::timerCallback()
     // The installer's chosen language (empty if none) — the console applies it on
     // first receipt if the user has not already picked a language in-app.
     obj->setProperty("installerLang", installerLang_);
+    // Standalone-only: lets the console offer the "use WASAPI Exclusive if you hear
+    // distortion" hint, which is meaningless inside a DAW (the host owns audio).
+   #if JucePlugin_Build_Standalone
+    obj->setProperty("isStandalone", true);
+   #else
+    obj->setProperty("isStandalone", false);
+   #endif
 
     // Lit keys of the primary manual, as a compact [note,...] array (source != Off).
     juce::Array<juce::var> lit;
