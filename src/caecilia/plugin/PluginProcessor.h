@@ -253,6 +253,12 @@ private:
     /// the engine master chain if a pre-reverb trim is ever wanted.
     juce::LinearSmoothedValue<float> masterGain_;
 
+    /// Mild polyphony compensation (smoothed): a dense chord sums much hotter than a
+    /// single note, so trim the bus by ~1/(1+k*(N-1)) before the limiter. This lets
+    /// sparse playing stay loud while a full Tutti only rides GENTLY into the limiter
+    /// (no bass pumping / distortion) instead of slamming it. N = active voices.
+    juce::LinearSmoothedValue<float> polyGain_;
+
     /// Console master trim (0..2, default 1) set from the Settings panel.
     std::atomic<float> uiMaster_{ 1.0f };
 

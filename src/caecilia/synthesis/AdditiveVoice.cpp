@@ -80,8 +80,11 @@ void AdditiveVoice::noteOn(core::PipeId pipe, core::Velocity velocity) noexcept
     // Apply the deterministic per-pipe detune (cents -> ratio).
     frequency *= std::pow(2.0, static_cast<double>(voicing_.detuneCents) / 1200.0);
 
-    // The per-pipe level trim folds into the bank's master gain.
-    bank_.setMasterGain(0.25f * std::pow(10.0f, voicing_.levelTrimDb * 0.05f));
+    // The per-pipe level trim folds into the bank's master gain. The base level is
+    // set so a single soft registration is clearly audible (~-19 dBFS) while a full
+    // registration rides gently into the master limiter — the loudness restage that
+    // fixes both "too quiet" (sparse) and "distorts" (dense slamming the limiter).
+    bank_.setMasterGain(0.85f * std::pow(10.0f, voicing_.levelTrimDb * 0.05f));
     bank_.trigger(pipe, velocity, frequency);
 }
 

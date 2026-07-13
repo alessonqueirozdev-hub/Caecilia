@@ -181,9 +181,9 @@ synth::SpectralModel makeSpectralReed(core::Footage /*footage*/,
     // and a little brilliance (~2.6 kHz); the caller's formantCenterHz nudges the
     // snarl so different reeds (Trompette vs Basson) differ.
     const float snarlHz = clampf(formantCenterHz > 1.0f ? formantCenterHz : 1200.0f, 700.0f, 2000.0f);
-    model.steadyFormants.peaks[0] = { 450.0f,   3.0f, 400.0f };
-    model.steadyFormants.peaks[1] = { snarlHz,  6.0f, 900.0f };
-    model.steadyFormants.peaks[2] = { 2600.0f,  3.0f, 1500.0f };
+    model.steadyFormants.peaks[0] = { 450.0f,   2.5f, 400.0f };
+    model.steadyFormants.peaks[1] = { snarlHz,  4.5f, 900.0f };
+    model.steadyFormants.peaks[2] = { 2600.0f,  2.0f, 1500.0f };
     model.steadyFormants.peakCount = 3;
     return model;
 }
@@ -301,11 +301,12 @@ float compositeRankGainDb(const Stop& stop) noexcept
 /// Loudest a seeded voice is ever normalised to. A full TUTTI caps here; the
 /// soft-clip downstream keeps even this from saturating. Matches the level users
 /// are already comfortable with, so the plenum/tutti loudness is unchanged.
-constexpr double kMaxCompositeEnergy = 0.32;
+constexpr double kMaxCompositeEnergy = 0.40;
 /// Quietest a seeded voice is normalised to — a single soft flute/string for
-/// psalmody or plainchant accompaniment sits here (~10 dB below the tutti), which
-/// is what gives the console its soft-to-imposing dynamic range.
-constexpr double kMinCompositeEnergy = 0.10;
+/// psalmody or plainchant accompaniment. Kept a musical (not extreme) distance
+/// below the tutti so it is still clearly audible; the master limiter, not a huge
+/// dynamic span, is what keeps the dense registrations clean.
+constexpr double kMinCompositeEnergy = 0.22;
 
 /// Per-rank loudness weight: how much a drawn rank adds to the overall level.
 /// Foundations pull the tone up; soft flutes/strings barely raise it; reeds and

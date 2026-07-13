@@ -167,7 +167,7 @@ void PartialBank::trigger(core::PipeId /*pipe*/, core::Velocity velocity, double
             const float d = (static_cast<float>(freq) - pk.centerHz) / (0.5f * pk.bandwidthHz);
             fg += (dbToLinear(pk.gainDb) - 1.0f) / (1.0f + d * d);
         }
-        p.formantGain = fg < 0.05f ? 0.05f : (fg > 8.0f ? 8.0f : fg);
+        p.formantGain = fg < 0.05f ? 0.05f : (fg > 3.0f ? 3.0f : fg);
     }
 
     // Arm the wind-attack chiff: a short filtered-noise breath, pitched by the

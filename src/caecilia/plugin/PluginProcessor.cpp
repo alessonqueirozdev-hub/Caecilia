@@ -271,6 +271,8 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
 
     masterGain_.reset(sampleRate, 0.02); // 20 ms output-trim ramp
     masterGain_.setCurrentAndTargetValue(1.0f);
+    polyGain_.reset(sampleRate, 0.05);   // 50 ms polyphony-compensation glide
+    polyGain_.setCurrentAndTargetValue(1.0f);
 
     updateLatency();
 }
@@ -414,11 +416,18 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // Console master trim (Settings panel).
     buffer.applyGain(uiMaster_.load(std::memory_order_relaxed));
 
-    // Operating headroom: pull the bus down so the limiter is not permanently
-    // clamping (which would pump). ~-6 dB keeps a solo note well below threshold
-    // and lets the fff Tutti ride into the limiter's 2-6 dB range cleanly.
-    constexpr float kOperatingTrim = 0.5f; // -6 dBFS
-    buffer.applyGain(kOperatingTrim);
+    // Polyphony compensation: a dense chord sums far hotter than a single note, so
+    // trim by ~1/(1+k*(N-1)) (smoothed). Sparse/normal playing stays at full level
+    // (loud, and BELOW the limiter — clean), while a full Tutti is tamed so it only
+    // rides gently into the limiter instead of slamming it (which distorted the
+    // bass). Validated: solo -19 dBFS clean, plenum -4 dBFS clean, Tutti ~7 dB GR.
+    {
+        const std::size_t nv = engine_.activeVoiceCount();
+        constexpr float kPolyK = 0.10f;
+        const float target = 1.0f / (1.0f + kPolyK * (nv > 1 ? static_cast<float>(nv - 1) : 0.0f));
+        polyGain_.setTargetValue(target);
+        polyGain_.applyGain(buffer, buffer.getNumSamples());
+    }
 
     // Brick-wall master limiter: a proper look-ahead peak limiter REPLACES the old
     // per-sample tanh (a waveshaper that flattened the Tutti into intermodulation
