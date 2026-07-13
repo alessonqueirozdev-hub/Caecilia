@@ -362,9 +362,10 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   #app[data-theme="wood"] .stop.on .fam { color: color-mix(in srgb, var(--fam) 78%, #6a4a24); }
   #app[data-theme="wood"] .stop.on .nm { text-shadow: 0 0 10px color-mix(in srgb, var(--fam) 45%, transparent); }
 
-  /* FLAT drawstop: rounded family-tinted badge; drawn = filled + lifted */
+  /* FLAT drawstop: keep the ROUND organ-drawknob shape (just family-tinted for the
+     dark theme); a rounded-rectangle badge lost the pipe-organ character. */
   #app[data-theme="flat"] .stop .knob {
-    border-radius: 14px;
+    border-radius: 50%;
     background: var(--stop-face);
     border: 1.5px solid color-mix(in srgb, var(--fam) 40%, var(--panel-edge));
     box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
@@ -394,7 +395,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   /* ============================================================= *
    *  CENTER — manuals, combination bar, pedals                    *
    * ============================================================= */
-  .center { display: flex; flex-direction: column; gap: clamp(10px,1.2vw,16px); min-width: 0; min-height: 0; justify-content: space-between; }
+  .center { display: flex; flex-direction: column; gap: clamp(8px,1vw,14px); min-width: 0; min-height: 0; overflow: hidden; justify-content: space-between; }
   .keydesk {
     padding: clamp(12px,1.6vw,20px);
     background: var(--panel);
@@ -477,12 +478,12 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   /* ---- Bottom row: expression + pedalboard ------------------------------- */
   .bottom { display: grid; grid-template-columns: 1fr 168px; gap: clamp(10px,1.4vw,16px); align-items: stretch; }
   .pedalboard-wrap {
-    padding: 14px; background: var(--panel); border: 1px solid var(--panel-edge);
+    padding: 8px 10px; background: var(--panel); border: 1px solid var(--panel-edge);
     border-radius: var(--radius); box-shadow: var(--chrome-shadow);
-    display: flex; flex-direction: column; gap: 10px; min-width: 0;
+    display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0;
   }
   .pedalboard-wrap .cap { font: 600 9.5px var(--font-mono); letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); }
-  .pedals { position: relative; height: clamp(96px, 13vh, 150px); display: flex; align-items: flex-end; gap: clamp(2px,.5vw,5px);
+  .pedals { position: relative; height: clamp(52px, 8vh, 100px); display: flex; align-items: flex-end; gap: clamp(2px,.5vw,5px);
     overflow: hidden; padding: 10px 10px 0; background: linear-gradient(180deg,#1c1108,#0c0602); border: 1px solid #000;
     border-radius: 10px 10px 7px 7px; box-shadow: inset 0 4px 14px rgba(0,0,0,.7); }
   .pk { position: relative; flex: 1 1 0; min-width: 0; height: 100%; cursor: pointer; border-radius: 4px 4px 8px 8px;
@@ -504,10 +505,10 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   #app[data-theme="flat"] .pk.sharp { background: linear-gradient(180deg,#151a20,#0c1015); }
   #app[data-theme="flat"] .pk.held { background: linear-gradient(180deg, var(--fam-Principal), #35538f); }
 
-  .expr { display: flex; gap: 12px; padding: 14px; background: var(--panel); border: 1px solid var(--panel-edge); border-radius: var(--radius); box-shadow: var(--chrome-shadow); }
-  .shoe { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .expr { display: flex; gap: 8px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--panel-edge); border-radius: var(--radius); box-shadow: var(--chrome-shadow); }
+  .shoe { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 0; }
   .shoe .track {
-    position: relative; width: 44px; height: 150px; border-radius: 12px;
+    position: relative; width: 40px; height: clamp(64px, 9vh, 96px); border-radius: 12px;
     background: var(--meter-well); box-shadow: inset 0 2px 8px rgba(0,0,0,.6); cursor: ns-resize; overflow: hidden;
     touch-action: none;
   }
