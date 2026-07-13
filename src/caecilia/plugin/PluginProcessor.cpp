@@ -245,6 +245,7 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     // the audio thread (ample for the 512-slot event ring).
     { UiNoteEvent drain; while (uiNotes_.pop(drain)) {} }
     uiScratch_.ensureSize(8192);
+    hostScratch_.ensureSize(8192); // host MIDI minus swallowed page-turn keys
     keys_ = {};
 
     masterGain_.reset(sampleRate, 0.02); // 20 ms output-trim ramp
@@ -279,10 +280,46 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     const auto numChannels = static_cast<std::size_t>(getTotalNumOutputChannels());
     const auto numFrames   = static_cast<std::size_t>(buffer.getNumSamples());
+
+    // --- Sequencer page-turn: swallow the configured nav keys and turn them into
+    // Previous/Next intents (delivered to the console by the editor's timer). The
+    // remaining host MIDI is copied into a pre-reserved scratch buffer so the nav
+    // keys never sound a pipe and never light the manual.
+    const bool navEnabled = seqNavEnabled_.load(std::memory_order_relaxed);
+    const int  navPrev     = seqPrevNote_.load(std::memory_order_relaxed);
+    const int  navNext     = seqNextNote_.load(std::memory_order_relaxed);
+    int        navLearn    = seqLearn_.load(std::memory_order_relaxed);
+    hostScratch_.clear();
+    for (const juce::MidiMessageMetadata meta : midi)
+    {
+        const juce::MidiMessage m = meta.getMessage();
+        if (m.isNoteOn() || m.isNoteOff())
+        {
+            const int note = m.getNoteNumber();
+            // MIDI-learn: the first note-on while armed becomes the binding and is
+            // swallowed (it neither sounds nor steps the sequencer).
+            if (navLearn != 0 && m.isNoteOn())
+            {
+                seqLearnedNote_.store(navLearn * 256 + note, std::memory_order_relaxed);
+                seqLearn_.store(0, std::memory_order_relaxed);
+                navLearn = 0;
+                continue;
+            }
+            if (navEnabled && (note == navPrev || note == navNext))
+            {
+                if (m.isNoteOn())
+                    (void) seqNav_.push(note == navPrev ? static_cast<std::int8_t>(-1)
+                                                        : static_cast<std::int8_t>(1));
+                continue; // swallow both the note-on and its note-off
+            }
+        }
+        hostScratch_.addEvent(m, meta.samplePosition);
+    }
+
     // Lit-key feed for the console ("keys light while playing"): a byte write per
     // event, RT-safe. Host MIDI is attributed to the primary manual (a single
     // keyboard plays the Great).
-    for (const juce::MidiMessageMetadata meta : midi)
+    for (const juce::MidiMessageMetadata meta : hostScratch_)
     {
         const juce::MidiMessage m = meta.getMessage();
         if (m.isNoteOn())
@@ -327,7 +364,7 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // then the host and on-screen note streams (both from THIS thread, so the ring
     // still has exactly one producer).
     commandBridge_.pushChangedParameters(parameters_);
-    commandBridge_.pushMidi(midi);
+    commandBridge_.pushMidi(hostScratch_); // host MIDI minus the swallowed nav keys
     commandBridge_.pushMidi(uiScratch_);
     midi.clear(); // this instrument produces no MIDI output
 

@@ -14,6 +14,7 @@
 #include "caecilia/wind/WindResponseCurve.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace caecilia::synth
@@ -34,7 +35,18 @@ struct Partial
     float onsetSeconds    = 0.0f; ///< Staggered onset delay (chiff/speech emergence).
     float phase           = 0.0f; ///< Current oscillator phase in radians (persistent).
     float increment       = 0.0f; ///< Phase increment per sample (per-block scratch).
-    float blockGain       = 0.0f; ///< Effective gain for the current block (per-block scratch).
+    float blockGain       = 0.0f; ///< Target gain for the current block (per-block scratch).
+    float curGain         = 0.0f; ///< Actual gain, ramped per-sample toward blockGain (persistent).
+    float gainInc         = 0.0f; ///< Per-sample gain ramp step for the current block (scratch).
+
+    // --- "Living pipe" state (Aeolus-inspired) -------------------------------
+    // These turn a sterile, perfectly-harmonic Fourier stack into an organic
+    // pipe: a slow independent pitch drift per partial (the beating that reads as
+    // a chorus of real pipes), and a per-partial attack bloom time so upper
+    // partials speak later than the fundamental instead of all clicking at once.
+    float driftCents      = 0.0f; ///< Current slow random-walk detune, in cents (persistent).
+    std::uint32_t rng     = 0x2545F491u; ///< Per-partial PRNG state for the drift walk.
+    float bloomSeconds    = 0.010f; ///< Per-partial attack bloom time (derived at seed/trigger).
 };
 
 /**
@@ -92,6 +104,30 @@ public:
     /// Set the attack/release ramp times in seconds. RT-safe.
     void setEnvelopeTimes(float attackSeconds, float releaseSeconds) noexcept;
 
+    /**
+     * @brief Tune the "living pipe" character (Aeolus-inspired liveliness).
+     *
+     * @param instabilityCents Peak amplitude of the slow per-partial pitch drift
+     *        (the beating that reads as a chorus of real pipes; 0 = sterile).
+     * @param attackGlideCents How far below pitch the note starts before gliding
+     *        up as the pipe speaks (a labial pipe "pulls" into tune).
+     * @param maxBloomSeconds  Longest attack-bloom of the highest partials (the
+     *        fundamental always blooms fast; uppers speak progressively later).
+     * @param hfRolloffHz      Corner of the gentle per-note top-octave tilt that
+     *        tames metallic upper partials (higher = brighter).
+     */
+    void setLiveliness(float instabilityCents,
+                       float attackGlideCents,
+                       float maxBloomSeconds,
+                       float hfRolloffHz) noexcept;
+
+    /**
+     * @brief Set the wind-attack "chiff" amount (the breathy speech transient a
+     *        real pipe makes as it starts to sound). 0 disables it.
+     * @param amount Linear level of the filtered-noise burst (subtle; ~0.02–0.08).
+     */
+    void setChiff(float amount) noexcept { chiffAmount_ = amount < 0.0f ? 0.0f : amount; }
+
     /// @return Number of partials currently seeded.
     [[nodiscard]] std::size_t activePartialCount() const noexcept { return partialCount_; }
 
@@ -114,9 +150,27 @@ private:
     float  envGain_        = 0.0f;
     float  attackStep_     = 1.0f;  ///< Per-sample gain increment during attack.
     float  releaseStep_    = 1.0f;  ///< Per-sample gain decrement during release.
-    float  attackSeconds_  = 0.005f;
+    float  attackSeconds_  = 0.016f;
     float  releaseSeconds_ = 0.150f;
     double noteTimeSeconds_ = 0.0;  ///< Elapsed time since trigger (for staggered onsets).
+
+    // --- "Living pipe" voicing (Aeolus-inspired) -----------------------------
+    float  instabilityCents_ = 5.5f;   ///< Peak slow per-partial pitch drift.
+    float  attackGlideCents_ = -18.0f; ///< Speech pitch glide during the attack.
+    float  glideSeconds_     = 0.055f; ///< Duration of the attack pitch glide.
+    float  maxBloomSeconds_  = 0.060f; ///< Longest per-partial attack bloom (uppers).
+    float  hfRolloffHz_      = 5200.0f;///< Corner of the gentle top-octave tilt.
+
+    // --- Wind-attack chiff (breathy speech transient) ------------------------
+    float         chiffAmount_    = 0.0f;        ///< Linear level of the chiff burst (0 = off).
+    float         chiffEnv_       = 0.0f;        ///< Current chiff envelope value.
+    float         chiffLp_        = 0.0f;        ///< One-pole low-pass state for the noise.
+    float         chiffLpCoef_    = 0.3f;        ///< One-pole coefficient (from pitch, per note).
+    float         chiffDecayMul_  = 0.999f;      ///< Per-sample exponential decay after the peak.
+    int           chiffSamp_      = 0;           ///< Samples elapsed in the chiff burst.
+    int           chiffAtkSamp_   = 96;          ///< Chiff attack length in samples.
+    int           chiffLenSamp_   = 0;           ///< Total chiff burst length (0 => inactive).
+    std::uint32_t chiffRng_       = 0x1234567u;  ///< PRNG state for the chiff noise.
 
     // Wind coupling.
     const core::IWindSupply* wind_ = nullptr;

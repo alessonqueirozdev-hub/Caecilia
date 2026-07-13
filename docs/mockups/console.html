@@ -713,6 +713,8 @@ const DIVISIONS = [
   ]},
   { id:"rec", rn:"II", name:"Récit", manual:1, enclosed:true, side:"right", chest:"rec", nominal:80, stops:[
     s("Bourdon",      "Flute",     "8′",   8, "Foundation", "Unison"),
+    s("Cor de Nuit",  "Flute",     "8′",   8, "Foundation", "Unison"),   // soft, dark stopped flute (nuit = night)
+    s("Salicional",   "String",    "8′",   8, "Foundation", "Unison"),   // gentle narrow string (no beat)
     s("Viole de Gambe","String",   "8′",   8, "Color",      "Unison"),
     s("Voix Céleste", "String",    "8′",   8, "Color",      "Unison"),
     s("Flûte octav.", "Flute",     "4′",   4, "Chorus",     "Octave"),
@@ -1015,6 +1017,14 @@ if (CAE_BRIDGE) {
       document.querySelectorAll(".vu .fill").forEach(f => { f.style.width = w; });
     } catch (e) {}
   });
+  // C++ -> JS: the swallowed page-turn keys (si5/do6 by default, configurable)
+  // step the registration sequencer just like clicking the ◀ ▶ pistons.
+  window.__JUCE__.backend.addEventListener("caeciliaSeq", (dir) => {
+    try {
+      const d = (typeof dir === "number") ? dir : (dir && +dir.value) || 0;
+      if (typeof seqStep === "function") seqStep(d < 0 ? -1 : 1);
+    } catch (e) {}
+  });
 }
 
 /* ---- Organ-type presets: draw a characteristic registration ------------- */
@@ -1022,6 +1032,14 @@ const CAE_PRESETS = {
   // A modest opening foundation (8'+4' principals & flutes, no mixtures/reeds).
   default:     st => (st.feet === 8 && (st.fam === "Principal" || st.fam === "Flute")) ||
                      (st.feet === 4 && st.fam === "Principal"),
+  // --- Soft / dark liturgical registrations (psalmody, Kyrie, accompaniment) ---
+  // The engine now renders these genuinely quiet (a single 8' flute sits ~10 dB
+  // below the tutti), so they are intimate and monastic, not imposing.
+  salmodia:    st => st.fam === "Flute" && st.feet === 8,                 // darkest: 8' stopped flutes only
+  monastico:   st => st.fam === "Flute" && (st.feet === 8 || st.feet === 4), // gentle flute chorus, no principals/reeds
+  acompanhamento: st => st.feet === 8 && (st.fam === "Flute" ||
+                     (st.fam === "String" && st.role === "Foundation")),  // fonds doux 8' (flutes + soft strings)
+  celeste:     st => st.fam === "String" && st.feet === 8,                // meditative shimmer (gambe + céleste)
   baroque:     st => st.fam === "Principal" || st.fam === "Mixture",
   renaissance: st => st.fam === "Flute" || (st.fam === "Principal" && st.feet >= 4 && st.feet <= 8),
   classic:     st => (st.fam === "Principal" || st.fam === "Flute") && st.feet >= 2,
@@ -1466,22 +1484,30 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          releaseKeys:"Release keys", enterDraw:"Enter to draw", output:"Output", master:"Master volume",
          reverb:"Reverb", mix:"Mix", space:"Space", tremulant:"Tremulant", on:"On", off:"Off",
          hint:"Draw a stop, then play — the wind will breathe under the load",
-         room:"Room", chamber:"Chamber", hall:"Hall", cathedral:"Cathedral", plate:"Plate" },
+         room:"Room", chamber:"Chamber", hall:"Hall", cathedral:"Cathedral", plate:"Plate",
+         pageturn:"Page-turn keys", pageturnSub:"Step registrations from your keyboard (any model)",
+         enable:"Enable", prevKey:"Previous", nextKey:"Next", learn:"Learn", listening:"Press a key…" },
     pt:{ lang:"Português (BR)", settings:"Ajustes", settingsSub:"Reverb, saída e expressão",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Saída", master:"Volume geral",
          reverb:"Reverb", mix:"Mistura", space:"Espaço", tremulant:"Tremulante", on:"Ligado", off:"Desligado",
          hint:"Puxe um registro e toque — o vento respira sob a carga",
-         room:"Sala", chamber:"Câmara", hall:"Salão", cathedral:"Catedral", plate:"Placa" },
+         room:"Sala", chamber:"Câmara", hall:"Salão", cathedral:"Catedral", plate:"Placa",
+         pageturn:"Teclas de troca", pageturnSub:"Trocar registros pelo teclado (qualquer modelo)",
+         enable:"Ativar", prevKey:"Anterior", nextKey:"Próximo", learn:"Aprender", listening:"Pressione uma tecla…" },
     es:{ lang:"Español", settings:"Ajustes", settingsSub:"Reverb, salida y expresión",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Salida", master:"Volumen general",
          reverb:"Reverb", mix:"Mezcla", space:"Espacio", tremulant:"Trémolo", on:"Activado", off:"Desactivado",
          hint:"Registra y toca — el viento respira bajo la carga",
-         room:"Sala", chamber:"Cámara", hall:"Salón", cathedral:"Catedral", plate:"Placa" },
+         room:"Sala", chamber:"Cámara", hall:"Salón", cathedral:"Catedral", plate:"Placa",
+         pageturn:"Teclas de cambio", pageturnSub:"Cambiar registros desde el teclado (cualquier modelo)",
+         enable:"Activar", prevKey:"Anterior", nextKey:"Siguiente", learn:"Aprender", listening:"Pulsa una tecla…" },
     de:{ lang:"Deutsch", settings:"Einstellungen", settingsSub:"Hall, Ausgang und Expression",
          releaseKeys:"Tasten lösen", enterDraw:"Enter zum Registrieren", output:"Ausgang", master:"Gesamtlautstärke",
          reverb:"Hall", mix:"Anteil", space:"Raum", tremulant:"Tremulant", on:"An", off:"Aus",
          hint:"Zieh ein Register und spiele — der Wind atmet unter Last",
-         room:"Raum", chamber:"Kammer", hall:"Saal", cathedral:"Kathedrale", plate:"Platte" },
+         room:"Raum", chamber:"Kammer", hall:"Saal", cathedral:"Kathedrale", plate:"Platte",
+         pageturn:"Blätter-Tasten", pageturnSub:"Registrierungen per Tastatur wechseln (jedes Modell)",
+         enable:"Aktiv", prevKey:"Zurück", nextKey:"Weiter", learn:"Lernen", listening:"Taste drücken…" },
   };
   let lang = "en";
   const t = k => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
@@ -1490,8 +1516,19 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
   const SPACE_IDX = { room:0, chamber:1, hall:2, cathedral:3, plate:4 };
   const S = { master:1.0, mix:0.5, space:"hall", trem:false };
 
+  // Page-turn (sequencer) key config, persisted per keyboard model in localStorage.
+  // Defaults are the user's Casio top keys (si5=83 Previous, do6=84 Next).
+  const SEQ_DEFAULT = { prev:83, next:84, on:true };
+  let seqCfg = Object.assign({}, SEQ_DEFAULT);
+  try { const j = localStorage.getItem("cae.seqcfg"); if (j) seqCfg = Object.assign(seqCfg, JSON.parse(j)); } catch(e){}
+  const SOLFEGE = ["Dó","Dó#","Ré","Ré#","Mi","Fá","Fá#","Sol","Sol#","Lá","Lá#","Si"];
+  const SCI     = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+  function noteName(m){ m=+m; if(!(m>=0&&m<=127)) return "—"; const o=Math.floor(m/12)-1; return SOLFEGE[m%12]+o+" ("+SCI[m%12]+o+")"; }
+  function seqSave(){ try{ localStorage.setItem("cae.seqcfg", JSON.stringify(seqCfg)); }catch(e){} }
+
   // Raw native-function call (fire-and-forget), works with JUCE's injected backend.
   function emit(name, params){ try { const b = window.__JUCE__ && window.__JUCE__.backend; if (b) b.emitEvent("__juce__invoke", { name, params, resultId: 0 }); } catch(e){} }
+  function seqPush(){ emit("caeciliaSeqConfig", [seqCfg.prev|0, seqCfg.next|0, !!seqCfg.on]); }
   function emitReverb(){ emit("caeciliaSetReverb", [SPACE_IDX[S.space] || 0, S.mix]); }
 
   window.__caeApplySettings = function(){
@@ -1507,7 +1544,10 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     // Organ preset + language selector + gear, inserted before the Wood/Flat segment.
     const seg = header.querySelector(".seg");
     const presetSel = document.createElement("select"); presetSel.className = "cae-lang"; presetSel.title = "Organ preset";
-    [["","🎹 Organ preset…"],["default","Foundations (default)"],["baroque","Baroque Organ"],
+    [["","🎹 Organ preset…"],["default","Foundations (default)"],
+     ["salmodia","🕯 Salmodia · Psalmody (soft)"],["monastico","🕯 Monástico · Monastic"],
+     ["acompanhamento","🕯 Acompanhamento · Fonds doux"],["celeste","🕯 Voix Céleste · Meditative"],
+     ["baroque","Baroque Organ"],
      ["renaissance","Renaissance Organ"],["classic","Classic Organ"],["romantic","Romantic Organ"],
      ["pipe1","Pipe Organ I"],["pipe2","Pipe Organ II"],["strings","String Organ"],
      ["flutes","Flute Organ"],["reeds","Reed Organ"],["notredame","Notre-Dame · Grand Jeu"],
@@ -1535,7 +1575,12 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
           '<option value="plate" id="cae-t-plate"></option></select></div>'+
         '<div class="cae-row"><span class="k" id="cae-t-mix"></span><input type="range" id="cae-mix" min="0" max="1" step="0.01"><output id="cae-mix-o"></output></div></div>'+
       '<div class="cae-grp"><label id="cae-t-tremulant"></label>'+
-        '<div class="cae-row"><span class="k" id="cae-t-tremstate"></span><div class="cae-toggle" id="cae-trem"></div></div></div>';
+        '<div class="cae-row"><span class="k" id="cae-t-tremstate"></span><div class="cae-toggle" id="cae-trem"></div></div></div>'+
+      '<div class="cae-grp"><label id="cae-t-pageturn"></label>'+
+        '<div class="cae-sub" id="cae-t-pageturnSub" style="margin:-4px 0 10px"></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-enable"></span><div class="cae-toggle" id="cae-seq-on"></div></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-prevkey"></span><output id="cae-seq-prev" style="flex:1;text-align:left"></output><button class="cae-lang" id="cae-seq-prev-learn"></button></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-nextkey"></span><output id="cae-seq-next" style="flex:1;text-align:left"></output><button class="cae-lang" id="cae-seq-next-learn"></button></div></div>';
     document.body.append(scrim); document.body.append(panel);
 
     const $ = id => panel.querySelector("#"+id) || document.getElementById(id);
@@ -1563,6 +1608,10 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
       set("cae-t-tremulant","tremulant"); set("cae-t-tremstate", S.trem ? "on" : "off");
       set("cae-t-room","room"); set("cae-t-chamber","chamber"); set("cae-t-hall","hall");
       set("cae-t-cathedral","cathedral"); set("cae-t-plate","plate");
+      set("cae-t-pageturn","pageturn"); set("cae-t-pageturnSub","pageturnSub");
+      set("cae-t-enable","enable"); set("cae-t-prevkey","prevKey"); set("cae-t-nextkey","nextKey");
+      ["cae-seq-prev-learn","cae-seq-next-learn"].forEach(id => {
+        const b = document.getElementById(id); if (b && !b.classList.contains("on")) b.textContent = t("learn"); });
       const panicBtn = document.getElementById("panic"); if (panicBtn) panicBtn.textContent = t("releaseKeys");
       const oh = document.getElementById("omni-hint"); if (oh && /Enter/i.test(oh.textContent)) oh.textContent = t("enterDraw");
       gear.title = t("settings");
@@ -1570,6 +1619,37 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
       const fh = document.querySelector("footer.status .hint, footer.status em, footer.status i");
       if (fh && fh.dataset.caeDefault !== "0") { fh.textContent = t("hint"); fh.dataset.caeDefault = "1"; }
     }
+    // --- Page-turn keys wiring -------------------------------------------
+    const seqOn = $("cae-seq-on"), seqPrevO = $("cae-seq-prev"), seqNextO = $("cae-seq-next"),
+          seqPrevL = $("cae-seq-prev-learn"), seqNextL = $("cae-seq-next-learn");
+    let learning = 0;
+    function seqRefresh(){
+      seqOn.classList.toggle("on", !!seqCfg.on);
+      seqPrevO.textContent = noteName(seqCfg.prev);
+      seqNextO.textContent = noteName(seqCfg.next);
+      if (learning !== 1) { seqPrevL.textContent = t("learn"); seqPrevL.classList.remove("on"); }
+      if (learning !== 2) { seqNextL.textContent = t("learn"); seqNextL.classList.remove("on"); }
+    }
+    seqOn.onclick = () => { seqCfg.on = !seqCfg.on; seqSave(); seqPush(); seqRefresh(); };
+    function armLearn(which, btn){
+      learning = which; emit("caeciliaSeqLearn", [which]);
+      btn.textContent = t("listening"); btn.classList.add("on");
+    }
+    seqPrevL.onclick = () => { if (learning === 1) { learning = 0; emit("caeciliaSeqLearn",[0]); } else armLearn(1, seqPrevL); seqRefresh(); };
+    seqNextL.onclick = () => { if (learning === 2) { learning = 0; emit("caeciliaSeqLearn",[0]); } else armLearn(2, seqNextL); seqRefresh(); };
+    if (window.__JUCE__ && window.__JUCE__.backend) {
+      window.__JUCE__.backend.addEventListener("caeciliaSeqLearned", (ev) => {
+        try {
+          const which = +(ev && ev.which), note = +(ev && ev.note);
+          if (which === 1) seqCfg.prev = note; else if (which === 2) seqCfg.next = note;
+          learning = 0; seqSave(); seqPush(); seqRefresh();
+        } catch(e){}
+      });
+    }
+    seqRefresh();
+    // Push the saved config to the engine on load so C++ matches the panel.
+    setTimeout(() => seqPush(), 750);
+
     langSel.onchange = () => { lang = langSel.value; applyLang(); };
     refresh(); applyLang();
   }

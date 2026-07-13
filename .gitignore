@@ -64,3 +64,6 @@ desktop.ini
 settings.local.json
 dist/
 scratch-*
+
+# Local audio render artifacts (dev harnesses)
+tools/dev/*.wav

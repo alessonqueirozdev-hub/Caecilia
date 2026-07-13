@@ -291,13 +291,56 @@ float compositeRankGainDb(const Stop& stop) noexcept
     return base - 3.3f * static_cast<float>(stop.footage().octaveClassFrom8());
 }
 
-/// Target RMS energy for a seeded voice, INDEPENDENT of how many ranks are drawn.
-/// Low enough that even a full TUTTI chord stays below the soft-clip threshold, so
-/// nothing ever saturates audibly. Keeps loudness consistent across registrations.
-constexpr double kCompositeEnergy = 0.34;
+/// Loudest a seeded voice is ever normalised to. A full TUTTI caps here; the
+/// soft-clip downstream keeps even this from saturating. Matches the level users
+/// are already comfortable with, so the plenum/tutti loudness is unchanged.
+constexpr double kMaxCompositeEnergy = 0.32;
+/// Quietest a seeded voice is normalised to — a single soft flute/string for
+/// psalmody or plainchant accompaniment sits here (~10 dB below the tutti), which
+/// is what gives the console its soft-to-imposing dynamic range.
+constexpr double kMinCompositeEnergy = 0.10;
 
-/// Scale every partial so sqrt(sum(amp^2)) == kCompositeEnergy. Off-thread.
-void normalizeComposite(synth::SpectralModel& c) noexcept
+/// Per-rank loudness weight: how much a drawn rank adds to the overall level.
+/// Foundations pull the tone up; soft flutes/strings barely raise it; reeds and
+/// mixtures are louder. This is what makes a Bourdon-only registration soft and a
+/// full plenum loud, instead of every registration being the same volume.
+[[nodiscard]] double rankLoudnessWeight(core::TonalFamily family,
+                                        core::Footage     footage,
+                                        bool              unisonReferenced) noexcept
+{
+    double base;
+    if (unisonReferenced)                 base = 0.85;   // mixtures / mutations
+    else switch (family)
+    {
+        case core::TonalFamily::Principal: base = 1.00; break;
+        case core::TonalFamily::Flute:     base = 0.65; break;  // soft, dark
+        case core::TonalFamily::String:    base = 0.55; break;  // softest
+        case core::TonalFamily::Reed:      base = 1.35; break;  // loud
+        case core::TonalFamily::Mixture:   base = 1.10; break;
+        default:                           base = 0.80; break;
+    }
+    // Footage tilt: 16' adds gravity, higher pitches contribute a little less.
+    const double feet = footage.feet();
+    double ftFactor = 1.0;
+    if      (feet >= 16.0) ftFactor = 1.10;
+    else if (feet >= 8.0)  ftFactor = 1.00;
+    else if (feet >= 4.0)  ftFactor = 0.85;
+    else if (feet >= 2.0)  ftFactor = 0.70;
+    else                   ftFactor = 0.55;
+    return base * ftFactor;
+}
+
+/// Map a summed registration weight to a target RMS energy (soft -> loud), so
+/// dynamics track the registration instead of being flattened to one level.
+[[nodiscard]] double loudnessTargetForWeight(double weight) noexcept
+{
+    const double t = 0.13 * std::sqrt(weight > 0.0 ? weight : 0.0);
+    return t < kMinCompositeEnergy ? kMinCompositeEnergy
+         : (t > kMaxCompositeEnergy ? kMaxCompositeEnergy : t);
+}
+
+/// Scale every partial so sqrt(sum(amp^2)) == targetEnergy. Off-thread.
+void normalizeComposite(synth::SpectralModel& c, double targetEnergy) noexcept
 {
     double energy = 0.0;
     for (const synth::PartialTrack& p : c.partials)
@@ -307,7 +350,7 @@ void normalizeComposite(synth::SpectralModel& c) noexcept
     }
     if (energy <= 1.0e-9)
         return;
-    const float scaleDb = 20.0f * std::log10(static_cast<float>(kCompositeEnergy / std::sqrt(energy)));
+    const float scaleDb = 20.0f * std::log10(static_cast<float>(targetEnergy / std::sqrt(energy)));
     for (synth::PartialTrack& p : c.partials)
         p.ampDb += scaleDb;
 }
@@ -345,6 +388,7 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
     // Gentle global trim so stacking more ranks never clips the master bus.
     const float stackTrimDb = -5.0f * std::log10(static_cast<float>(engagedStops.size()));
 
+    double loudnessWeight = 0.0;
     for (const core::StopId sid : engagedStops)
     {
         const Stop* stop = organ.stop(sid);
@@ -356,6 +400,7 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
         const bool unisonReferenced = stop->family() == core::TonalFamily::Mixture
                                    || stop->isCompound()
                                    || stop->footage().isMutation();
+        loudnessWeight += rankLoudnessWeight(stop->family(), stop->footage(), unisonReferenced);
         const double feet = stop->footage().feet();
         const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
         const float  gainDb = compositeRankGainDb(*stop) + stackTrimDb;
@@ -371,7 +416,7 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
     }
 
     humanizeComposite(composite);
-    normalizeComposite(composite);
+    normalizeComposite(composite, loudnessTargetForWeight(loudnessWeight));
     composite.fundamentalHz = 0.0f; // set per note by the voice at noteOn
     return composite;
 }
@@ -438,11 +483,13 @@ synth::SpectralModel buildCompositeFromRegistration(std::span<const Registration
 
     const float stackTrimDb = -5.0f * std::log10(static_cast<float>(ranks.size()));
 
+    double loudnessWeight = 0.0;
     for (const RegistrationRank& r : ranks)
     {
         const bool unisonReferenced = r.compound
                                    || r.family == core::TonalFamily::Mixture
                                    || r.footage.isMutation();
+        loudnessWeight += rankLoudnessWeight(r.family, r.footage, unisonReferenced);
         const double feet = r.footage.feet();
         const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
 
@@ -472,7 +519,7 @@ synth::SpectralModel buildCompositeFromRegistration(std::span<const Registration
     }
 
     humanizeComposite(composite);
-    normalizeComposite(composite);
+    normalizeComposite(composite, loudnessTargetForWeight(loudnessWeight));
     composite.fundamentalHz = 0.0f;
     return composite;
 }

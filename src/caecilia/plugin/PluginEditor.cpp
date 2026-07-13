@@ -8,6 +8,7 @@
 
 #include "BinaryData.h"
 
+#include <cstdint>
 #include <cstdio>
 
 namespace caecilia::plugin
@@ -157,6 +158,23 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
             {
                 proc.uiAllNotesOff();
                 complete(juce::var());
+            })
+        // --- Sequencer page-turn config: the console sets which MIDI keys step the
+        // registration sequencer (configurable per keyboard model) and can arm a
+        // MIDI-learn so the user just presses the key they want.
+        .withNativeFunction("caeciliaSeqConfig",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (args.size() >= 3)
+                    proc.setSeqNav(static_cast<int>(args[0]), static_cast<int>(args[1]),
+                                   static_cast<bool>(args[2]));
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaSeqLearn",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                proc.armSeqLearn(args.isEmpty() ? 0 : static_cast<int>(args[0]));
+                complete(juce::var());
             });
 }
 
@@ -202,6 +220,21 @@ void CaeciliaEditor::timerCallback()
     obj->setProperty("lit", lit);
 
     web_.emitEventIfBrowserIsVisible("caeciliaState", juce::var(obj));
+
+    // Page-turn intents from the swallowed nav keys -> step the console sequencer.
+    for (std::int8_t dir; processor_.popSeqNav(dir); )
+        web_.emitEventIfBrowserIsVisible("caeciliaSeq", juce::var(static_cast<int>(dir)));
+
+    // A MIDI-learn capture -> tell the console which key was bound so it updates
+    // its field (encoded which*256 + note).
+    const int learned = processor_.takeLearnedNote();
+    if (learned >= 0)
+    {
+        auto* ev = new juce::DynamicObject();
+        ev->setProperty("which", learned / 256);
+        ev->setProperty("note",  learned % 256);
+        web_.emitEventIfBrowserIsVisible("caeciliaSeqLearned", juce::var(ev));
+    }
 }
 
 void CaeciliaEditor::resized()

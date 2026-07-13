@@ -27,6 +27,25 @@ constexpr std::array<double, FdnReverb::kLines> kBaseDelaysMs = {
 
 // Longest pre-delay we allocate room for.
 constexpr double kMaxPreDelayMs = 120.0;
+
+// Early-reflection pattern: nine discrete taps spread over ~13..80 ms with a
+// decaying, left/right ping-ponging gain. Chosen to evoke a large stone nave
+// (sparse, asymmetric) rather than a symmetric "box". Scaled to the sample rate.
+struct ErTap { double ms; float l; float r; };
+constexpr std::array<ErTap, 9> kErPattern = {{
+    { 13.5f, 0.92f, 0.55f },
+    { 19.1f, 0.55f, 0.86f },
+    { 26.3f, 0.80f, 0.48f },
+    { 33.7f, 0.46f, 0.74f },
+    { 42.1f, 0.66f, 0.42f },
+    { 50.9f, 0.40f, 0.62f },
+    { 61.3f, 0.52f, 0.34f },
+    { 70.7f, 0.32f, 0.50f },
+    { 79.9f, 0.42f, 0.28f },
+}};
+
+// Longest ER tap we allocate room for.
+constexpr double kMaxErMs = 90.0;
 } // namespace
 
 void FdnReverb::prepare(core::SampleRate sampleRate,
@@ -55,9 +74,29 @@ void FdnReverb::prepare(core::SampleRate sampleRate,
     preDelay_.assign(std::max<std::size_t>(preMax, 2), 0.0f);
     preDelayPos_ = 0;
 
+    const auto erMax =
+        static_cast<std::size_t>(kMaxErMs * 0.001 * sampleRate_) + 2;
+    erBuffer_.assign(std::max<std::size_t>(erMax, 2), 0.0f);
+    erPos_ = 0;
+    updateEarlyReflections();
+
     updateModulation();
     setParams(params_);
     reset();
+}
+
+void FdnReverb::updateEarlyReflections() noexcept
+{
+    for (std::size_t k = 0; k < kErTaps; ++k)
+    {
+        auto d = static_cast<std::size_t>(kErPattern[k].ms * 0.001 * sampleRate_);
+        if (d < 1) d = 1;
+        if (!erBuffer_.empty() && d > erBuffer_.size() - 1)
+            d = erBuffer_.size() - 1;
+        erDelay_[k]  = d;
+        erGainL_[k]  = kErPattern[k].l;
+        erGainR_[k]  = kErPattern[k].r;
+    }
 }
 
 void FdnReverb::updateModulation() noexcept
@@ -72,7 +111,7 @@ void FdnReverb::updateModulation() noexcept
         const double rateHz = kModBaseHz * (1.0 + 0.05 * static_cast<double>(i));
         modInc_[i] = static_cast<float>(rateHz / sampleRate_);
     }
-    modDepth_ = static_cast<float>(1.5 * sampleRate_ / 44100.0);
+    modDepth_ = static_cast<float>(2.1 * sampleRate_ / 44100.0);
 }
 
 core::ReverbParams FdnReverb::presetParams(ReverbPreset preset) noexcept
@@ -90,7 +129,7 @@ core::ReverbParams FdnReverb::presetParams(ReverbPreset preset) noexcept
             p.mix = 0.28f; p.decaySec = 2.6f;  p.preDelayMs = 18.0f; p.dampingHz = 6500.0f; p.widthNorm = 1.0f;
             break;
         case ReverbPreset::Cathedral:
-            p.mix = 0.34f; p.decaySec = 4.8f;  p.preDelayMs = 32.0f; p.dampingHz = 7500.0f; p.widthNorm = 1.0f;
+            p.mix = 0.32f; p.decaySec = 5.2f;  p.preDelayMs = 38.0f; p.dampingHz = 6800.0f; p.widthNorm = 1.0f;
             break;
         case ReverbPreset::Plate:
             p.mix = 0.30f; p.decaySec = 2.0f;  p.preDelayMs = 2.0f;  p.dampingHz = 8000.0f; p.widthNorm = 0.9f;
@@ -178,6 +217,22 @@ void FdnReverb::process(core::AudioBlock& block) noexcept
         preDelay_[preDelayPos_] = mono;
         preDelayPos_            = (preDelayPos_ + 1) % preDelay_.size();
 
+        // Early reflections: sparse, stereo-panned taps of the input read before
+        // the diffuse tail. These give the "large stone room" spatial cue.
+        float erL = 0.0f;
+        float erR = 0.0f;
+        const std::size_t erSize = erBuffer_.size();
+        for (std::size_t k = 0; k < kErTaps; ++k)
+        {
+            const std::size_t rd = (erPos_ + erSize - erDelay_[k]) % erSize;
+            const float s = erBuffer_[rd];
+            erL += s * erGainL_[k];
+            erR += s * erGainR_[k];
+        }
+        erBuffer_[erPos_] = mono;
+        erPos_            = (erPos_ + 1) % erSize;
+        const float erMono = 0.5f * (erL + erR);
+
         // Read, damp and apply feedback gain to every line. Each read tap is
         // jittered forward by a light, slow LFO and linearly interpolated, so the
         // effective delay wanders within [len - modDepth_, len] samples.
@@ -220,17 +275,21 @@ void FdnReverb::process(core::AudioBlock& block) noexcept
             mixed[i] = o[i];
         kernels::hadamard16(mixed);
 
-        // Inject the (pre-delayed) input and write back into each line.
+        // Inject the (pre-delayed) input PLUS the early-reflection energy and
+        // write back into each line, so the diffuse tail grows out of the early
+        // pattern rather than from a bare impulse.
         for (std::size_t i = 0; i < kLines; ++i)
         {
-            const float v         = inject_[i] * tankIn + mixed[i];
+            const float v         = inject_[i] * (tankIn + erSendToTank_ * erMono) + mixed[i];
             lines_[i][positions_[i]] = flushDenormal(v);
             positions_[i]         = (positions_[i] + 1) % lengths_[i];
         }
 
-        left[n] = dry * inL + wet * wetL;
+        // Wet output = early reflections (placed, stereo) + diffuse tail.
+        constexpr float erOutGain = 0.30f;
+        left[n] = dry * inL + wet * (wetL + erOutGain * erL);
         if (right)
-            right[n] = dry * inR + wet * wetR;
+            right[n] = dry * inR + wet * (wetR + erOutGain * erR);
     }
 
     // Mirror the tail onto any further channels (rare; keeps buses coherent).
@@ -255,6 +314,8 @@ void FdnReverb::reset() noexcept
     }
     std::fill(preDelay_.begin(), preDelay_.end(), 0.0f);
     preDelayPos_ = 0;
+    std::fill(erBuffer_.begin(), erBuffer_.end(), 0.0f);
+    erPos_ = 0;
 }
 
 } // namespace caecilia::dsp

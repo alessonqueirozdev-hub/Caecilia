@@ -23,6 +23,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -127,6 +128,39 @@ public:
     /// Message thread: sets a flag the audio thread acts on next block.
     void uiAllNotesOff() noexcept { uiPanic_.store(true, std::memory_order_relaxed); }
 
+    // --- Sequencer page-turn (configurable MIDI keys -> Prev/Next) -----------
+    // Two configurable MIDI notes step the console's registration sequencer and
+    // are SWALLOWED so they never sound a pipe. Defaults are the user's Casio top
+    // keys (si5 = 83 Previous, do6 = 84 Next), but any key on any keyboard can be
+    // bound via MIDI-learn. Message-thread setters; audio-thread reads.
+
+    /// Configure the page-turn keys and enable/disable the feature. Message thread.
+    void setSeqNav(int prevNote, int nextNote, bool enabled) noexcept
+    {
+        seqPrevNote_.store(prevNote, std::memory_order_relaxed);
+        seqNextNote_.store(nextNote, std::memory_order_relaxed);
+        seqNavEnabled_.store(enabled, std::memory_order_relaxed);
+    }
+
+    /// Arm MIDI-learn: the next note-on becomes the binding. 1 = Previous,
+    /// 2 = Next, 0 = cancel. Message thread.
+    void armSeqLearn(int which) noexcept { seqLearn_.store(which, std::memory_order_relaxed); }
+
+    /// Editor drain: pop one page-turn direction (-1 = Previous, +1 = Next).
+    /// @return false when the queue is empty. Message thread (single consumer).
+    [[nodiscard]] bool popSeqNav(std::int8_t& dir) noexcept { return seqNav_.pop(dir); }
+
+    /// Editor drain: take a learned binding, encoded as (which * 256 + note), or
+    /// -1 if none was captured since the last call. Message thread.
+    [[nodiscard]] int takeLearnedNote() noexcept
+    {
+        return seqLearnedNote_.exchange(-1, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] int  seqPrevNote()   const noexcept { return seqPrevNote_.load(std::memory_order_relaxed); }
+    [[nodiscard]] int  seqNextNote()   const noexcept { return seqNextNote_.load(std::memory_order_relaxed); }
+    [[nodiscard]] bool seqNavEnabled() const noexcept { return seqNavEnabled_.load(std::memory_order_relaxed); }
+
     /// Set the whole sounding registration from the WebView console (a list of
     /// drawn family+footage ranks). Message thread: builds the composite spectrum
     /// off the audio thread and swaps the freshly-seeded voices into the engine
@@ -209,6 +243,15 @@ private:
     /// Set by the console (stop demo / release keys); the audio thread panics and
     /// clears it. Fixes notes sticking when a demo is stopped mid-phrase.
     std::atomic<bool> uiPanic_{ false };
+
+    // --- Sequencer page-turn state ------------------------------------------
+    std::atomic<int>  seqPrevNote_{ 83 };     ///< MIDI note for "previous" (si5 default).
+    std::atomic<int>  seqNextNote_{ 84 };     ///< MIDI note for "next" (do6 default).
+    std::atomic<bool> seqNavEnabled_{ true }; ///< Master enable for the page-turn keys.
+    std::atomic<int>  seqLearn_{ 0 };         ///< MIDI-learn arm: 0=off, 1=Prev, 2=Next.
+    std::atomic<int>  seqLearnedNote_{ -1 };  ///< Captured learn result (which*256+note); -1 = none.
+    core::engine::SpscRing<std::int8_t, 64> seqNav_; ///< Audio -> editor: page-turn directions.
+    juce::MidiBuffer  hostScratch_;           ///< Pre-reserved: host MIDI minus nav keys (no RT alloc).
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CaeciliaAudioProcessor)
 };

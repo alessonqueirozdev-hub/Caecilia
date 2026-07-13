@@ -25,6 +25,41 @@ void AdditiveVoice::setContext(const VoiceContext& context) noexcept
     bank_.setWindCoupling(context_.wind,
                           context_.chest,
                           wind::defaultResponseFor(context_.family));
+
+    // Per-family "living pipe" character (Aeolus-inspired). Each family drifts,
+    // speaks and rolls off differently: strings shimmer (a strong celeste-like
+    // beat) and speak slowly; reeds have a pronounced speech glide; flutes are
+    // the steadiest; mixtures are bright and speak fast.
+    // NOTE: the wind-attack chiff is DISABLED (setChiff 0). It was a filtered
+    // white-noise burst, and firing one per voice meant a chord's simultaneous
+    // onsets stacked into a metallic, cymbal-like "tss" transient. The organic,
+    // soft attack now comes entirely from the per-partial bloom + speech glide
+    // (which the ear reads as a pipe speaking, with no noise). A proper chiff
+    // would need to be TONAL (noise resonated at the pipe pitch), not broadband.
+    // The per-partial bloom is kept SMALL and nearly frequency-FLAT (all partials
+    // speak together within ~8-12 ms, regardless of pitch). A frequency-dependent
+    // bloom made the upper partials of harmonically-rich stops (strings, and any
+    // string-bearing composite) lag behind the fundamental, so the brightness
+    // swept up during the attack — an artificial "wah" / filter-opening, worst on
+    // high notes. A flat bloom removes the sweep entirely; the soft onset now
+    // comes from the whole-bank raised-cosine envelope, not the partial stagger.
+    //                              instability  glide    bloom   hfCorner
+    switch (context_.family)
+    {
+        case core::TonalFamily::Principal:
+            bank_.setLiveliness(5.5f, -18.0f, 0.012f, 5200.0f); break;
+        case core::TonalFamily::Flute:
+            bank_.setLiveliness(3.5f, -12.0f, 0.011f, 6200.0f); break;
+        case core::TonalFamily::String:
+            bank_.setLiveliness(7.5f,  -8.0f, 0.010f, 4800.0f); break;
+        case core::TonalFamily::Reed:
+            bank_.setLiveliness(6.0f, -22.0f, 0.012f, 4200.0f); break;
+        case core::TonalFamily::Mixture:
+            bank_.setLiveliness(8.0f, -14.0f, 0.010f, 4200.0f); break;
+        default:
+            bank_.setLiveliness(5.5f, -16.0f, 0.011f, 5200.0f); break;
+    }
+    bank_.setChiff(0.0f);
 }
 
 void AdditiveVoice::seedFrom(const SpectralModel& model, float phaseAlignSeconds) noexcept

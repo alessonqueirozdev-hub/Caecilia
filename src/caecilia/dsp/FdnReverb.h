@@ -91,6 +91,8 @@ private:
     void updateWidth() noexcept;
     /// (Re)initialise the per-line modulation LFO increments for the sample rate.
     void updateModulation() noexcept;
+    /// (Re)compute the early-reflection tap delays and stereo gains.
+    void updateEarlyReflections() noexcept;
 
     core::SampleRate   sampleRate_    = 44100.0;
     std::size_t        maxBlockFrames_ = 0;
@@ -118,6 +120,20 @@ private:
     std::array<float, kLines> modPhase_{};   ///< Per-line LFO phase in [0, 1).
     std::array<float, kLines> modInc_{};     ///< Per-line LFO phase step / sample.
     float                     modDepth_ = 0.0f; ///< Modulation depth (samples).
+
+    // --- Early reflections -------------------------------------------------
+    // A sparse pattern of discrete, stereo-panned taps of the (mono) input read
+    // BEFORE the diffuse tail. This is the cue the ear uses to place itself in a
+    // large stone room; without it, a pure FDN tail reads as a synthetic "reverb
+    // effect" rather than a real acoustic. The taps also feed the tank so the
+    // dense tail is excited by the early pattern (a more natural build-up).
+    static constexpr std::size_t kErTaps = 9;
+    std::vector<float>                erBuffer_{};      ///< Mono early-reflection ring buffer.
+    std::size_t                       erPos_ = 0;       ///< ER buffer write cursor.
+    std::array<std::size_t, kErTaps>  erDelay_{};       ///< Tap delays (samples).
+    std::array<float, kErTaps>        erGainL_{};       ///< Tap gain -> L.
+    std::array<float, kErTaps>        erGainR_{};       ///< Tap gain -> R.
+    float                             erSendToTank_ = 0.55f; ///< ER energy folded into the tail.
 };
 
 } // namespace caecilia::dsp
