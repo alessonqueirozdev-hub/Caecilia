@@ -309,7 +309,11 @@ of inline SVG data-URI textures. Open directly in any modern browser.
     background: var(--meter-well); border: 1px solid var(--panel-edge); border-radius: 6px; padding: 3px 18px 3px 7px; margin-top: 13px; cursor: pointer;
     background-image: linear-gradient(45deg,transparent 50%,var(--ink-faint) 50%),linear-gradient(135deg,var(--ink-faint) 50%,transparent 50%);
     background-position: calc(100% - 11px) 10px, calc(100% - 7px) 10px; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
-  .ctrl-space option { background: var(--panel); color: var(--ink); }
+  /* Native <select> popups can't paint a gradient on <option>, so a var(--panel)
+     gradient collapses to white and the cream --ink text vanishes. Use SOLID,
+     high-contrast colours (matching the other dropdowns) so the list is legible. */
+  .ctrl-space option { background: #221a12; color: #f3e2c4; }
+  #app[data-theme="flat"] .ctrl-space option { background: #141920; color: #e7edf5; }
   .ctrl-eqtoggle { margin-top: 13px; }
 
   .trem {
