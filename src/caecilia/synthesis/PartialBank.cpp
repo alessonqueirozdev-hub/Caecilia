@@ -114,15 +114,34 @@ void PartialBank::seedFrom(const SpectralModel& model, float /*phaseAlignSeconds
     steadyFormants_  = model.steadyFormants; // fixed-Hz formant (reeds); flues have peakCount==0
 }
 
-void PartialBank::trigger(core::PipeId /*pipe*/, core::Velocity velocity, double frequencyHz) noexcept
+void PartialBank::trigger(core::PipeId pipe, core::Velocity velocity, double frequencyHz) noexcept
 {
     fundamentalHz_   = frequencyHz;
     noteTimeSeconds_ = 0.0;
 
-    // Velocity scales the initial drive; a gentle curve avoids a hard step. This
-    // is kept separate from masterGain_ so an owner-set level trim survives.
-    const float v = static_cast<float>(velocity) / 127.0f;
-    velocityGain_ = 0.4f + 0.6f * v;
+    // Per-VOICE decorrelation salt. The seed gives every partial a scattered start
+    // phase and its own drift PRNG, but those are keyed on the partial INDEX only —
+    // so two voices sounding the same pitch (a unison coupler, or the same key on
+    // two divisions) start phase-coherent and drift in lock-step, summing at +6 dB
+    // instead of +3 dB. That coherent-sum hotspot is what forced the old bus duck.
+    // Salting the phase and PRNG per (rank, note) makes the voices independent, so N
+    // voices sum incoherently (~sqrt(N)) — the Aeolus/GrandOrgue headroom mechanism.
+    const std::uint32_t voiceSalt =
+        (static_cast<std::uint32_t>(pipe.rankId)   * 2654435761u)
+      ^ (static_cast<std::uint32_t>(pipe.midiNote) * 40503u)
+      ^ 0x85EBCA6Bu;
+    const auto hash32 = [](std::uint32_t x) noexcept {
+        x ^= x >> 16; x *= 0x7FEB352Du; x ^= x >> 15; x *= 0x846CA68Bu; x ^= x >> 16; return x;
+    };
+
+    // A pipe organ is VELOCITY-FLAT: a key is either down or up, and the pipe always
+    // speaks at its one voiced loudness. The old 0.4..1.0 velocity curve gave ~8 dB of
+    // level swing from keystroke force, so — since no two struck keys share a MIDI
+    // velocity — every note of a held chord came out at a different volume (the user's
+    // "notes not at the same volume"). Fix it at unity; the pipe's level lives in the
+    // voiced spectrum, not the keystroke.
+    (void) velocity;
+    velocityGain_ = 1.0f;
 
     // Per-partial attack bloom: a real pipe's fundamental speaks first and the
     // upper partials develop over the next tens of milliseconds. Derive each
@@ -133,9 +152,13 @@ void PartialBank::trigger(core::PipeId /*pipe*/, core::Velocity velocity, double
     for (std::size_t i = 0; i < partialCount_; ++i)
     {
         Partial& p = partials_[i];
-        // Keep the scattered start phase from the seed (never re-align to
-        // coherence — coherent phase is exactly the "electronic organ" click).
-        p.phase = wrapPhase(p.phase);
+        // Scatter the start phase AND re-seed the drift PRNG per voice (not just per
+        // partial index), so different voices are mutually decorrelated — never
+        // re-align to coherence (coherent phase is the "electronic organ" click, and
+        // coherent voices are the tutti hotspot).
+        const std::uint32_t h = hash32(voiceSalt ^ (static_cast<std::uint32_t>(i) * 2246822519u));
+        p.rng   = h | 1u;
+        p.phase = wrapPhase(p.phase + kTwoPi * (static_cast<float>(h >> 8) * (1.0f / 16777216.0f)));
         p.driftCents = 0.0f;
         p.curGain = 0.0f;   // ramp up from silence (click-free onset)
         p.gainInc = 0.0f;

@@ -303,10 +303,12 @@ float compositeRankGainDb(const Stop& stop) noexcept
 /// are already comfortable with, so the plenum/tutti loudness is unchanged.
 constexpr double kMaxCompositeEnergy = 0.40;
 /// Quietest a seeded voice is normalised to — a single soft flute/string for
-/// psalmody or plainchant accompaniment. Kept a musical (not extreme) distance
-/// below the tutti so it is still clearly audible; the master limiter, not a huge
-/// dynamic span, is what keeps the dense registrations clean.
-constexpr double kMinCompositeEnergy = 0.22;
+/// psalmody or plainchant accompaniment. Lowered from 0.22 to 0.06: the old floor
+/// pinned every 1-3-stop registration to one identical energy and squeezed the
+/// whole soft-to-tutti span into ~5 dB (the "compression always on" flatness).
+/// At 0.06 a single soft stop is genuinely soft and the plenum genuinely loud —
+/// ~16 dB of registral dynamics restored (a real organ spans far more).
+constexpr double kMinCompositeEnergy = 0.06;
 
 /// Per-rank loudness weight: how much a drawn rank adds to the overall level.
 /// Foundations pull the tone up; soft flutes/strings barely raise it; reeds and
@@ -342,7 +344,7 @@ constexpr double kMinCompositeEnergy = 0.22;
 /// dynamics track the registration instead of being flattened to one level.
 [[nodiscard]] double loudnessTargetForWeight(double weight) noexcept
 {
-    const double t = 0.13 * std::sqrt(weight > 0.0 ? weight : 0.0);
+    const double t = 0.11 * std::sqrt(weight > 0.0 ? weight : 0.0);
     return t < kMinCompositeEnergy ? kMinCompositeEnergy
          : (t > kMaxCompositeEnergy ? kMaxCompositeEnergy : t);
 }

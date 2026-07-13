@@ -419,20 +419,17 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // Console master trim (Settings panel).
     buffer.applyGain(uiMaster_.load(std::memory_order_relaxed));
 
-    // Polyphony compensation: a dense chord sums far hotter than a single note, so
-    // trim by ~1/(1+k*(N-1)) (smoothed). Sparse/normal playing stays at full level
-    // (loud, and BELOW the limiter — clean), while a full Tutti is tamed so it only
-    // rides gently into the limiter instead of slamming it (which distorted the
-    // bass). Validated: solo -19 dBFS clean, plenum -4 dBFS clean, Tutti ~7 dB GR.
-    {
-        const std::size_t nv = engine_.activeVoiceCount();
-        constexpr float kPolyK = 0.10f;
-        const float target = 1.0f / (1.0f + kPolyK * (nv > 1 ? static_cast<float>(nv - 1) : 0.0f));
-        polyGain_.setTargetValue(target);
-        polyGain_.applyGain(buffer, buffer.getNumSamples());
-    }
+    // NO polyphony compensation. A pipe organ is an open-loop, fixed-gain mixer: each
+    // pipe adds acoustic energy, so more notes/stops must get LOUDER, never quieter.
+    // The old 1/(1+k*(N-1)) trim ducked a 10-note passage by ~5.6 dB and — because it
+    // counted release-tail voices — breathed as chords were released ("volume drops
+    // when playing more notes"). Headroom is instead baked in per-voice (conservative
+    // base gain) and made real by the voices' uncorrelated drift, so the tutti sums
+    // incoherently (~sqrt(N)) and stays under the ceiling without any dynamic trim —
+    // exactly how Aeolus and GrandOrgue keep a full organ clean (no AGC anywhere).
 
-    // Brick-wall master limiter: a proper look-ahead peak limiter REPLACES the old
+    // Master limiter: now a TRANSPARENT SAFETY NET (hold-based, no pumping) that only
+    // catches a pathological fff transient — not a bus compressor riding every chord.
     // per-sample tanh (a waveshaper that flattened the Tutti into intermodulation
     // distortion — the "explosion"). The Tutti now stays loud AND clean.
     limiter_.process(block);

@@ -80,11 +80,15 @@ void AdditiveVoice::noteOn(core::PipeId pipe, core::Velocity velocity) noexcept
     // Apply the deterministic per-pipe detune (cents -> ratio).
     frequency *= std::pow(2.0, static_cast<double>(voicing_.detuneCents) / 1200.0);
 
-    // The per-pipe level trim folds into the bank's master gain. The base level is
-    // set so a single soft registration is clearly audible (~-19 dBFS) while a full
-    // registration rides gently into the master limiter — the loudness restage that
-    // fixes both "too quiet" (sparse) and "distorts" (dense slamming the limiter).
-    bank_.setMasterGain(0.72f * std::pow(10.0f, voicing_.levelTrimDb * 0.05f));
+    // Per-voice HEADROOM baked into the synthesis (Aeolus/GrandOrgue philosophy):
+    // each voice sits ~-12 dBFS so that dozens summed stay under the ceiling by
+    // static gain alone — no bus compressor, no polyphony duck. Aeolus generates
+    // each pipe at ~0.08-0.21 linear (-14..-22 dBFS); GrandOrgue folds a -15 dB
+    // master (0.178) into every voice. 0.25 sits in that band. The tutti is kept
+    // clean by this headroom PLUS the per-voice decorrelation (uncorrelated drift +
+    // scattered start phase), which makes N voices sum incoherently (~sqrt(N)).
+    constexpr float kVoiceHeadroom = 0.25f;
+    bank_.setMasterGain(kVoiceHeadroom * std::pow(10.0f, voicing_.levelTrimDb * 0.05f));
     bank_.trigger(pipe, velocity, frequency);
 }
 

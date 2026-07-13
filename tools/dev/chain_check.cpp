@@ -39,8 +39,9 @@ namespace tune  = caecilia::tuning;
 
 namespace {
 constexpr double kSR = 48000.0; constexpr std::size_t kBlock = 512;
-constexpr float  kVoiceBase = 0.72f; // <-- per-voice base (AdditiveVoice uses 0.25; test the new value)
-constexpr float  kPolyK     = 0.10f; // polyphony-compensation strength
+constexpr float  kVoiceBase = 0.25f; // <-- per-voice base (AdditiveVoice ships this; sweep to retune)
+constexpr float  kShipBase  = 0.25f; // what AdditiveVoice::noteOn actually bakes in now
+constexpr float  kPolyK     = 0.00f; // polyphony compensation REMOVED (organ sums, no duck)
 
 model::RegistrationRank rk(core::TonalFamily f, double ft, bool c=false){ return {f, model::footageFromFeet(ft), c}; }
 double toDb(double x){ return x>1e-9 ? 20*std::log10(x) : -120; }
@@ -55,7 +56,7 @@ Res run(const std::vector<model::RegistrationRank>& ranks, const std::vector<int
     tune::TuningModel tuning;
     dsp::FdnReverb rev; rev.prepare(kSR,kBlock,2); rev.setPreset(dsp::ReverbPreset::Cathedral);
     dsp::MasterEq eq; eq.prepare(kSR,kBlock,2);
-    dsp::Limiter lim; lim.prepare(kSR,kBlock,2); lim.setParams(-1.5f,2.5f,90.0f);
+    dsp::Limiter lim; lim.prepare(kSR,kBlock,2); lim.setParams(-3.0f,2.5f,400.0f,600.0f);
 
     std::vector<std::unique_ptr<synth::AdditiveVoice>> voices; std::vector<core::IVoice*> ptrs;
     synth::VoiceContext ctx; ctx.tuning=&tuning; ctx.family=fam; ctx.footage=core::footage::kEight;
@@ -83,8 +84,8 @@ Res run(const std::vector<model::RegistrationRank>& ranks, const std::vector<int
         // polyphony trim (smoothed), mirrors the processor
         const std::size_t nv = engine.activeVoiceCount();
         const float polyTarget = 1.0f/(1.0f+kPolyK*(nv>0?(float)(nv-1):0.0f));
-        // AdditiveVoice now applies the ship base (0.85) itself; probe others via ratio.
-        const float baseScale = kVoiceBase/0.72f;
+        // AdditiveVoice bakes kShipBase itself; probe other bases via the ratio.
+        const float baseScale = kVoiceBase/kShipBase;
         for (std::size_t i=0;i<kBlock;++i){ polyGain += 0.02f*(polyTarget-polyGain);
             L[i]*=baseScale*polyGain; R[i]*=baseScale*polyGain; }
         lim.process(blk);
