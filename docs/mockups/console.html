@@ -1053,6 +1053,13 @@ if (CAE_BRIDGE) {
         sim.realPeakR = +st.peakR || 0;
         sim.realVoices = +st.voices || 0;
       }
+      // Installer-chosen language: apply once on first run, unless the user has
+      // already picked a language in-app (their choice always wins).
+      if (!window.__caeInstLangDone && st.installerLang) {
+        window.__caeInstLangDone = true;
+        if (window.__caeSetLang && !(window.__caeUserPickedLang && window.__caeUserPickedLang()))
+          window.__caeSetLang(String(st.installerLang));
+      }
     } catch (e) {}
   });
   // C++ -> JS: the swallowed page-turn keys (si5/do6 by default, configurable)
@@ -1335,7 +1342,7 @@ function ctrlGroup(i18nKey){
 (function buildControls(){
   const host = $("#controls"); if (!host) return;
   const SPACE_IDX = { room:0, chamber:1, hall:2, cathedral:3, plate:4 };
-  let outCfg = { vol:100, gain:100, space:"cathedral", mix:34 };
+  let outCfg = { vol:100, gain:100, space:"cathedral", mix:28 };
   try { const j = localStorage.getItem("cae.outcfg"); if (j) Object.assign(outCfg, JSON.parse(j)); } catch(e){}
   const save = () => { try { localStorage.setItem("cae.outcfg", JSON.stringify(outCfg)); } catch(e){} };
 
@@ -1675,11 +1682,14 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          eq:"Equalizer", eqSub:"5-Band Master-Voicing", warmth:"Wärme", boxiness:"Mitten", bodyBand:"Körper", presence:"Präsenz", air:"Luft", flat:"Neutral",
          outputVu:"Ausgang · VU", windLabel:"Wind · Balgdruck (mm H₂O)", stableTxt:"stabil", sagTxt:"Abfall", seq:"Seq", pedalNotes:"Pédale — 30 Töne", swell:"Schwellwerk", cresc:"Cresc.", drawn:"Register", keysLbl:"Tasten", polyphony:"Polyphonie", enclosed:"schwellbar", matchWord:"Treffer", matchesWord:"Treffer", hintPlay:"Zieh ein Register und spiele — der Wind atmet unter Last.", famPrincipal:"Prinzipal", famFlute:"Flöte", famString:"Streicher", famReed:"Zunge", famMixture:"Mixtur", famCornet:"Kornett", play:"Abspielen", stop:"Stopp", organPreset:"🎹 Orgel-Register…", controlsLabel:"Bedienung", grpOutput:"Ausgang", grpReverb:"Hall", grpEq:"EQ", vol:"Vol", gain:"Gain", warmthShort:"Bass", boxinessShort:"Mitte", bodyBandShort:"Körper", presenceShort:"Präs", airShort:"Luft" },
   };
-  let lang = "en";
+  // The user's own choice (persisted) wins; otherwise the installer language is
+  // applied on first run (see the caeciliaState handler + window.__caeSetLang).
+  let lang = (function(){ try { return localStorage.getItem("cae.lang") || "en"; } catch(e){ return "en"; } })();
   const t = k => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
   // Expose the translator so the main script (legend, status, hints) can localise
   // too. Reads the current `lang` at call time, so it always reflects the choice.
   window.__caeT = t;
+  window.__caeUserPickedLang = () => { try { return !!localStorage.getItem("cae.lang"); } catch(e){ return false; } };
   window.__caeLang = () => lang;
 
   const SPACES = { room:[1.1,3.0], chamber:[1.7,2.8], hall:[2.8,2.6], cathedral:[4.6,2.2], plate:[1.0,3.5] };
@@ -1870,7 +1880,9 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     eqRefresh();
     /* EQ is pushed on load by the top control panel (authoritative). */
 
-    langSel.onchange = () => { lang = langSel.value; applyLang(); };
+    langSel.onchange = () => { lang = langSel.value; try { localStorage.setItem("cae.lang", lang); } catch(e){} applyLang(); };
+    // Programmatic language set (installer coupling); applyLang is in scope here.
+    window.__caeSetLang = (code) => { if (I18N[code]) { lang = code; applyLang(); } };
     refresh(); applyLang();
   }
 

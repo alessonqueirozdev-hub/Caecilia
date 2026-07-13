@@ -49,6 +49,10 @@ private:
     CaeciliaAudioProcessor& processor_;
     juce::WebBrowserComponent web_;
 
+    /// Language the installer recorded (HKCU\Software\Caecilia\Language, Windows),
+    /// forwarded to the console so it opens in the language chosen at install time.
+    juce::String installerLang_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CaeciliaEditor)
 };
 

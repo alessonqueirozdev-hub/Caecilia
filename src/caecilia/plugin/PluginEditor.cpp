@@ -204,6 +204,13 @@ CaeciliaEditor::CaeciliaEditor(CaeciliaAudioProcessor& processor)
     , processor_(processor)
     , web_(makeOptions())
 {
+    // The installer records the chosen language under HKCU\Software\Caecilia; read
+    // it so the console can open in that language on first run (Windows only).
+   #if JUCE_WINDOWS
+    installerLang_ = juce::WindowsRegistry::getValue(
+        "HKEY_CURRENT_USER\\Software\\Caecilia\\Language", juce::String());
+   #endif
+
     addAndMakeVisible(web_);
     web_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 
@@ -234,6 +241,9 @@ void CaeciliaEditor::timerCallback()
     obj->setProperty("peakR",    processor_.outputPeakR());
     obj->setProperty("windSag",  frame.meters.windSagNorm);
     obj->setProperty("playDiv",  static_cast<int>(processor_.playDivision().value));
+    // The installer's chosen language (empty if none) — the console applies it on
+    // first receipt if the user has not already picked a language in-app.
+    obj->setProperty("installerLang", installerLang_);
 
     // Lit keys of the primary manual, as a compact [note,...] array (source != Off).
     juce::Array<juce::var> lit;

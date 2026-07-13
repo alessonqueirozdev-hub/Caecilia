@@ -56,7 +56,7 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 WizardImageFile=..\assets\installer\wizard-large.bmp
 WizardSmallImageFile=..\assets\installer\wizard-small.bmp
-WizardImageStretch=no
+WizardImageStretch=yes
 ; A product-highlights page before the licence, and a guard so we never install
 ; over a running Standalone.
 InfoBeforeFile=info-before.txt
@@ -115,3 +115,21 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; \
     Flags: nowait postinstall skipifsilent; Components: standalone
+
+[Registry]
+; Carry the installer's chosen language into the app: Caecilia reads this on first
+; launch and opens in the same language (until the user changes it in-app).
+Root: HKCU; Subkey: "Software\Caecilia"; ValueType: string; ValueName: "Language"; \
+    ValueData: "{code:LangCode}"; Flags: uninsdeletekey
+
+[Code]
+function LangCode(Param: String): String;
+begin
+  case ActiveLanguage() of
+    'brazilianportuguese': Result := 'pt';
+    'spanish':             Result := 'es';
+    'german':              Result := 'de';
+  else
+    Result := 'en';
+  end;
+end;

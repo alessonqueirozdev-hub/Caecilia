@@ -84,7 +84,7 @@ void AdditiveVoice::noteOn(core::PipeId pipe, core::Velocity velocity) noexcept
     // set so a single soft registration is clearly audible (~-19 dBFS) while a full
     // registration rides gently into the master limiter — the loudness restage that
     // fixes both "too quiet" (sparse) and "distorts" (dense slamming the limiter).
-    bank_.setMasterGain(0.85f * std::pow(10.0f, voicing_.levelTrimDb * 0.05f));
+    bank_.setMasterGain(0.72f * std::pow(10.0f, voicing_.levelTrimDb * 0.05f));
     bank_.trigger(pipe, velocity, frequency);
 }
 

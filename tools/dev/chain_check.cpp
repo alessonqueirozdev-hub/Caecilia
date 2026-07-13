@@ -25,6 +25,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <span>
 #include <vector>
@@ -38,7 +39,7 @@ namespace tune  = caecilia::tuning;
 
 namespace {
 constexpr double kSR = 48000.0; constexpr std::size_t kBlock = 512;
-constexpr float  kVoiceBase = 0.85f; // <-- per-voice base (AdditiveVoice uses 0.25; test the new value)
+constexpr float  kVoiceBase = 0.72f; // <-- per-voice base (AdditiveVoice uses 0.25; test the new value)
 constexpr float  kPolyK     = 0.10f; // polyphony-compensation strength
 
 model::RegistrationRank rk(core::TonalFamily f, double ft, bool c=false){ return {f, model::footageFromFeet(ft), c}; }
@@ -64,7 +65,8 @@ Res run(const std::vector<model::RegistrationRank>& ranks, const std::vector<int
         v->prepare(kSR,kBlock); v->setContext(ctx); v->seedFrom(comp);
         ptrs.push_back(v.get()); voices.push_back(std::move(v)); }
     eng::AudioEngine engine; engine.prepare(kSR,kBlock,2,3); engine.setTuning(&tuning);
-    engine.setMasterReverb(&rev); engine.bindVoices(ptrs.data(), ptrs.size());
+    if (std::getenv("CAE_DRY")==nullptr) engine.setMasterReverb(&rev);
+    engine.bindVoices(ptrs.data(), ptrs.size());
 
     const core::DivisionId dv{0};
     int k=0; for (int nt : notes){ const core::PipeId p{(std::uint16_t)k++,(std::uint8_t)nt};
@@ -72,9 +74,9 @@ Res run(const std::vector<model::RegistrationRank>& ranks, const std::vector<int
 
     std::array<float,kBlock> L{},R{}; float* ch[2]={L.data(),R.data()};
     float polyGain=1.0f;
-    std::vector<float> mono; mono.reserve((std::size_t)(2.0*kSR));
+    std::vector<float> mono; mono.reserve((std::size_t)(6.0*kSR));
     double peak=0,sumsq=0,grMax=0; long n=0;
-    const int totalBlocks=(int)(2.0*kSR/kBlock);
+    const int totalBlocks=(int)(6.0*kSR/kBlock);
     for (int b=0;b<totalBlocks;++b){
         L.fill(0);R.fill(0); core::AudioBlock blk(ch,2,kBlock); engine.processBlock(blk);
         eq.process(blk);
@@ -82,13 +84,14 @@ Res run(const std::vector<model::RegistrationRank>& ranks, const std::vector<int
         const std::size_t nv = engine.activeVoiceCount();
         const float polyTarget = 1.0f/(1.0f+kPolyK*(nv>0?(float)(nv-1):0.0f));
         // AdditiveVoice now applies the ship base (0.85) itself; probe others via ratio.
-        const float baseScale = kVoiceBase/0.85f;
+        const float baseScale = kVoiceBase/0.72f;
         for (std::size_t i=0;i<kBlock;++i){ polyGain += 0.02f*(polyTarget-polyGain);
             L[i]*=baseScale*polyGain; R[i]*=baseScale*polyGain; }
         lim.process(blk);
         for (std::size_t i=0;i<kBlock;++i){ float v=std::max(-1.0f,std::min(1.0f,L[i]));
             const double t=(double)b*kBlock/kSR + (double)i/kSR;
-            if (t>=0.7 && t<=1.7){ peak=std::max(peak,(double)std::fabs(v)); sumsq+=v*v; ++n; mono.push_back(v);
+            // Measure LATE (3.5..5.0 s) so the long cathedral reverb tail has built up.
+            if (t>=3.5 && t<=5.0){ peak=std::max(peak,(double)std::fabs(v)); sumsq+=v*v; ++n; mono.push_back(v);
                 grMax=std::max(grMax,(double)lim.gainReductionDb()); } }
     }
     // THD proxy: for the lowest note, energy outside the first ~12 harmonics vs total (Goertzel).
