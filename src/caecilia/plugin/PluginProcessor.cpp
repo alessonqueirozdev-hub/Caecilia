@@ -157,6 +157,20 @@ void CaeciliaAudioProcessor::setUiReverb(int spaceIndex, float mix)
     reverb_.setParams(params); // RT-safe snapshot swap
 }
 
+void CaeciliaAudioProcessor::setUiEqGain(int band, float gainDb)
+{
+    if (band < 0 || band >= static_cast<int>(dsp::MasterEq::kBands))
+        return;
+    const juce::ScopedLock sl(getCallbackLock());
+    masterEq_.setBandGain(static_cast<std::size_t>(band), gainDb);
+}
+
+void CaeciliaAudioProcessor::setUiEqEnabled(bool on)
+{
+    const juce::ScopedLock sl(getCallbackLock());
+    masterEq_.setEnabled(on);
+}
+
 void CaeciliaAudioProcessor::swapVoicesFromComposite(const synth::SpectralModel& composite)
 {
     const double sr = getSampleRate();
@@ -239,6 +253,13 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     reverb_.prepare(sampleRate, frames, channels);
     reverb_.setPreset(dsp::ReverbPreset::Hall);
     engine_.setMasterReverb(&reverb_);
+
+    // Master tone-voicing EQ (post-reverb) and the brick-wall limiter (post-trim)
+    // — the professional end of the chain. EQ defaults to the pipe-organ voicing;
+    // the limiter holds the bus at -1 dBFS so the Tutti stays loud but clean.
+    masterEq_.prepare(sampleRate, frames, channels);
+    limiter_.prepare(sampleRate, frames, channels);
+    limiter_.setParams(/*ceilingDb*/ -1.5f, /*lookAheadMs*/ 2.5f, /*releaseMs*/ 90.0f);
 
     // On-screen keyboard -> audio thread: clear any stale queued notes and
     // pre-reserve the scratch MIDI buffer so merging UI notes never allocates on
@@ -373,6 +394,10 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     core::AudioBlock block(buffer.getArrayOfWritePointers(), numChannels, numFrames);
     engine_.processBlock(block);
 
+    // Post-reverb tone voicing (organ EQ). Linear, so its order vs the trims below
+    // is sonically irrelevant; only "before the limiter" matters.
+    masterEq_.process(block);
+
     // Publish one consistent frame (levels + lit keys) for the console to poll.
     stateMirror_.publish(engine_.latestMeters(), keys_);
 
@@ -389,10 +414,19 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // Console master trim (Settings panel).
     buffer.applyGain(uiMaster_.load(std::memory_order_relaxed));
 
-    // Safety soft-clip: tanh is ~transparent below ~0.4 but saturates gracefully
-    // and hard-bounds the output to +/-1, so the instrument can NEVER blow up the
-    // speakers even under heavy polyphony. Belt-and-braces with the energy-
-    // normalised registration level (see model::normalizeComposite).
+    // Operating headroom: pull the bus down so the limiter is not permanently
+    // clamping (which would pump). ~-6 dB keeps a solo note well below threshold
+    // and lets the fff Tutti ride into the limiter's 2-6 dB range cleanly.
+    constexpr float kOperatingTrim = 0.5f; // -6 dBFS
+    buffer.applyGain(kOperatingTrim);
+
+    // Brick-wall master limiter: a proper look-ahead peak limiter REPLACES the old
+    // per-sample tanh (a waveshaper that flattened the Tutti into intermodulation
+    // distortion — the "explosion"). The Tutti now stays loud AND clean.
+    limiter_.process(block);
+
+    // Final safety clamp to +/-1 (the limiter already holds ~-1 dBFS, so this
+    // almost never fires) AND harvest the true mastered peak for the console VU.
     const int nSamp = buffer.getNumSamples();
     const int nCh   = buffer.getNumChannels();
     float peaks[2] = { 0.0f, 0.0f };
@@ -402,15 +436,16 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         float  pk = 0.0f;
         for (int i = 0; i < nSamp; ++i)
         {
-            const float v = std::tanh(d[i]);
+            float v = d[i];
+            v = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
             d[i] = v;
             const float a = v < 0.0f ? -v : v;
             if (a > pk) pk = a;
         }
         if (ch < 2) peaks[ch] = pk;
     }
-    // Publish the REAL output peak so the console VU reflects what is heard
-    // (host/physical MIDI included). Mirror to both meters when mono.
+    // Publish the REAL mastered output peak so the console VU reflects what is
+    // heard (host/physical MIDI included). Mirror to both meters when mono.
     outPeakL_.store(peaks[0], std::memory_order_relaxed);
     outPeakR_.store(nCh > 1 ? peaks[1] : peaks[0], std::memory_order_relaxed);
 }
@@ -467,10 +502,9 @@ void CaeciliaAudioProcessor::setStateInformation(const void* data, int sizeInByt
 
 void CaeciliaAudioProcessor::updateLatency() noexcept
 {
-    // Plugin delay compensation = engine DSP group delay (oversampling + reverb
-    // pre-delay). // TODO(phase0.3): query the bound master reverb / oversampler
-    // for its real latency; the pure engine reports it through IReverb.
-    setLatencySamples(0);
+    // Plugin delay compensation: the master limiter's look-ahead is the only added
+    // latency (the reverb pre-delay is a wet-only tail, not a dry-path delay).
+    setLatencySamples(static_cast<int>(limiter_.latencySamples()));
 }
 
 } // namespace caecilia::plugin

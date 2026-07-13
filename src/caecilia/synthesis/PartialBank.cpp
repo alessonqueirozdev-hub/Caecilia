@@ -99,10 +99,19 @@ void PartialBank::seedFrom(const SpectralModel& model, float /*phaseAlignSeconds
         if (p.rng == 0u) p.rng = 0x2545F491u;
         p.driftCents = 0.0f;
         p.bloomSeconds = 0.010f; // filled per note in trigger() from the real pitch.
+
+        // Nearest integer harmonic (>=1) drives the per-note treble tilt; per-note
+        // level scale and formant gain are baked in trigger() from the real pitch.
+        const int h = static_cast<int>(p.ratioToF0 + 0.5f);
+        p.harmonicIndex  = h < 1 ? 1 : h;
+        p.noteLevelScale = 1.0f;
+        p.formantGain    = 1.0f;
+        p.active         = true;
     }
 
-    partialCount_  = count;
-    fundamentalHz_ = model.fundamentalHz;
+    partialCount_    = count;
+    fundamentalHz_   = model.fundamentalHz;
+    steadyFormants_  = model.steadyFormants; // fixed-Hz formant (reeds); flues have peakCount==0
 }
 
 void PartialBank::trigger(core::PipeId /*pipe*/, core::Velocity velocity, double frequencyHz) noexcept
@@ -135,6 +144,30 @@ void PartialBank::trigger(core::PipeId /*pipe*/, core::Velocity velocity, double
         const float  oct  = static_cast<float>(std::log2((freq > 1.0 ? freq : 1.0) / 120.0) / 5.64f);
         const float  frac = oct < 0.0f ? 0.0f : (oct > 1.0f ? 1.0f : oct);
         p.bloomSeconds = 0.008f + (maxBloomSeconds_ - 0.008f) * frac;
+
+        // Per-note treble tilt (Aeolus _h_lev): the higher the NOTE, the more its
+        // upper harmonics are voiced down — real pipes shed brightness up the
+        // compass, so a static composite (bright everywhere) sounds synthetic.
+        // noteHeight 0 at ~C2 (65.4 Hz), 1 at ~5 octaves up.
+        const float noteHeight = static_cast<float>(
+            std::log2((f0 > 1.0 ? f0 : 65.4) / 65.4) / 5.0);
+        const float nh = noteHeight < 0.0f ? 0.0f : (noteHeight > 1.0f ? 1.0f : noteHeight);
+        const float tiltDb = -trebleTiltDb_ * nh * std::log2(static_cast<float>(p.harmonicIndex));
+        p.noteLevelScale = dbToLinear(tiltDb);
+
+        // Fixed-Hz formant boost (reeds): the boosted band sits at an absolute
+        // frequency, so which harmonic it lifts changes note to note — the constant
+        // brassy color of a Trompette. 0 dB baseline + peaks above (never silences
+        // the inter-formant body).
+        float fg = 1.0f;
+        for (std::size_t k = 0; k < steadyFormants_.peakCount; ++k)
+        {
+            const FormantPeak& pk = steadyFormants_.peaks[k];
+            if (pk.bandwidthHz <= 0.0f) continue;
+            const float d = (static_cast<float>(freq) - pk.centerHz) / (0.5f * pk.bandwidthHz);
+            fg += (dbToLinear(pk.gainDb) - 1.0f) / (1.0f + d * d);
+        }
+        p.formantGain = fg < 0.05f ? 0.05f : (fg > 8.0f ? 8.0f : fg);
     }
 
     // Arm the wind-attack chiff: a short filtered-noise breath, pitched by the
@@ -191,12 +224,14 @@ void PartialBank::setEnvelopeTimes(float attackSeconds, float releaseSeconds) no
 void PartialBank::setLiveliness(float instabilityCents,
                                 float attackGlideCents,
                                 float maxBloomSeconds,
-                                float hfRolloffHz) noexcept
+                                float hfRolloffHz,
+                                float trebleTiltDb) noexcept
 {
     instabilityCents_ = instabilityCents < 0.0f ? 0.0f : instabilityCents;
     attackGlideCents_ = attackGlideCents;
     maxBloomSeconds_  = maxBloomSeconds < 0.008f ? 0.008f : maxBloomSeconds;
     hfRolloffHz_      = hfRolloffHz < 500.0f ? 500.0f : hfRolloffHz;
+    trebleTiltDb_     = trebleTiltDb < 0.0f ? 0.0f : trebleTiltDb;
 }
 
 bool PartialBank::isActive() const noexcept
@@ -254,17 +289,10 @@ void PartialBank::recomputeBlockCoefficients() noexcept
                           * partialPitch * static_cast<double>(glideRatio)
                           * static_cast<double>(driftRatio);
 
-        // Anti-aliasing: drop partials above Nyquist and fade the top octave.
-        float aaGain = 1.0f;
-        if (freq >= nyquist)
-        {
-            aaGain = 0.0f;
-        }
-        else if (freq > nyquist * 0.5)
-        {
-            aaGain = static_cast<float>((nyquist - freq) / (nyquist * 0.5));
-            if (aaGain < 0.0f) aaGain = 0.0f;
-        }
+        // Anti-aliasing: drop partials above Nyquist and fade the top with a
+        // raised-cosine (smoothstep) rather than a linear ramp, so a partial
+        // sliding across the fade edge under drift/glide never steps its level.
+        const float aaGain = smoothstep01(static_cast<float>((nyquist - freq) / (nyquist * 0.4)));
 
         // Gentle per-note top-octave tilt (-6 dB/oct above the corner) that tames
         // the metallic upper partials of high notes without dulling foundations.
@@ -285,7 +313,11 @@ void PartialBank::recomputeBlockCoefficients() noexcept
         const float  bloomGain = smoothstep01(static_cast<float>(dt) / p.bloomSeconds);
 
         p.increment = static_cast<float>(kTwoPi * freq / sr);
-        p.blockGain = p.amplitude * aaGain * hfGain * bloomGain * levelLin;
+        p.blockGain = p.amplitude * aaGain * hfGain * bloomGain * levelLin
+                    * p.noteLevelScale * p.formantGain;
+        // Skip the sinf for effectively-silent partials (net CPU win), but only
+        // once the per-sample gain ramp has faded them out — see renderAdd.
+        p.active = p.blockGain > 1.0e-6f || p.curGain > 1.0e-6f;
     }
 }
 
@@ -328,12 +360,16 @@ void PartialBank::renderAdd(core::AudioBlock& block) noexcept
         }
 
         // Sum the partials for this frame, ramping each partial's gain per sample.
+        // Silent partials (marked !active this block) skip the sinf but still
+        // advance phase and ramp their gain, so muting/un-muting stays click-free
+        // and phase-coherent while buying back CPU on sparse spectra.
         float tone = 0.0f;
         for (std::size_t i = 0; i < partialCount_; ++i)
         {
             Partial& p = partials_[i];
             p.curGain += p.gainInc;
-            tone += p.curGain * std::sin(p.phase);
+            if (p.active)
+                tone += p.curGain * std::sin(p.phase);
             p.phase += p.increment;
             if (p.phase >= kTwoPi) p.phase -= kTwoPi;
         }

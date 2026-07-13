@@ -153,6 +153,20 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                     proc.setUiReverb(static_cast<int>(args[0]), static_cast<float>(static_cast<double>(args[1])));
                 complete(juce::var());
             })
+        // --- Master EQ: band gain (0..4) and enable, from the Settings panel -----
+        .withNativeFunction("caeciliaSetEq",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (args.size() >= 2)
+                    proc.setUiEqGain(static_cast<int>(args[0]), static_cast<float>(static_cast<double>(args[1])));
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaSetEqEnabled",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                proc.setUiEqEnabled(args.isEmpty() ? true : static_cast<bool>(args[0]));
+                complete(juce::var());
+            })
         .withNativeFunction("caeciliaPanic",
             [&proc](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {

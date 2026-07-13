@@ -9,6 +9,8 @@
 #include "caecilia/core/EngineTypes.h"
 #include "caecilia/core/IVoice.h"
 #include "caecilia/dsp/FdnReverb.h"
+#include "caecilia/dsp/Limiter.h"
+#include "caecilia/dsp/MasterEq.h"
 #include "caecilia/engine/AudioEngine.h"
 #include "caecilia/engine/SpscRing.h"
 #include "caecilia/model/DemoOrgan.h"
@@ -181,6 +183,12 @@ public:
     }
     void setUiReverb(int spaceIndex, float mix);
 
+    /// Console master-EQ control. @p band is 0..4 (Warmth/Boxiness/Body/Presence/
+    /// Air); @p gainDb the band gain. Message thread; applied under the callback lock.
+    void setUiEqGain(int band, float gainDb);
+    /// Enable/disable the whole master EQ. Message thread.
+    void setUiEqEnabled(bool on);
+
 private:
     void updateLatency() noexcept;
 
@@ -221,6 +229,8 @@ private:
     std::vector<std::unique_ptr<synth::AdditiveVoice>> voices_;
     std::vector<core::IVoice*>                          voicePtrs_;
     dsp::FdnReverb                                      reverb_;
+    dsp::MasterEq                                       masterEq_;  ///< Post-reverb tone voicing.
+    dsp::Limiter                                        limiter_;   ///< Brick-wall master limiter (Tutti safety).
     tuning::TuningModel                                 tuning_;
 
     // --- host-facing state + bridges ----------------------------------------

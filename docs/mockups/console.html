@@ -1511,7 +1511,8 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          room:"Room", chamber:"Chamber", hall:"Hall", cathedral:"Cathedral", plate:"Plate",
          pageturn:"Page-turn keys", pageturnSub:"Step registrations from your keyboard (any model)",
          enable:"Enable", prevKey:"Previous", nextKey:"Next", learn:"Learn", listening:"Press a key…",
-         device:"Audio device & latency", deviceSub:"Pick a low-latency driver (ASIO / WASAPI exclusive) and a small buffer to remove the delay you feel", audioBtn:"Open audio settings…" },
+         device:"Audio device & latency", deviceSub:"Pick a low-latency driver (ASIO / WASAPI exclusive) and a small buffer to remove the delay you feel", audioBtn:"Open audio settings…",
+         eq:"Equalizer", eqSub:"5-band master voicing", warmth:"Warmth", boxiness:"Boxiness", bodyBand:"Body", presence:"Presence", air:"Air", flat:"Flat" },
     pt:{ lang:"Português (BR)", settings:"Ajustes", settingsSub:"Reverb, saída e expressão",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Saída", master:"Volume geral",
          reverb:"Reverb", mix:"Mistura", space:"Espaço", tremulant:"Tremulante", on:"Ligado", off:"Desligado",
@@ -1519,7 +1520,8 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          room:"Sala", chamber:"Câmara", hall:"Salão", cathedral:"Catedral", plate:"Placa",
          pageturn:"Teclas de troca", pageturnSub:"Trocar registros pelo teclado (qualquer modelo)",
          enable:"Ativar", prevKey:"Anterior", nextKey:"Próximo", learn:"Aprender", listening:"Pressione uma tecla…",
-         device:"Áudio e latência", deviceSub:"Escolha um driver de baixa latência (ASIO / WASAPI exclusivo) e um buffer pequeno para tirar o atraso", audioBtn:"Abrir configurações de áudio…" },
+         device:"Áudio e latência", deviceSub:"Escolha um driver de baixa latência (ASIO / WASAPI exclusivo) e um buffer pequeno para tirar o atraso", audioBtn:"Abrir configurações de áudio…",
+         eq:"Equalizador", eqSub:"Voicing master de 5 bandas", warmth:"Calor (grave)", boxiness:"Caixa (médio)", bodyBand:"Corpo", presence:"Presença", air:"Brilho", flat:"Plano" },
     es:{ lang:"Español", settings:"Ajustes", settingsSub:"Reverb, salida y expresión",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Salida", master:"Volumen general",
          reverb:"Reverb", mix:"Mezcla", space:"Espacio", tremulant:"Trémolo", on:"Activado", off:"Desactivado",
@@ -1527,7 +1529,8 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          room:"Sala", chamber:"Cámara", hall:"Salón", cathedral:"Catedral", plate:"Placa",
          pageturn:"Teclas de cambio", pageturnSub:"Cambiar registros desde el teclado (cualquier modelo)",
          enable:"Activar", prevKey:"Anterior", nextKey:"Siguiente", learn:"Aprender", listening:"Pulsa una tecla…",
-         device:"Audio y latencia", deviceSub:"Elige un driver de baja latencia (ASIO / WASAPI exclusivo) y un búfer pequeño para quitar el retardo", audioBtn:"Abrir ajustes de audio…" },
+         device:"Audio y latencia", deviceSub:"Elige un driver de baja latencia (ASIO / WASAPI exclusivo) y un búfer pequeño para quitar el retardo", audioBtn:"Abrir ajustes de audio…",
+         eq:"Ecualizador", eqSub:"Voicing master de 5 bandas", warmth:"Calidez", boxiness:"Caja (medios)", bodyBand:"Cuerpo", presence:"Presencia", air:"Aire", flat:"Plano" },
     de:{ lang:"Deutsch", settings:"Einstellungen", settingsSub:"Hall, Ausgang und Expression",
          releaseKeys:"Tasten lösen", enterDraw:"Enter zum Registrieren", output:"Ausgang", master:"Gesamtlautstärke",
          reverb:"Hall", mix:"Anteil", space:"Raum", tremulant:"Tremulant", on:"An", off:"Aus",
@@ -1535,7 +1538,8 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          room:"Raum", chamber:"Kammer", hall:"Saal", cathedral:"Kathedrale", plate:"Platte",
          pageturn:"Blätter-Tasten", pageturnSub:"Registrierungen per Tastatur wechseln (jedes Modell)",
          enable:"Aktiv", prevKey:"Zurück", nextKey:"Weiter", learn:"Lernen", listening:"Taste drücken…",
-         device:"Audio & Latenz", deviceSub:"Wähle einen Treiber mit geringer Latenz (ASIO / WASAPI exklusiv) und eine kleine Puffergröße", audioBtn:"Audioeinstellungen öffnen…" },
+         device:"Audio & Latenz", deviceSub:"Wähle einen Treiber mit geringer Latenz (ASIO / WASAPI exklusiv) und eine kleine Puffergröße", audioBtn:"Audioeinstellungen öffnen…",
+         eq:"Equalizer", eqSub:"5-Band Master-Voicing", warmth:"Wärme", boxiness:"Mitten", bodyBand:"Körper", presence:"Präsenz", air:"Luft", flat:"Neutral" },
   };
   let lang = "en";
   const t = k => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
@@ -1557,6 +1561,14 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
   // Raw native-function call (fire-and-forget), works with JUCE's injected backend.
   function emit(name, params){ try { const b = window.__JUCE__ && window.__JUCE__.backend; if (b) b.emitEvent("__juce__invoke", { name, params, resultId: 0 }); } catch(e){} }
   function seqPush(){ emit("caeciliaSeqConfig", [seqCfg.prev|0, seqCfg.next|0, !!seqCfg.on]); }
+
+  // Master EQ config (5 bands: Warmth/Boxiness/Body/Presence/Air), persisted.
+  // Defaults MATCH the engine's pipe-organ voicing (dsp::MasterEq::setOrganDefaults).
+  const EQ_DEFAULT = { on:true, gains:[2.0, -2.5, 0.0, 1.5, 2.0] };
+  let eqCfg = { on:EQ_DEFAULT.on, gains:EQ_DEFAULT.gains.slice() };
+  try { const j = localStorage.getItem("cae.eqcfg"); if (j){ const o=JSON.parse(j); if (Array.isArray(o.gains)&&o.gains.length===5) eqCfg.gains=o.gains.map(Number); if (typeof o.on==="boolean") eqCfg.on=o.on; } } catch(e){}
+  function eqSave(){ try{ localStorage.setItem("cae.eqcfg", JSON.stringify(eqCfg)); }catch(e){} }
+  function eqPush(){ emit("caeciliaSetEqEnabled",[!!eqCfg.on]); for (let b=0;b<5;b++) emit("caeciliaSetEq",[b, +eqCfg.gains[b]]); }
   function emitReverb(){ emit("caeciliaSetReverb", [SPACE_IDX[S.space] || 0, S.mix]); }
 
   window.__caeApplySettings = function(){
@@ -1604,6 +1616,15 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
           '<option value="hall" id="cae-t-hall"></option><option value="cathedral" id="cae-t-cathedral"></option>'+
           '<option value="plate" id="cae-t-plate"></option></select></div>'+
         '<div class="cae-row"><span class="k" id="cae-t-mix"></span><input type="range" id="cae-mix" min="0" max="1" step="0.01"><output id="cae-mix-o"></output></div></div>'+
+      '<div class="cae-grp"><label id="cae-t-eq"></label>'+
+        '<div class="cae-sub" id="cae-t-eqSub" style="margin:-4px 0 8px"></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-eqEnable"></span><div class="cae-toggle" id="cae-eq-on"></div></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-warmth"></span><input type="range" id="cae-eq-0" min="-9" max="9" step="0.5"><output id="cae-eq-0o"></output></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-boxiness"></span><input type="range" id="cae-eq-1" min="-9" max="9" step="0.5"><output id="cae-eq-1o"></output></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-body"></span><input type="range" id="cae-eq-2" min="-9" max="9" step="0.5"><output id="cae-eq-2o"></output></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-presence"></span><input type="range" id="cae-eq-3" min="-9" max="9" step="0.5"><output id="cae-eq-3o"></output></div>'+
+        '<div class="cae-row"><span class="k" id="cae-t-air"></span><input type="range" id="cae-eq-4" min="-9" max="9" step="0.5"><output id="cae-eq-4o"></output></div>'+
+        '<button class="cae-lang" id="cae-eq-flat" style="width:100%;margin-top:6px;padding:8px"></button></div>'+
       '<div class="cae-grp"><label id="cae-t-tremulant"></label>'+
         '<div class="cae-row"><span class="k" id="cae-t-tremstate"></span><div class="cae-toggle" id="cae-trem"></div></div></div>'+
       '<div class="cae-grp"><label id="cae-t-pageturn"></label>'+
@@ -1635,6 +1656,10 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
       set("cae-t-settings","settings"); set("cae-t-settingsSub","settingsSub");
       set("cae-t-output","output"); set("cae-t-master","master");
       set("cae-t-device","device"); set("cae-t-deviceSub","deviceSub");
+      set("cae-t-eq","eq"); set("cae-t-eqSub","eqSub"); set("cae-t-eqEnable","enable");
+      set("cae-t-warmth","warmth"); set("cae-t-boxiness","boxiness"); set("cae-t-body","bodyBand");
+      set("cae-t-presence","presence"); set("cae-t-air","air");
+      { const fb = document.getElementById("cae-eq-flat"); if (fb) fb.textContent = t("flat"); }
       set("cae-t-reverb","reverb"); set("cae-t-space","space"); set("cae-t-mix","mix");
       set("cae-t-tremulant","tremulant"); set("cae-t-tremstate", S.trem ? "on" : "off");
       set("cae-t-room","room"); set("cae-t-chamber","chamber"); set("cae-t-hall","hall");
@@ -1680,6 +1705,22 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     seqRefresh();
     // Push the saved config to the engine on load so C++ matches the panel.
     setTimeout(() => seqPush(), 750);
+
+    // --- Master EQ wiring -------------------------------------------------
+    const eqOn = $("cae-eq-on"), eqFlat = $("cae-eq-flat");
+    function eqRefresh(){
+      if (eqOn) eqOn.classList.toggle("on", !!eqCfg.on);
+      for (let b=0;b<5;b++){
+        const s=$("cae-eq-"+b), o=$("cae-eq-"+b+"o");
+        if (s) s.value = eqCfg.gains[b];
+        if (o) o.textContent = (eqCfg.gains[b]>0?"+":"") + (+eqCfg.gains[b]).toFixed(1);
+      }
+    }
+    if (eqOn) eqOn.onclick = () => { eqCfg.on=!eqCfg.on; eqSave(); emit("caeciliaSetEqEnabled",[!!eqCfg.on]); eqRefresh(); };
+    for (let b=0;b<5;b++){ const s=$("cae-eq-"+b); if (s) s.oninput = () => { eqCfg.gains[b]=+s.value; eqSave(); emit("caeciliaSetEq",[b,+s.value]); eqRefresh(); }; }
+    if (eqFlat) eqFlat.onclick = () => { for (let b=0;b<5;b++){ eqCfg.gains[b]=0; emit("caeciliaSetEq",[b,0]); } eqSave(); eqRefresh(); };
+    eqRefresh();
+    setTimeout(() => eqPush(), 760);
 
     langSel.onchange = () => { lang = langSel.value; applyLang(); };
     refresh(); applyLang();

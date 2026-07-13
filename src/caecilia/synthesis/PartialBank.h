@@ -47,6 +47,12 @@ struct Partial
     float driftCents      = 0.0f; ///< Current slow random-walk detune, in cents (persistent).
     std::uint32_t rng     = 0x2545F491u; ///< Per-partial PRNG state for the drift walk.
     float bloomSeconds    = 0.010f; ///< Per-partial attack bloom time (derived at seed/trigger).
+
+    // --- Per-note voicing baked at note-on (off the hot loop) ----------------
+    int   harmonicIndex   = 1;     ///< Nearest integer harmonic number (>=1).
+    float noteLevelScale  = 1.0f;  ///< Per-note treble tilt (upper partials voiced down on high notes).
+    float formantGain     = 1.0f;  ///< Fixed-formant boost at this partial's absolute Hz (reeds).
+    bool  active          = true;  ///< False when blockGain is ~0 (skip the sinf, keep phase coherent).
 };
 
 /**
@@ -119,7 +125,8 @@ public:
     void setLiveliness(float instabilityCents,
                        float attackGlideCents,
                        float maxBloomSeconds,
-                       float hfRolloffHz) noexcept;
+                       float hfRolloffHz,
+                       float trebleTiltDb = 6.0f) noexcept;
 
     /**
      * @brief Set the wind-attack "chiff" amount (the breathy speech transient a
@@ -159,7 +166,11 @@ private:
     float  attackGlideCents_ = -18.0f; ///< Speech pitch glide during the attack.
     float  glideSeconds_     = 0.055f; ///< Duration of the attack pitch glide.
     float  maxBloomSeconds_  = 0.060f; ///< Longest per-partial attack bloom (uppers).
-    float  hfRolloffHz_      = 5200.0f;///< Corner of the gentle top-octave tilt.
+    float  hfRolloffHz_      = 7000.0f;///< Corner of the gentle absolute-Hz top tilt (raised; per-note tilt does the work).
+    float  trebleTiltDb_     = 6.0f;   ///< Per-octave upper-harmonic roll on high notes (Aeolus _h_lev).
+
+    // Fixed-formant envelope (reeds); flues carry peakCount==0 and are unaffected.
+    FormantEnvelope steadyFormants_{};
 
     // --- Wind-attack chiff (breathy speech transient) ------------------------
     float         chiffAmount_    = 0.0f;        ///< Linear level of the chiff burst (0 = off).

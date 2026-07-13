@@ -105,13 +105,16 @@ void FdnReverb::updateModulation() noexcept
     // in lock-step. Depth scales with the sample rate so the peak excursion is a
     // constant fraction of a millisecond (about +/- 0.03 ms) at any rate — light
     // enough to be inaudible as pitch, deep enough to smear the tail's modes.
-    constexpr double kModBaseHz = 0.6;
+    // Mutually-INCOMMENSURATE rates (golden-ratio spread over 0.13..0.47 Hz) so no
+    // two lines sweep in lock-step — the old near-linear 0.6*(1+0.05i) ramp let the
+    // lines beat together and metallise the tail.
     for (std::size_t i = 0; i < kLines; ++i)
     {
-        const double rateHz = kModBaseHz * (1.0 + 0.05 * static_cast<double>(i));
+        const double frac   = std::fmod(static_cast<double>(i) * 0.6180339887498949, 1.0);
+        const double rateHz = 0.13 + 0.34 * frac;
         modInc_[i] = static_cast<float>(rateHz / sampleRate_);
     }
-    modDepth_ = static_cast<float>(2.1 * sampleRate_ / 44100.0);
+    modDepth_ = static_cast<float>(2.2 * sampleRate_ / 44100.0);
 }
 
 core::ReverbParams FdnReverb::presetParams(ReverbPreset preset) noexcept
@@ -244,7 +247,9 @@ void FdnReverb::process(core::AudioBlock& block) noexcept
                 modPhase_[i] -= 1.0f;
 
             const float lfo    = std::sin(kTwoPiF * modPhase_[i]);       // -1..+1
-            const float offset = modDepth_ * (0.5f + 0.5f * lfo);        // 0..depth
+            // Bipolar around a fixed 1-depth centre (mean delay constant), so the
+            // modulation shimmers the tail without one-sidedly detuning held tones.
+            const float offset = modDepth_ * (1.0f + lfo);               // 0..2*depth, mean = depth
             const std::size_t len = lengths_[i];
 
             const float basePos = static_cast<float>(positions_[i]) + offset;

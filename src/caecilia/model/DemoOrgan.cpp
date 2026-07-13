@@ -174,10 +174,17 @@ synth::SpectralModel makeSpectralReed(core::Footage /*footage*/,
         appendPartial(model, fn, ampDb, windSen, onset, bright);
     }
 
-    // Describe the reed's formant for downstream consumers (additive path reads
-    // only the partials above, but the envelope documents the voicing intent).
-    model.steadyFormants.peaks[0] = { formantCenterHz, 6.0f, formantCenterHz * 0.5f };
-    model.steadyFormants.peakCount = 1;
+    // Fixed-Hz reed formant, now READ by the additive path (PartialBank bakes a
+    // per-note boost from it). Fixed centres mean the emphasised band lands on a
+    // different harmonic at every pitch — the constant brassy snarl of a Trompette
+    // instead of a pitch-tracking synth resonance. Body (~450 Hz), snarl (~1.2 kHz)
+    // and a little brilliance (~2.6 kHz); the caller's formantCenterHz nudges the
+    // snarl so different reeds (Trompette vs Basson) differ.
+    const float snarlHz = clampf(formantCenterHz > 1.0f ? formantCenterHz : 1200.0f, 700.0f, 2000.0f);
+    model.steadyFormants.peaks[0] = { 450.0f,   3.0f, 400.0f };
+    model.steadyFormants.peaks[1] = { snarlHz,  6.0f, 900.0f };
+    model.steadyFormants.peaks[2] = { 2600.0f,  3.0f, 1500.0f };
+    model.steadyFormants.peakCount = 3;
     return model;
 }
 

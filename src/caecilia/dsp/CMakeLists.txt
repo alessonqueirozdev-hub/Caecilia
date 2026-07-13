@@ -29,6 +29,8 @@ target_sources(caecilia_core PRIVATE
     Bandlimited.cpp
     FdnReverb.cpp
     ConvolutionReverb.cpp
+    Limiter.cpp
+    MasterEq.cpp
     Spatializer.cpp)
 
 # Public headers consumed via the project-wide include root (<root>/src):
@@ -47,6 +49,8 @@ set(CAECILIA_DSP_PUBLIC_HEADERS
     Bandlimited.h
     FdnReverb.h
     ConvolutionReverb.h
+    Limiter.h
+    MasterEq.h
     Spatializer.h)
 
 target_sources(caecilia_core PUBLIC
