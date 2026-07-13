@@ -1524,27 +1524,42 @@ requestAnimationFrame(frame);
     steps.forEach(s => { const dur = s[0]*spb; out.push({ t, dur: dur*0.94, div, midi: s.slice(1) }); t += dur; });
     return out;
   }
+  // Helper: shift a seqBuild() sequence so a pedal line can answer a manual phrase.
+  const shift = (seq, dt) => seq.map(n => ({ t: n.t + dt, dur: n.dur, div: n.div, midi: n.midi }));
   function toccata(){
     const spb = 0.5;
+    // Iconic monophonic Grand-Orgue flourish — no pedal here, exactly as Bach wrote it.
     const mel = seqBuild('go', spb, [[0.5,81],[0.5,79],[1.0,81],[0.5,79],[0.5,77],[0.5,76],[0.5,74],[0.5,73],[0.5,74],[1.0,73]]);
     const e = mel[mel.length-1], end = e.t + e.dur/0.94;
+    // Cadence: a D-minor chord on the Grand-Orgue over the pedal root D (octave,
+    // C2 range) — the pedal carries the bass, the manual the harmony.
     return { name:'J. S. Bach — Toccata (BWV 565)',
       reg: { divs:['go','ped'], families:['Principal','Mixture','Reed','Cornet'] },
-      notes: mel.concat([{t:end+0.1,dur:3.0,div:'go',midi:[69,73,76,79]},{t:end+0.1,dur:3.0,div:'ped',midi:[45]}]) };
+      notes: mel.concat([{t:end+0.1,dur:3.2,div:'go',midi:[62,65,69,74]},
+                          {t:end+0.1,dur:3.2,div:'ped',midi:[38,50]}]) };
   }
   function jesu(){
     const spb = 0.36;
+    // Chorale theme on the enclosed Récit (soft flute) ...
     const mel = seqBuild('rec', spb, [[1,67],[1,69],[1,71],[1,74],[1,72],[1,72],[1,76],[1,74],[1,74],[1,79],[1,77],[1,76],[1,74],[1,71],[2,67]]);
+    // ... over an independent functional pedal bass (I-V-I-IV-I-ii-V-I in G),
+    // played on the pedalboard, all inside the Pédale compass (C2-G4).
+    const ped = seqBuild('ped', spb, [[2,43],[2,38],[2,43],[2,48],[2,43],[2,45],[2,38],[2,43]]);
     return { name:"J. S. Bach — Jesu, Joy of Man's Desiring",
-      reg: { divs:['rec'], families:['Flute'] }, notes: mel };
+      reg: { perDiv:{ rec:['Flute'], ped:['Flute'] }, divs:['rec','ped'] },
+      notes: mel.concat(ped) };
   }
   function bux(){
     const spb = 0.42;
-    const man = seqBuild('go', spb, [[0.5,74],[0.5,77],[0.5,81],[0.5,79],[0.5,77],[0.5,74],[0.5,73],[1.5,74]]);
-    const e = man[man.length-1], end = e.t + e.dur/0.94;
+    // Stylus fantasticus: a Grand-Orgue flourish ...
+    const man = seqBuild('go', spb, [[0.5,74],[0.5,77],[0.5,81],[0.5,79],[0.5,77],[0.5,74],[0.5,73],[1.0,74]]);
+    const e = man[man.length-1], manEnd = e.t + e.dur/0.94;
+    // ... answered by an independent Pédale solo (a moving line, not a static
+    // pedal point) so the pedal division speaks on its own.
+    const ped = shift(seqBuild('ped', spb, [[1,38],[1,41],[1,43],[1,45],[1,43],[1,41],[2,38]]), manEnd + 0.15);
     return { name:'D. Buxtehude — Praeludium (excerpt)',
       reg: { divs:['go','ped'], families:['Principal','Mixture','Flute'] },
-      notes: man.concat([{t:0,dur:end,div:'ped',midi:[38]}]) };
+      notes: man.concat(ped) };
   }
   const PIECES = (Array.isArray(window.__CAECILIA_PIECES__) && window.__CAECILIA_PIECES__.length)
     ? window.__CAECILIA_PIECES__ : [toccata(), jesu(), bux()];
