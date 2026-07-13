@@ -11,6 +11,13 @@
 #include <cstdint>
 #include <cstdio>
 
+// When this shared code is compiled for the Standalone format, pull in the
+// StandalonePluginHolder so the console can open the native Audio/MIDI settings
+// dialog (device + buffer size) — the user's route to low latency (ASIO/WASAPI).
+#if JucePlugin_Build_Standalone
+ #include <juce_audio_plugin_client/juce_audio_plugin_client.h>
+#endif
+
 namespace caecilia::plugin
 {
 
@@ -175,6 +182,18 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
             {
                 proc.armSeqLearn(args.isEmpty() ? 0 : static_cast<int>(args[0]));
                 complete(juce::var());
+            })
+        // Open the native audio-device / buffer-size dialog (Standalone only). This
+        // is how the user selects a low-latency driver (ASIO / WASAPI exclusive) and
+        // a small buffer; in a plugin host the host owns the audio device (no-op).
+        .withNativeFunction("caeciliaAudioSettings",
+            [](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+               #if JucePlugin_Build_Standalone
+                if (auto* holder = juce::StandalonePluginHolder::getInstance())
+                    holder->showAudioSettingsDialog();
+               #endif
+                complete(juce::var());
             });
 }
 
@@ -207,6 +226,10 @@ void CaeciliaEditor::timerCallback()
     auto* obj = new juce::DynamicObject();
     obj->setProperty("voices",   static_cast<int>(frame.meters.activeVoices));
     obj->setProperty("masterPeak", frame.meters.master.peak);
+    // Real per-channel output peak (post soft-clip) so the console VU moves with
+    // the actual audio, including notes played on the physical MIDI keyboard.
+    obj->setProperty("peakL",    processor_.outputPeakL());
+    obj->setProperty("peakR",    processor_.outputPeakR());
     obj->setProperty("windSag",  frame.meters.windSagNorm);
     obj->setProperty("playDiv",  static_cast<int>(processor_.playDivision().value));
 
@@ -240,6 +263,22 @@ void CaeciliaEditor::timerCallback()
 void CaeciliaEditor::resized()
 {
     web_.setBounds(getLocalBounds());
+}
+
+void CaeciliaEditor::parentHierarchyChanged()
+{
+    // In the Standalone build the editor lives inside a juce::DocumentWindow whose
+    // default title bar has only minimise + close. Add the maximise button and make
+    // the window resizable so the user can maximise/fill the screen. In a plugin
+    // host there is no DocumentWindow ancestor, so this is a no-op.
+    if (auto* dw = findParentComponentOfClass<juce::DocumentWindow>())
+    {
+        dw->setResizable(true, false);
+        dw->setTitleBarButtonsRequired(juce::DocumentWindow::minimiseButton
+                                     | juce::DocumentWindow::maximiseButton
+                                     | juce::DocumentWindow::closeButton,
+                                       false);
+    }
 }
 
 } // namespace caecilia::plugin

@@ -394,12 +394,25 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // speakers even under heavy polyphony. Belt-and-braces with the energy-
     // normalised registration level (see model::normalizeComposite).
     const int nSamp = buffer.getNumSamples();
-    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    const int nCh   = buffer.getNumChannels();
+    float peaks[2] = { 0.0f, 0.0f };
+    for (int ch = 0; ch < nCh; ++ch)
     {
         float* d = buffer.getWritePointer(ch);
+        float  pk = 0.0f;
         for (int i = 0; i < nSamp; ++i)
-            d[i] = std::tanh(d[i]);
+        {
+            const float v = std::tanh(d[i]);
+            d[i] = v;
+            const float a = v < 0.0f ? -v : v;
+            if (a > pk) pk = a;
+        }
+        if (ch < 2) peaks[ch] = pk;
     }
+    // Publish the REAL output peak so the console VU reflects what is heard
+    // (host/physical MIDI included). Mirror to both meters when mono.
+    outPeakL_.store(peaks[0], std::memory_order_relaxed);
+    outPeakR_.store(nCh > 1 ? peaks[1] : peaks[0], std::memory_order_relaxed);
 }
 
 // ---------------------------------------------------------------------------

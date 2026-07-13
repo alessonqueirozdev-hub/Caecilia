@@ -161,6 +161,12 @@ public:
     [[nodiscard]] int  seqNextNote()   const noexcept { return seqNextNote_.load(std::memory_order_relaxed); }
     [[nodiscard]] bool seqNavEnabled() const noexcept { return seqNavEnabled_.load(std::memory_order_relaxed); }
 
+    /// Final output peak per channel this block (post master-trim + soft-clip),
+    /// linear 0..1. The console VU reads these so it reflects the REAL audio
+    /// (including physically-played MIDI), not the on-screen keyboard state.
+    [[nodiscard]] float outputPeakL() const noexcept { return outPeakL_.load(std::memory_order_relaxed); }
+    [[nodiscard]] float outputPeakR() const noexcept { return outPeakR_.load(std::memory_order_relaxed); }
+
     /// Set the whole sounding registration from the WebView console (a list of
     /// drawn family+footage ranks). Message thread: builds the composite spectrum
     /// off the audio thread and swaps the freshly-seeded voices into the engine
@@ -252,6 +258,10 @@ private:
     std::atomic<int>  seqLearnedNote_{ -1 };  ///< Captured learn result (which*256+note); -1 = none.
     core::engine::SpscRing<std::int8_t, 64> seqNav_; ///< Audio -> editor: page-turn directions.
     juce::MidiBuffer  hostScratch_;           ///< Pre-reserved: host MIDI minus nav keys (no RT alloc).
+
+    // --- Output metering (real VU feed for the console) ---------------------
+    std::atomic<float> outPeakL_{ 0.0f };     ///< Left  output peak this block (linear).
+    std::atomic<float> outPeakR_{ 0.0f };     ///< Right output peak this block (linear).
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CaeciliaAudioProcessor)
 };

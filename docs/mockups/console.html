@@ -1009,12 +1009,15 @@ if (CAE_BRIDGE) {
         const m = +k.dataset.midi;
         k.classList.toggle("held", lit.has(m) || state.held.has("go:" + m));
       });
-      const pk = +st.masterPeak || 0;
-      const db = pk > 0.0002 ? 20 * Math.log10(pk) : -100;
-      const vr = document.getElementById("vu-read");
-      if (vr) vr.textContent = (db <= -99 ? "−∞" : db.toFixed(1)) + " dB";
-      const w = Math.max(0, Math.min(100, (db + 48) / 48 * 100)).toFixed(1) + "%";
-      document.querySelectorAll(".vu .fill").forEach(f => { f.style.width = w; });
+      // Feed the REAL engine data into the meter/wind animation (frame()), so the
+      // Output VU moves with the actual audio and the wind gauges sag under load —
+      // even when you play the physical MIDI keyboard (not the on-screen keys).
+      if (typeof sim !== "undefined") {
+        sim.bridged   = true;
+        sim.realPeakL = +st.peakL || 0;
+        sim.realPeakR = +st.peakR || 0;
+        sim.realVoices = +st.voices || 0;
+      }
     } catch (e) {}
   });
   // C++ -> JS: the swallowed page-turn keys (si5/do6 by default, configurable)
@@ -1271,29 +1274,44 @@ windHost.append(tremWrap);
 const sim = { vuL: 0, vuR: 0, pkL: 0, pkR: 0, p: { ped:1, pos:1, go:1, rec:1 } };
 function dbFmt(x) { if (x <= 0.001) return "−∞ dB"; const db = 20 * Math.log10(x); return (db >= 0 ? "+" : "") + db.toFixed(1) + " dB"; }
 let t0 = performance.now();
+// Map a linear level to a position on the −40..0 dB VU scale (0..100%).
+function vuPct(v) { const db = v > 0.0002 ? 20 * Math.log10(v) : -100; return Math.max(0, Math.min(100, (db + 40) / 40 * 100)); }
 function frame(now) {
   const t = (now - t0) / 1000;
+  const bridged = !!sim.bridged;
   let activity = 0; const demand = {};
   for (const d of DIVISIONS) {
-    const held = heldInDiv(d.id), drawn = drawnInDiv(d.id);
-    let a = held * drawn;
-    if (d.enclosed) a *= (0.22 + 0.78 * state.swell / 100);
-    demand[d.id] = held * drawn;
-    activity += a;
+    if (bridged) {
+      // Real engine: the live voice count is the wind demand; attribute it to the
+      // divisions that actually carry drawn stops (those are the pipes speaking).
+      demand[d.id] = drawnInDiv(d.id) > 0 ? (sim.realVoices || 0) : 0;
+    } else {
+      const held = heldInDiv(d.id), drawn = drawnInDiv(d.id);
+      let a = held * drawn;
+      if (d.enclosed) a *= (0.22 + 0.78 * state.swell / 100);
+      demand[d.id] = held * drawn;
+      activity += a;
+    }
   }
-  const target = Math.min(1, activity / 16);
   // per-channel with liveliness + tremulant shimmer
   const trem = state.trem ? (0.5 + 0.5 * Math.sin(t * 6.3)) * 0.12 : 0;
-  const nL = target * (0.94 + 0.12 * Math.random()) * (1 - trem);
-  const nR = target * (0.94 + 0.12 * Math.random()) * (1 - trem * 0.7);
+  let nL, nR;
+  if (bridged) {
+    nL = Math.min(1, sim.realPeakL || 0);
+    nR = Math.min(1, sim.realPeakR || 0);
+  } else {
+    const target = Math.min(1, activity / 16);
+    nL = target * (0.94 + 0.12 * Math.random()) * (1 - trem);
+    nR = target * (0.94 + 0.12 * Math.random()) * (1 - trem * 0.7);
+  }
   sim.vuL += (nL - sim.vuL) * (nL > sim.vuL ? 0.55 : 0.09);
   sim.vuR += (nR - sim.vuR) * (nR > sim.vuR ? 0.55 : 0.09);
   sim.pkL = Math.max(sim.pkL * 0.98, sim.vuL);
   sim.pkR = Math.max(sim.pkR * 0.98, sim.vuR);
-  $("#vuL").style.width = (sim.vuL * 100) + "%";
-  $("#vuR").style.width = (sim.vuR * 100) + "%";
-  $("#pkL").style.left = Math.min(100, sim.pkL * 100) + "%";
-  $("#pkR").style.left = Math.min(100, sim.pkR * 100) + "%";
+  $("#vuL").style.width = vuPct(sim.vuL) + "%";
+  $("#vuR").style.width = vuPct(sim.vuR) + "%";
+  $("#pkL").style.left = vuPct(sim.pkL) + "%";
+  $("#pkR").style.left = vuPct(sim.pkR) + "%";
   $("#vu-read").textContent = dbFmt(Math.max(sim.vuL, sim.vuR));
 
   // wind sag: saturating drop + tremulant on Récit
@@ -1486,28 +1504,32 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          hint:"Draw a stop, then play — the wind will breathe under the load",
          room:"Room", chamber:"Chamber", hall:"Hall", cathedral:"Cathedral", plate:"Plate",
          pageturn:"Page-turn keys", pageturnSub:"Step registrations from your keyboard (any model)",
-         enable:"Enable", prevKey:"Previous", nextKey:"Next", learn:"Learn", listening:"Press a key…" },
+         enable:"Enable", prevKey:"Previous", nextKey:"Next", learn:"Learn", listening:"Press a key…",
+         device:"Audio device & latency", deviceSub:"Pick a low-latency driver (ASIO / WASAPI exclusive) and a small buffer to remove the delay you feel", audioBtn:"Open audio settings…" },
     pt:{ lang:"Português (BR)", settings:"Ajustes", settingsSub:"Reverb, saída e expressão",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Saída", master:"Volume geral",
          reverb:"Reverb", mix:"Mistura", space:"Espaço", tremulant:"Tremulante", on:"Ligado", off:"Desligado",
          hint:"Puxe um registro e toque — o vento respira sob a carga",
          room:"Sala", chamber:"Câmara", hall:"Salão", cathedral:"Catedral", plate:"Placa",
          pageturn:"Teclas de troca", pageturnSub:"Trocar registros pelo teclado (qualquer modelo)",
-         enable:"Ativar", prevKey:"Anterior", nextKey:"Próximo", learn:"Aprender", listening:"Pressione uma tecla…" },
+         enable:"Ativar", prevKey:"Anterior", nextKey:"Próximo", learn:"Aprender", listening:"Pressione uma tecla…",
+         device:"Áudio e latência", deviceSub:"Escolha um driver de baixa latência (ASIO / WASAPI exclusivo) e um buffer pequeno para tirar o atraso", audioBtn:"Abrir configurações de áudio…" },
     es:{ lang:"Español", settings:"Ajustes", settingsSub:"Reverb, salida y expresión",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Salida", master:"Volumen general",
          reverb:"Reverb", mix:"Mezcla", space:"Espacio", tremulant:"Trémolo", on:"Activado", off:"Desactivado",
          hint:"Registra y toca — el viento respira bajo la carga",
          room:"Sala", chamber:"Cámara", hall:"Salón", cathedral:"Catedral", plate:"Placa",
          pageturn:"Teclas de cambio", pageturnSub:"Cambiar registros desde el teclado (cualquier modelo)",
-         enable:"Activar", prevKey:"Anterior", nextKey:"Siguiente", learn:"Aprender", listening:"Pulsa una tecla…" },
+         enable:"Activar", prevKey:"Anterior", nextKey:"Siguiente", learn:"Aprender", listening:"Pulsa una tecla…",
+         device:"Audio y latencia", deviceSub:"Elige un driver de baja latencia (ASIO / WASAPI exclusivo) y un búfer pequeño para quitar el retardo", audioBtn:"Abrir ajustes de audio…" },
     de:{ lang:"Deutsch", settings:"Einstellungen", settingsSub:"Hall, Ausgang und Expression",
          releaseKeys:"Tasten lösen", enterDraw:"Enter zum Registrieren", output:"Ausgang", master:"Gesamtlautstärke",
          reverb:"Hall", mix:"Anteil", space:"Raum", tremulant:"Tremulant", on:"An", off:"Aus",
          hint:"Zieh ein Register und spiele — der Wind atmet unter Last",
          room:"Raum", chamber:"Kammer", hall:"Saal", cathedral:"Kathedrale", plate:"Platte",
          pageturn:"Blätter-Tasten", pageturnSub:"Registrierungen per Tastatur wechseln (jedes Modell)",
-         enable:"Aktiv", prevKey:"Zurück", nextKey:"Weiter", learn:"Lernen", listening:"Taste drücken…" },
+         enable:"Aktiv", prevKey:"Zurück", nextKey:"Weiter", learn:"Lernen", listening:"Taste drücken…",
+         device:"Audio & Latenz", deviceSub:"Wähle einen Treiber mit geringer Latenz (ASIO / WASAPI exklusiv) und eine kleine Puffergröße", audioBtn:"Audioeinstellungen öffnen…" },
   };
   let lang = "en";
   const t = k => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
@@ -1568,6 +1590,9 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
       '<h2 id="cae-t-settings"></h2><div class="cae-sub" id="cae-t-settingsSub"></div>'+
       '<div class="cae-grp"><label id="cae-t-output"></label>'+
         '<div class="cae-row"><span class="k" id="cae-t-master"></span><input type="range" id="cae-master" min="0" max="1.5" step="0.01"><output id="cae-master-o"></output></div></div>'+
+      '<div class="cae-grp"><label id="cae-t-device"></label>'+
+        '<div class="cae-sub" id="cae-t-deviceSub" style="margin:-4px 0 10px"></div>'+
+        '<button class="cae-lang" id="cae-audio-btn" style="width:100%;padding:9px"></button></div>'+
       '<div class="cae-grp"><label id="cae-t-reverb"></label>'+
         '<div class="cae-row"><span class="k" id="cae-t-space"></span><select id="cae-space">'+
           '<option value="room" id="cae-t-room"></option><option value="chamber" id="cae-t-chamber"></option>'+
@@ -1598,12 +1623,16 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     // Push the initial settings to the engine so C++ matches the panel.
     setTimeout(() => { emit("caeciliaSetMaster", [S.master]); emitReverb(); }, 700);
     trem.onclick = () => { S.trem = !S.trem; try { if (window.state) window.state.trem = S.trem; } catch(e){} emit("caeciliaSetTremulant", S.trem?1:0); refresh(); applyLang(); };
+    const audioBtn = $("cae-audio-btn");
+    if (audioBtn) audioBtn.onclick = () => emit("caeciliaAudioSettings", []);
 
     function applyLang(){
       langSel.value = lang;
       const set = (id,key) => { const e = document.getElementById(id); if (e) e.textContent = t(key); };
       set("cae-t-settings","settings"); set("cae-t-settingsSub","settingsSub");
       set("cae-t-output","output"); set("cae-t-master","master");
+      set("cae-t-device","device"); set("cae-t-deviceSub","deviceSub");
+      { const ab = document.getElementById("cae-audio-btn"); if (ab) ab.textContent = t("audioBtn"); }
       set("cae-t-reverb","reverb"); set("cae-t-space","space"); set("cae-t-mix","mix");
       set("cae-t-tremulant","tremulant"); set("cae-t-tremstate", S.trem ? "on" : "off");
       set("cae-t-room","room"); set("cae-t-chamber","chamber"); set("cae-t-hall","hall");

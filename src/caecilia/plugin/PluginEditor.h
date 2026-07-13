@@ -33,6 +33,9 @@ public:
     ~CaeciliaEditor() override;
 
     void resized() override;
+    /// When embedded in the Standalone window, enable resize + add the maximise
+    /// title-bar button (JUCE's default standalone window omits it).
+    void parentHierarchyChanged() override;
 
 private:
     void timerCallback() override; ///< Frame-rate push of meters + lit keys to the page.
