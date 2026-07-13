@@ -103,8 +103,21 @@ private:
     std::array<std::size_t, kLines>        lengths_{};    ///< Delay length per line (samples).
     std::array<std::size_t, kLines>        positions_{};  ///< Read/write cursor per line.
     std::array<OnePole, kLines>            dampers_{};     ///< High-frequency damper per line.
-    std::array<float, kLines>              feedback_{};    ///< Feedback gain per line.
+    std::array<float, kLines>              feedback_{};    ///< Feedback gain per line (mid RT60).
     std::array<float, kLines>              inject_{};      ///< Input injection sign per line.
+
+    // --- Frequency-dependent decay: bass bloom -----------------------------
+    // A one-pole low-shelf folded into each feedback line. Below @ref kBloomHz the
+    // per-line loop gain is lifted from the mid-band feedback_ up to the (longer)
+    // low-frequency target, so the bass decays SLOWER than the mids and "blooms"
+    // the way it does in a large stone room. The lift is exactly aLow/aMid, and
+    // aLow < 1 by construction, so the loop stays unconditionally stable — the
+    // bloom can never push any band's feedback to or past unity.
+    static constexpr float kBloomHz = 260.0f;         ///< Bloom shelf crossover (keeps the
+                                                      ///< bloom on the true pedal-fundamental
+                                                      ///< bass, not the low-mids).
+    std::array<OnePole, kLines> bloomLp_{};           ///< Low-band extractor per line.
+    std::array<float, kLines>   bloomBoost_{};        ///< Low-band gain lift (>= 1) per line.
     std::array<float, kLines>              tapLeft_{};     ///< Output tap weight -> L.
     std::array<float, kLines>              tapRight_{};    ///< Output tap weight -> R.
 
@@ -134,6 +147,18 @@ private:
     std::array<float, kErTaps>        erGainL_{};       ///< Tap gain -> L.
     std::array<float, kErTaps>        erGainR_{};       ///< Tap gain -> R.
     float                             erSendToTank_ = 0.55f; ///< ER energy folded into the tail.
+
+    // --- Dattorro input diffusion -----------------------------------------
+    // Four cascaded Schroeder all-pass sections smear the tank input before it
+    // reaches the FDN, so transients enter the network as a dense wash rather than
+    // a bare impulse. This removes the grainy, "pinging" onset of a raw FDN and is
+    // the classic Dattorro (1997) plate-reverb front end. All-pass => flat
+    // magnitude, so it colours nothing; it only redistributes energy in time.
+    static constexpr std::size_t      kDiff = 4;
+    std::array<std::vector<float>, kDiff> diff_{};      ///< All-pass delay buffers.
+    std::array<std::size_t, kDiff>        diffLen_{};   ///< All-pass delay lengths (samples).
+    std::array<std::size_t, kDiff>        diffPos_{};   ///< All-pass write cursors.
+    std::array<float, kDiff>              diffCoef_{};  ///< All-pass diffusion coefficients.
 };
 
 } // namespace caecilia::dsp

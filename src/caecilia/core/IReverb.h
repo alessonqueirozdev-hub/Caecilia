@@ -27,6 +27,9 @@ struct ReverbParams
     float preDelayMs = 12.0f; ///< Pre-delay before the tail, in milliseconds.
     float dampingHz  = 6000.f;///< High-frequency damping corner in Hz.
     float widthNorm  = 1.0f;  ///< Stereo width of the tail in [0, 1].
+    float bassBloom  = 1.0f;  ///< Low-frequency RT60 multiplier (1 = flat; >1 makes
+                              ///< the bass "bloom" with a longer tail than the mids,
+                              ///< the signature of a large stone room). Clamped >= 1.
 };
 
 /**

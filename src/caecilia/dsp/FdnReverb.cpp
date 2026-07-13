@@ -46,6 +46,18 @@ constexpr std::array<ErTap, 9> kErPattern = {{
 
 // Longest ER tap we allocate room for.
 constexpr double kMaxErMs = 90.0;
+
+// Dattorro input-diffusor delays (his 1997 figures, given at 29761 Hz, expressed
+// here in milliseconds so they scale to any sample rate) and coefficients. The
+// mutually-incommensurate lengths and moderate coefficients smear the input into
+// a dense, uncoloured wash before it enters the tank.
+struct DiffAp { double ms; float g; };
+constexpr std::array<DiffAp, 4> kDiffusors = {{
+    {  4.7713f, 0.750f },   // 142 / 29761
+    {  3.5952f, 0.750f },   // 107 / 29761
+    { 12.7348f, 0.625f },   // 379 / 29761
+    {  9.3075f, 0.625f },   // 277 / 29761
+}};
 } // namespace
 
 void FdnReverb::prepare(core::SampleRate sampleRate,
@@ -65,8 +77,24 @@ void FdnReverb::prepare(core::SampleRate sampleRate,
 
         dampers_[i].prepare(sampleRate_);
 
+        // Low-band extractor for the bass-bloom shelf (fixed crossover).
+        bloomLp_[i].prepare(sampleRate_);
+        bloomLp_[i].setLowpass(kBloomHz);
+        bloomBoost_[i] = 1.0f;
+
         // Alternate the input injection sign to decorrelate the initial build-up.
         inject_[i] = (i & 1U) ? -1.0f : 1.0f;
+    }
+
+    // Dattorro input diffusors: allocate one delay line each, sized to the
+    // sample-rate-scaled tap length.
+    for (std::size_t k = 0; k < kDiff; ++k)
+    {
+        auto len = static_cast<std::size_t>(kDiffusors[k].ms * 0.001 * sampleRate_);
+        diffLen_[k]  = std::max<std::size_t>(len, 2);
+        diff_[k].assign(diffLen_[k], 0.0f);
+        diffPos_[k]  = 0;
+        diffCoef_[k] = kDiffusors[k].g;
     }
 
     const auto preMax =
@@ -123,19 +151,19 @@ core::ReverbParams FdnReverb::presetParams(ReverbPreset preset) noexcept
     switch (preset)
     {
         case ReverbPreset::Room:
-            p.mix = 0.15f; p.decaySec = 0.8f;  p.preDelayMs = 6.0f;  p.dampingHz = 4500.0f; p.widthNorm = 0.6f;
+            p.mix = 0.15f; p.decaySec = 0.8f;  p.preDelayMs = 6.0f;  p.dampingHz = 4500.0f; p.widthNorm = 0.6f; p.bassBloom = 1.05f;
             break;
         case ReverbPreset::Chamber:
-            p.mix = 0.22f; p.decaySec = 1.6f;  p.preDelayMs = 10.0f; p.dampingHz = 5500.0f; p.widthNorm = 0.8f;
+            p.mix = 0.22f; p.decaySec = 1.6f;  p.preDelayMs = 10.0f; p.dampingHz = 5500.0f; p.widthNorm = 0.8f; p.bassBloom = 1.18f;
             break;
         case ReverbPreset::Hall:
-            p.mix = 0.28f; p.decaySec = 2.6f;  p.preDelayMs = 18.0f; p.dampingHz = 6500.0f; p.widthNorm = 1.0f;
+            p.mix = 0.28f; p.decaySec = 2.6f;  p.preDelayMs = 18.0f; p.dampingHz = 6500.0f; p.widthNorm = 1.0f; p.bassBloom = 1.35f;
             break;
         case ReverbPreset::Cathedral:
-            p.mix = 0.32f; p.decaySec = 5.2f;  p.preDelayMs = 38.0f; p.dampingHz = 6800.0f; p.widthNorm = 1.0f;
+            p.mix = 0.32f; p.decaySec = 5.2f;  p.preDelayMs = 38.0f; p.dampingHz = 6800.0f; p.widthNorm = 1.0f; p.bassBloom = 1.6f;
             break;
         case ReverbPreset::Plate:
-            p.mix = 0.30f; p.decaySec = 2.0f;  p.preDelayMs = 2.0f;  p.dampingHz = 8000.0f; p.widthNorm = 0.9f;
+            p.mix = 0.30f; p.decaySec = 2.0f;  p.preDelayMs = 2.0f;  p.dampingHz = 8000.0f; p.widthNorm = 0.9f; p.bassBloom = 1.0f;
             break;
     }
     return p;
@@ -149,6 +177,10 @@ void FdnReverb::setParams(const core::ReverbParams& params) noexcept
     params_.preDelayMs = std::max(params_.preDelayMs, 0.0f);
     params_.dampingHz  = clamp(params_.dampingHz, 200.0f, static_cast<float>(sampleRate_ * 0.49));
     params_.widthNorm  = clamp(params_.widthNorm, 0.0f, 1.0f);
+    // Bloom only ever LENGTHENS the bass relative to the mids; a value below 1 (which
+    // would shorten it and, more importantly, break the "attenuate-only" stability
+    // argument) is clamped away. Capped so the low-band tail stays musical.
+    params_.bassBloom  = clamp(params_.bassBloom, 1.0f, 3.0f);
 
     if (!preDelay_.empty())
     {
@@ -166,11 +198,19 @@ void FdnReverb::updateDecay() noexcept
     // Per-line feedback gain that yields the target RT60: energy must drop by
     // 60 dB (a linear factor of 0.001) over decaySec seconds, so a line of L
     // samples uses g = 0.001^(L / (decaySec * fs)) = 10^(-3 L / (decaySec fs)).
-    const double denom = std::max(params_.decaySec * sampleRate_, 1.0);
+    const double denomMid = std::max(params_.decaySec * sampleRate_, 1.0);
+    // Low band uses a LONGER RT60 (decay * bloom), so its per-line gain is closer to
+    // unity — the bass rings on after the mids have died. Both gains are < 1, and we
+    // lift the loop from the mid gain up to the low gain, never above it, so the
+    // network can never self-oscillate.
+    const double denomLow = std::max(params_.decaySec * params_.bassBloom * sampleRate_, 1.0);
     for (std::size_t i = 0; i < kLines; ++i)
     {
-        const double g = std::pow(10.0, -3.0 * static_cast<double>(lengths_[i]) / denom);
-        feedback_[i]   = static_cast<float>(std::min(g, 0.9999));
+        const double gMid = std::min(std::pow(10.0, -3.0 * static_cast<double>(lengths_[i]) / denomMid), 0.9999);
+        const double gLow = std::min(std::pow(10.0, -3.0 * static_cast<double>(lengths_[i]) / denomLow), 0.9999);
+        feedback_[i]      = static_cast<float>(gMid);
+        // Low-band lift, applied to the mid feedback: gMid * boost == gLow (< 1).
+        bloomBoost_[i]    = static_cast<float>(gMid > 0.0 ? gLow / gMid : 1.0);
     }
 }
 
@@ -220,6 +260,20 @@ void FdnReverb::process(core::AudioBlock& block) noexcept
         preDelay_[preDelayPos_] = mono;
         preDelayPos_            = (preDelayPos_ + 1) % preDelay_.size();
 
+        // Dattorro input diffusion: run the pre-delayed input through four cascaded
+        // Schroeder all-pass sections so it enters the tank as a smooth wash. Each
+        // section: w[n] = x + g*w[n-D];  y = w[n-D] - g*w[n]  (unity-magnitude).
+        float diffused = tankIn;
+        for (std::size_t k = 0; k < kDiff; ++k)
+        {
+            const std::size_t p = diffPos_[k];
+            const float w  = diff_[k][p];                       // w[n-D]
+            const float in = diffused + diffCoef_[k] * w;       // w[n]
+            diff_[k][p]    = flushDenormal(in);
+            diffPos_[k]    = (p + 1) % diffLen_[k];
+            diffused       = w - diffCoef_[k] * in;             // all-pass output
+        }
+
         // Early reflections: sparse, stereo-panned taps of the input read before
         // the diffuse tail. These give the "large stone room" spatial cue.
         float erL = 0.0f;
@@ -262,7 +316,16 @@ void FdnReverb::process(core::AudioBlock& block) noexcept
                 i1 -= len;
 
             const float delayed = lines_[i][i0] + (lines_[i][i1] - lines_[i][i0]) * frac;
-            o[i]                = dampers_[i].process(delayed) * feedback_[i];
+
+            // High-frequency damping (mids/highs die first), then the bass-bloom
+            // low-shelf: lift only the sub-kBloomHz band from the mid gain up to the
+            // low gain. At DC the loop gain is gMid*bloomBoost == gLow < 1; above the
+            // crossover the low-pass output vanishes and it collapses to gMid. So the
+            // bass rings on, the mids are the reference, and nothing can blow up.
+            const float damped  = dampers_[i].process(delayed);
+            const float lowBand = bloomLp_[i].process(damped);
+            const float shelved = damped + (bloomBoost_[i] - 1.0f) * lowBand;
+            o[i]                = shelved * feedback_[i];
         }
 
         // Collect the stereo tail BEFORE mixing (taps read the line outputs).
@@ -285,7 +348,7 @@ void FdnReverb::process(core::AudioBlock& block) noexcept
         // pattern rather than from a bare impulse.
         for (std::size_t i = 0; i < kLines; ++i)
         {
-            const float v         = inject_[i] * (tankIn + erSendToTank_ * erMono) + mixed[i];
+            const float v         = inject_[i] * (diffused + erSendToTank_ * erMono) + mixed[i];
             lines_[i][positions_[i]] = flushDenormal(v);
             positions_[i]         = (positions_[i] + 1) % lengths_[i];
         }
@@ -313,6 +376,7 @@ void FdnReverb::reset() noexcept
         std::fill(lines_[i].begin(), lines_[i].end(), 0.0f);
         positions_[i] = 0;
         dampers_[i].reset();
+        bloomLp_[i].reset();
         // Spread the LFO phases evenly so the tail is deterministic and the
         // per-line modulation starts maximally decorrelated.
         modPhase_[i] = static_cast<float>(i) / static_cast<float>(kLines);
@@ -321,6 +385,11 @@ void FdnReverb::reset() noexcept
     preDelayPos_ = 0;
     std::fill(erBuffer_.begin(), erBuffer_.end(), 0.0f);
     erPos_ = 0;
+    for (std::size_t k = 0; k < kDiff; ++k)
+    {
+        std::fill(diff_[k].begin(), diff_[k].end(), 0.0f);
+        diffPos_[k] = 0;
+    }
 }
 
 } // namespace caecilia::dsp
