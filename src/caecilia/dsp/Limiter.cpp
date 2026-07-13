@@ -27,11 +27,12 @@ void Limiter::prepare(core::SampleRate sampleRate, std::size_t /*maxBlockFrames*
     gEnv_     = 1.0f;
 }
 
-void Limiter::setParams(float ceilingDb, float lookAheadMs, float releaseMs) noexcept
+void Limiter::setParams(float ceilingDb, float lookAheadMs, float holdMs, float releaseMs) noexcept
 {
     ceilingLin_  = dbToGain(clamp(ceilingDb, -24.0f, 0.0f));
     lookAheadMs_ = clamp(lookAheadMs, 0.2f, 10.0f);
-    releaseMs_   = clamp(releaseMs, 5.0f, 1000.0f);
+    holdMs_      = clamp(holdMs, 0.0f, 2000.0f);
+    releaseMs_   = clamp(releaseMs, 5.0f, 2000.0f);
     recompute();
 }
 
@@ -49,6 +50,7 @@ void Limiter::recompute() noexcept
     atkCoef_ = static_cast<float>(1.0 - std::exp(-8.0 / look));
     const double relSamples = releaseMs_ * 0.001 * sr;
     relCoef_ = static_cast<float>(1.0 - std::exp(-1.0 / (relSamples > 1.0 ? relSamples : 1.0)));
+    holdSamples_ = static_cast<std::size_t>(holdMs_ * 0.001 * sr + 0.5f);
 }
 
 void Limiter::process(core::AudioBlock& block) noexcept
@@ -84,9 +86,24 @@ void Limiter::process(core::AudioBlock& block) noexcept
         // Target gain that would bring this peak exactly to the ceiling.
         const float target = key > ceilingLin_ ? ceilingLin_ / key : 1.0f;
 
-        // Decoupled attack (fast, toward more reduction) / release (slow, recover).
-        if (target < gEnv_) gEnv_ += atkCoef_ * (target - gEnv_);
-        else                gEnv_ += relCoef_ * (target - gEnv_);
+        // Attack / HOLD / release. Any sample needing more reduction snaps the gain
+        // down (attack) and (re)arms the hold. While the hold counts down the gain is
+        // frozen — so a sustained Tutti, whose peaks keep re-arming the hold, holds a
+        // steady gain instead of breathing up and down between peaks (the pumping the
+        // old 90 ms release produced). Only after the hold expires does it release.
+        if (target < gEnv_)
+        {
+            gEnv_       += atkCoef_ * (target - gEnv_);
+            holdCounter_ = holdSamples_;
+        }
+        else if (holdCounter_ > 0)
+        {
+            --holdCounter_;                       // frozen: no recovery yet
+        }
+        else
+        {
+            gEnv_ += relCoef_ * (target - gEnv_); // slow, click-free recovery
+        }
 
         chL[n] = dl * gEnv_;
         if (chR) chR[n] = dr * gEnv_;
@@ -97,8 +114,9 @@ void Limiter::reset() noexcept
 {
     for (auto& d : delay_)
         std::fill(d.begin(), d.end(), 0.0f);
-    writePos_ = 0;
-    gEnv_     = 1.0f;
+    writePos_    = 0;
+    gEnv_        = 1.0f;
+    holdCounter_ = 0;
 }
 
 float Limiter::gainReductionDb() const noexcept

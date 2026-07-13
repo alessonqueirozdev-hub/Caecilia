@@ -45,8 +45,14 @@ public:
 
     /// @param ceilingDb   Output ceiling (peaks brought to this level); default -1 dBFS.
     /// @param lookAheadMs Look-ahead / attack window in ms; default ~2 ms.
-    /// @param releaseMs   Release time in ms; default ~90 ms.
-    void setParams(float ceilingDb, float lookAheadMs, float releaseMs) noexcept;
+    /// @param holdMs      Hold time: after a reduction the gain is FROZEN this long
+    ///                    before it may recover. This is what turns a pumping
+    ///                    compressor into a transparent safety limiter — a sustained
+    ///                    organ Tutti keeps re-triggering the hold, so the gain sits
+    ///                    rock-steady instead of breathing between peaks (the
+    ///                    Aeolus "sustain" idea). Default ~400 ms.
+    /// @param releaseMs   Release time in ms once the hold expires; default ~600 ms.
+    void setParams(float ceilingDb, float lookAheadMs, float holdMs, float releaseMs) noexcept;
 
     void process(core::AudioBlock& block) noexcept;
     void reset() noexcept;
@@ -64,13 +70,16 @@ private:
 
     float ceilingLin_ = 0.891251f; ///< dbToGain(-1).
     float lookAheadMs_ = 2.0f;
-    float releaseMs_   = 90.0f;
+    float holdMs_      = 400.0f;
+    float releaseMs_   = 600.0f;
     float atkCoef_     = 0.5f;      ///< Per-sample attack smoothing coefficient.
     float relCoef_     = 0.001f;    ///< Per-sample release smoothing coefficient.
+    std::size_t holdSamples_ = 0;   ///< Hold length in samples (from holdMs_).
 
     std::array<std::vector<float>, 2> delay_{}; ///< Per-channel look-ahead ring.
-    std::size_t writePos_ = 0;
-    float       gEnv_     = 1.0f;   ///< Smoothed gain envelope (1 = no reduction).
+    std::size_t writePos_    = 0;
+    float       gEnv_        = 1.0f; ///< Smoothed gain envelope (1 = no reduction).
+    std::size_t holdCounter_ = 0;    ///< Samples remaining in the current hold.
 };
 
 } // namespace caecilia::dsp

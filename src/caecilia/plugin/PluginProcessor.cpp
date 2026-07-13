@@ -262,7 +262,7 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     // WASAPI Exclusive; -3 dBFS keeps it clean in shared mode too, at a hair less loudness.
     masterEq_.prepare(sampleRate, frames, channels);
     limiter_.prepare(sampleRate, frames, channels);
-    limiter_.setParams(/*ceilingDb*/ -3.0f, /*lookAheadMs*/ 2.5f, /*releaseMs*/ 90.0f);
+    limiter_.setParams(/*ceilingDb*/ -3.0f, /*lookAheadMs*/ 2.5f, /*holdMs*/ 400.0f, /*releaseMs*/ 600.0f);
 
     // On-screen keyboard -> audio thread: clear any stale queued notes and
     // pre-reserve the scratch MIDI buffer so merging UI notes never allocates on
