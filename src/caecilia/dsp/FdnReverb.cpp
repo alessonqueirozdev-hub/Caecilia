@@ -58,6 +58,33 @@ constexpr std::array<DiffAp, 4> kDiffusors = {{
     { 12.7348f, 0.625f },   // 379 / 29761
     {  9.3075f, 0.625f },   // 277 / 29761
 }};
+
+// Prime-length delay lines share no common factors, so their modal frequencies
+// never coincide — this kills the periodic "metallic flutter" a plain FDN rings
+// with, which is worst under exactly the sustained chords an organ plays.
+[[nodiscard]] bool isPrime(std::size_t n) noexcept
+{
+    if (n < 2) return false;
+    if (n < 4) return true;
+    if ((n & 1U) == 0U) return false;
+    for (std::size_t d = 3; d * d <= n; d += 2)
+        if (n % d == 0) return false;
+    return true;
+}
+// The NEAREST prime to n (search outward), so the line keeps its intended length
+// and the tank's total delay — hence its sustained-input energy — is unchanged;
+// only the modal periods are made mutually prime. (Forcing strictly-ascending
+// primes lengthened the lines and made a held chord's tail build up ~6 dB hotter.)
+[[nodiscard]] std::size_t nearestPrime(std::size_t n) noexcept
+{
+    if (n < 2) return 2;
+    if (isPrime(n)) return n;
+    for (std::size_t d = 1; ; ++d)
+    {
+        if (isPrime(n + d)) return n + d;
+        if (n > d && isPrime(n - d)) return n - d;
+    }
+}
 } // namespace
 
 void FdnReverb::prepare(core::SampleRate sampleRate,
@@ -70,8 +97,14 @@ void FdnReverb::prepare(core::SampleRate sampleRate,
 
     for (std::size_t i = 0; i < kLines; ++i)
     {
-        const auto len = static_cast<std::size_t>(kBaseDelaysMs[i] * 0.001 * sampleRate_);
-        lengths_[i]    = std::max<std::size_t>(len, 2);
+        const auto raw = static_cast<std::size_t>(kBaseDelaysMs[i] * 0.001 * sampleRate_ + 0.5);
+        // Round to the NEAREST prime (the base delays are ~4 ms apart, so the nearest
+        // primes are naturally distinct) — mutually-prime periods kill the flutter
+        // WITHOUT lengthening the tank.
+        std::size_t len = nearestPrime(std::max<std::size_t>(raw, 2));
+        for (std::size_t j = 0; j < i; ++j)          // guarantee distinctness
+            if (lengths_[j] == len) { len = nearestPrime(len + 2); j = std::size_t(-1); }
+        lengths_[i]    = len;
         lines_[i].assign(lengths_[i], 0.0f);
         positions_[i] = 0;
 
