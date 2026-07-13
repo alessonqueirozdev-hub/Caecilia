@@ -1415,6 +1415,7 @@ requestAnimationFrame(frame);
   function stopDemo(){
     timers.forEach(clearTimeout); timers = [];
     caeInvoke("caeciliaPanic", []);   // kill any notes already sent to the engine
+    try { state.held.clear(); } catch (e) {}
     document.querySelectorAll('.held').forEach(e => e.classList.remove('held'));
     playing = false; if (playBtn){ playBtn.textContent = '▶ Play'; playBtn.classList.remove('playing'); }
   }
@@ -1434,8 +1435,13 @@ requestAnimationFrame(frame);
         } else {
           playNote(m, t0 + rt, ev.dur);
         }
-        timers.push(setTimeout(() => { if (playing) lightKey(ev.div, m, true); }, rt*1000));
-        timers.push(setTimeout(() => lightKey(ev.div, m, false), (rt + ev.dur)*1000));
+        // Drive state.held (not just the class) so the 30 Hz caeciliaState feed —
+        // which lights GO keys from `lit || state.held` — HOLDS the key for the
+        // whole note instead of fighting the engine's delayed lit round-trip
+        // (that fight was the flicker). state.held keeps it steady; lit confirms.
+        const hid = ev.div + ":" + m;
+        timers.push(setTimeout(() => { if (playing) { try { state.held.add(hid); } catch(e){} lightKey(ev.div, m, true); } }, rt*1000));
+        timers.push(setTimeout(() => { try { state.held.delete(hid); } catch(e){} lightKey(ev.div, m, false); }, (rt + ev.dur)*1000));
       });
       end = Math.max(end, rt + ev.dur);
     });
@@ -1591,8 +1597,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
       '<div class="cae-grp"><label id="cae-t-output"></label>'+
         '<div class="cae-row"><span class="k" id="cae-t-master"></span><input type="range" id="cae-master" min="0" max="1.5" step="0.01"><output id="cae-master-o"></output></div></div>'+
       '<div class="cae-grp"><label id="cae-t-device"></label>'+
-        '<div class="cae-sub" id="cae-t-deviceSub" style="margin:-4px 0 10px"></div>'+
-        '<button class="cae-lang" id="cae-audio-btn" style="width:100%;padding:9px"></button></div>'+
+        '<div class="cae-sub" id="cae-t-deviceSub" style="margin:-4px 0 2px;line-height:1.5"></div></div>'+
       '<div class="cae-grp"><label id="cae-t-reverb"></label>'+
         '<div class="cae-row"><span class="k" id="cae-t-space"></span><select id="cae-space">'+
           '<option value="room" id="cae-t-room"></option><option value="chamber" id="cae-t-chamber"></option>'+
@@ -1623,8 +1628,6 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     // Push the initial settings to the engine so C++ matches the panel.
     setTimeout(() => { emit("caeciliaSetMaster", [S.master]); emitReverb(); }, 700);
     trem.onclick = () => { S.trem = !S.trem; try { if (window.state) window.state.trem = S.trem; } catch(e){} emit("caeciliaSetTremulant", S.trem?1:0); refresh(); applyLang(); };
-    const audioBtn = $("cae-audio-btn");
-    if (audioBtn) audioBtn.onclick = () => emit("caeciliaAudioSettings", []);
 
     function applyLang(){
       langSel.value = lang;
@@ -1632,7 +1635,6 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
       set("cae-t-settings","settings"); set("cae-t-settingsSub","settingsSub");
       set("cae-t-output","output"); set("cae-t-master","master");
       set("cae-t-device","device"); set("cae-t-deviceSub","deviceSub");
-      { const ab = document.getElementById("cae-audio-btn"); if (ab) ab.textContent = t("audioBtn"); }
       set("cae-t-reverb","reverb"); set("cae-t-space","space"); set("cae-t-mix","mix");
       set("cae-t-tremulant","tremulant"); set("cae-t-tremstate", S.trem ? "on" : "off");
       set("cae-t-room","room"); set("cae-t-chamber","chamber"); set("cae-t-hall","hall");

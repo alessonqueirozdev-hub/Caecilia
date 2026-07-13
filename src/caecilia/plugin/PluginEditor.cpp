@@ -11,13 +11,6 @@
 #include <cstdint>
 #include <cstdio>
 
-// When this shared code is compiled for the Standalone format, pull in the
-// StandalonePluginHolder so the console can open the native Audio/MIDI settings
-// dialog (device + buffer size) — the user's route to low latency (ASIO/WASAPI).
-#if JucePlugin_Build_Standalone
- #include <juce_audio_plugin_client/juce_audio_plugin_client.h>
-#endif
-
 namespace caecilia::plugin
 {
 
@@ -181,18 +174,6 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
             [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {
                 proc.armSeqLearn(args.isEmpty() ? 0 : static_cast<int>(args[0]));
-                complete(juce::var());
-            })
-        // Open the native audio-device / buffer-size dialog (Standalone only). This
-        // is how the user selects a low-latency driver (ASIO / WASAPI exclusive) and
-        // a small buffer; in a plugin host the host owns the audio device (no-op).
-        .withNativeFunction("caeciliaAudioSettings",
-            [](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
-            {
-               #if JucePlugin_Build_Standalone
-                if (auto* holder = juce::StandalonePluginHolder::getInstance())
-                    holder->showAudioSettingsDialog();
-               #endif
                 complete(juce::var());
             });
 }
