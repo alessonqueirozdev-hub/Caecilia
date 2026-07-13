@@ -146,6 +146,13 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                     proc.setUiMaster(static_cast<float>(static_cast<double>(args[0])));
                 complete(juce::var());
             })
+        .withNativeFunction("caeciliaSetVolume",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (! args.isEmpty())
+                    proc.setUiVolume(static_cast<float>(static_cast<double>(args[0])));
+                complete(juce::var());
+            })
         .withNativeFunction("caeciliaSetReverb",
             [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {

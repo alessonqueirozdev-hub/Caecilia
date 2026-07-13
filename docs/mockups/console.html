@@ -279,6 +279,39 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   .gauge .g-lbl { font: 600 10px var(--font-sans); color: var(--ink-dim); letter-spacing: .5px; }
   .gauge .g-val { font: 500 9.5px var(--font-mono); color: var(--ink-faint); }
 
+  /* ---- Rotary control panel (Volume / Gain / Reverb / EQ) ---------------- */
+  .controls { display: flex; align-items: flex-start; gap: clamp(6px,.7vw,13px); flex-wrap: wrap; }
+  .ctrl-group { display: flex; align-items: flex-start; gap: clamp(3px,.5vw,9px); padding: 0 clamp(5px,.7vw,12px); position: relative; }
+  .ctrl-group + .ctrl-group { border-left: 1px solid var(--panel-edge); }
+  .ctrl-group .grp-lbl { position: absolute; top: -3px; left: 50%; transform: translateX(-50%);
+    font: 700 7.5px var(--font-mono); letter-spacing: 1.4px; text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; }
+  .knob-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 11px; }
+  .knob { position: relative; width: clamp(34px,4.3vh,46px); height: clamp(34px,4.3vh,46px); border-radius: 50%;
+    cursor: ns-resize; touch-action: none; outline: none; --pct: .5; --fam: var(--accent,#d9ad57); }
+  .knob .arc { position: absolute; inset: -4px; border-radius: 50%;
+    background: conic-gradient(from 225deg, var(--fam) 0 calc(var(--pct) * 270deg),
+                rgba(255,255,255,.10) calc(var(--pct) * 270deg) 270deg, transparent 270deg 360deg);
+    -webkit-mask: radial-gradient(circle, transparent 60%, #000 62%); mask: radial-gradient(circle, transparent 60%, #000 62%); }
+  #app[data-theme="wood"] .knob .face { background: radial-gradient(circle at 50% 34%, #ffedcb 0%, #dcae63 55%, #a9752f 100%);
+    box-shadow: 0 3px 7px rgba(0,0,0,.5), inset 0 1px 2px rgba(255,255,255,.85), inset 0 -5px 8px rgba(120,84,44,.4); }
+  #app[data-theme="flat"] .knob .face { background: radial-gradient(circle at 50% 34%, #2c333d, #171c24);
+    box-shadow: 0 3px 7px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08); border: 1px solid var(--panel-edge); }
+  .knob .face { position: absolute; inset: 3px; border-radius: 50%; }
+  .knob .dial { position: absolute; inset: 3px; transform: rotate(calc((var(--pct) - .5) * 270deg)); pointer-events: none; }
+  #app[data-theme="wood"] .knob .ind { background: #4a2f12; }
+  #app[data-theme="flat"] .knob .ind { background: #eaf1fb; }
+  .knob .ind { position: absolute; left: 50%; top: 9%; width: 2.5px; height: 34%; border-radius: 2px; transform: translateX(-50%); }
+  .knob:hover .arc { filter: brightness(1.15); }
+  .knob:focus .arc { filter: brightness(1.25); }
+  .knob-lbl { font: 700 8px var(--font-mono); letter-spacing: .6px; text-transform: uppercase; color: var(--ink-dim); }
+  .knob-val { font: 500 8.5px var(--font-mono); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .ctrl-space { -webkit-appearance: none; appearance: none; font: 600 9px var(--font-sans); color: var(--ink);
+    background: var(--meter-well); border: 1px solid var(--panel-edge); border-radius: 6px; padding: 3px 18px 3px 7px; margin-top: 13px; cursor: pointer;
+    background-image: linear-gradient(45deg,transparent 50%,var(--ink-faint) 50%),linear-gradient(135deg,var(--ink-faint) 50%,transparent 50%);
+    background-position: calc(100% - 11px) 10px, calc(100% - 7px) 10px; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
+  .ctrl-space option { background: var(--panel); color: var(--ink); }
+  .ctrl-eqtoggle { margin-top: 13px; }
+
   .trem {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
     padding-left: 8px; border-left: 1px solid var(--panel-edge);
@@ -598,9 +631,9 @@ of inline SVG data-URI textures. Open directly in any modern browser.
           <div class="scale"><span>−40</span><span>−20</span><span>−12</span><span>−6</span><span>−3</span><span>0</span></div>
         </div>
       </div>
-      <div class="cluster">
-        <div class="cap"><span data-i18n="windLabel">Wind · reservoir pressure (mm H₂O)</span><b id="sag-read">stable</b></div>
-        <div class="wind" id="wind"></div>
+      <div class="cluster ctrl-cluster">
+        <div class="cap"><span data-i18n="controlsLabel">Console controls</span><b id="sag-read" title="wind reservoir sag">stable</b></div>
+        <div class="controls" id="controls"></div>
       </div>
     </section>
 
@@ -1257,22 +1290,115 @@ function explain(txt) { $("#explain").textContent = txt; clearTimeout(explainTim
  *  Wind is an audio-rate control signal: reservoir pressure SAGS    *
  *  as summed flow demand (held keys × drawn stops) rises.           *
  * ================================================================= */
-const windHost = $("#wind");
-const gaugeNodes = {};
-DIVISIONS.forEach(d => {
-  const g = el("div", "gauge");
-  g.innerHTML = `<div class="well"><div class="nom"></div><div class="col"></div></div>` +
-                `<div class="g-lbl">${d.rn === "Péd" ? "Péd" : d.name.slice(0,3)}</div>` +
-                `<div class="g-val">${d.nominal}</div>`;
-  windHost.append(g);
-  gaugeNodes[d.id] = { col: g.querySelector(".col"), val: g.querySelector(".g-val") };
-});
-// tremulant control
-const tremWrap = el("div", "trem");
-tremWrap.innerHTML = `<div class="dot"></div><button>Tremulant</button>`;
-tremWrap.addEventListener("click", () => { state.trem = !state.trem; tremWrap.classList.toggle("on", state.trem);
-  explain(state.trem ? "Tremulant on — wind modulation (AM+FM+timbral) on Récit" : "Tremulant off"); });
-windHost.append(tremWrap);
+// The wind reservoir is now shown only as the compact SAG readout in the header;
+// the big blue gauges are replaced by the rotary CONTROL panel below.
+const gaugeNodes = {}; // kept empty on purpose; the frame() loop guards for it.
+
+// --- Reusable rotary knob ------------------------------------------------
+function makeKnob(opts){
+  const wrap = el("div","knob-wrap");
+  const knob = el("div","knob"); knob.tabIndex = 0; knob.setAttribute("role","slider");
+  if (opts.fam) knob.style.setProperty("--fam", opts.fam);
+  knob.innerHTML = `<div class="arc"></div><div class="face"></div><div class="dial"><div class="ind"></div></div>`;
+  const lbl = el("div","knob-lbl"); if (opts.i18n) lbl.setAttribute("data-i18n", opts.i18n); lbl.textContent = opts.label;
+  const val = el("div","knob-val");
+  wrap.append(knob, lbl, val);
+  let value = opts.def;
+  const fmt = opts.fmt || (v => Math.round(v) + (opts.unit||""));
+  function render(){
+    const pct = (value - opts.min) / (opts.max - opts.min);
+    knob.style.setProperty("--pct", Math.max(0,Math.min(1,pct)).toFixed(4));
+    val.textContent = fmt(value);
+    knob.setAttribute("aria-valuenow", value.toFixed(2));
+  }
+  function set(v, fire){ value = Math.max(opts.min, Math.min(opts.max, v)); render(); if (fire && opts.onChange) opts.onChange(value); }
+  let dragging=false, startY=0, startV=0;
+  knob.addEventListener("pointerdown", e => { dragging=true; startY=e.clientY; startV=value; try{knob.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+  knob.addEventListener("pointermove", e => { if(!dragging) return; const range=opts.max-opts.min; set(startV + (startY-e.clientY)/170*range, true); });
+  const end = e => { dragging=false; try{knob.releasePointerCapture(e.pointerId);}catch(_){} };
+  knob.addEventListener("pointerup", end); knob.addEventListener("pointercancel", end);
+  knob.addEventListener("dblclick", () => set(opts.def, true));
+  knob.addEventListener("wheel", e => { e.preventDefault(); const range=opts.max-opts.min; set(value - Math.sign(e.deltaY)*range*0.03, true); }, {passive:false});
+  knob.addEventListener("keydown", e => { const r=opts.max-opts.min;
+    if(e.key==="ArrowUp"||e.key==="ArrowRight"){set(value+r*0.02,true);e.preventDefault();}
+    else if(e.key==="ArrowDown"||e.key==="ArrowLeft"){set(value-r*0.02,true);e.preventDefault();} });
+  render();
+  return { el: wrap, set, get: ()=>value };
+}
+function ctrlGroup(i18nKey){
+  const g = el("div","ctrl-group");
+  const l = el("span","grp-lbl"); l.setAttribute("data-i18n", i18nKey); g.append(l);
+  return g;
+}
+
+// --- Build the rotary control panel --------------------------------------
+(function buildControls(){
+  const host = $("#controls"); if (!host) return;
+  const SPACE_IDX = { room:0, chamber:1, hall:2, cathedral:3, plate:4 };
+  let outCfg = { vol:100, gain:100, space:"cathedral", mix:34 };
+  try { const j = localStorage.getItem("cae.outcfg"); if (j) Object.assign(outCfg, JSON.parse(j)); } catch(e){}
+  const save = () => { try { localStorage.setItem("cae.outcfg", JSON.stringify(outCfg)); } catch(e){} };
+
+  // OUTPUT: Volume (post-limiter) + Gain (drive)
+  const gOut = ctrlGroup("grpOutput");
+  const kVol  = makeKnob({label:"Vol",  i18n:"vol",  min:0, max:100, def:100, unit:"%", fam:"var(--accent,#d9ad57)",
+    onChange:v=>{ outCfg.vol=Math.round(v); save(); caeInvoke("caeciliaSetVolume",[v/100]); }});
+  const kGain = makeKnob({label:"Gain", i18n:"gain", min:0, max:200, def:100, unit:"%", fam:"#e0a24a",
+    onChange:v=>{ outCfg.gain=Math.round(v); save(); caeInvoke("caeciliaSetMaster",[v/100]); }});
+  gOut.append(kVol.el, kGain.el);
+
+  // REVERB: space selector + Mix
+  const gRev = ctrlGroup("grpReverb");
+  const revSel = el("div","knob-wrap");
+  const sel = document.createElement("select"); sel.className="ctrl-space"; sel.id="ctrl-space";
+  [["room","Room"],["chamber","Chamber"],["hall","Hall"],["cathedral","Cathedral"],["plate","Plate"]]
+    .forEach(([v,tx])=>{ const o=document.createElement("option"); o.value=v; o.textContent=tx; o.setAttribute("data-i18n",v); sel.append(o); });
+  sel.value = outCfg.space;
+  const spLbl = el("div","knob-lbl"); spLbl.setAttribute("data-i18n","space");
+  revSel.append(sel, spLbl);
+  const kMix = makeKnob({label:"Mix", i18n:"mix", min:0, max:100, def:34, unit:"%", fam:"var(--fam-String,#8bb0e0)",
+    onChange:v=>{ outCfg.mix=Math.round(v); save(); caeInvoke("caeciliaSetReverb",[SPACE_IDX[outCfg.space]||3, v/100]); }});
+  sel.onchange = () => { outCfg.space=sel.value; save(); caeInvoke("caeciliaSetReverb",[SPACE_IDX[outCfg.space]||3, outCfg.mix/100]); };
+  gRev.append(revSel, kMix.el);
+
+  // EQ: 5 mini knobs (dB), synced with the Settings-panel sliders + cae.eqcfg
+  const gEq = ctrlGroup("grpEq");
+  const EQ = [["warmth","Warm"],["boxiness","Box"],["bodyBand","Body"],["presence","Pres"],["air","Air"]];
+  const EQ_DEF = [2.0,-2.5,0.0,1.5,2.0];
+  let eqGains = EQ_DEF.slice();
+  try { const j=localStorage.getItem("cae.eqcfg"); if(j){ const o=JSON.parse(j); if(Array.isArray(o.gains)&&o.gains.length===5) eqGains=o.gains.map(Number);} } catch(e){}
+  const eqKnobs = EQ.map(([key,short], b) => makeKnob({label:short, i18n:key+"Short", min:-9, max:9, def:EQ_DEF[b],
+    fmt:v=>(v>0?"+":"")+v.toFixed(1), fam:"var(--fam-Reed,#e0894a)",
+    onChange:v=>{ eqGains[b]=+v.toFixed(1); caeInvoke("caeciliaSetEq",[b,v]);
+      try{ localStorage.setItem("cae.eqcfg", JSON.stringify({on:true,gains:eqGains})); }catch(e){}
+      const s=document.getElementById("cae-eq-"+b); if(s){ s.value=v; const o=document.getElementById("cae-eq-"+b+"o"); if(o) o.textContent=(v>0?"+":"")+(+v).toFixed(1); } }}));
+  eqKnobs.forEach(k=>gEq.append(k.el));
+
+  // TREMULANT toggle (knob-styled)
+  const gTr = ctrlGroup("tremulant");
+  const trWrap = el("div","knob-wrap");
+  const trK = el("div","knob"); trK.tabIndex=0; trK.style.setProperty("--fam","var(--fam-Mixture,#c98bd0)");
+  trK.innerHTML = `<div class="arc"></div><div class="face"></div><div class="dial"><div class="ind"></div></div>`;
+  const trVal = el("div","knob-val");
+  const trLbl = el("div","knob-lbl"); trLbl.setAttribute("data-i18n","tremulant");
+  function trRender(){ trK.style.setProperty("--pct", state.trem?"1":"0"); trVal.textContent = (window.__caeT?window.__caeT(state.trem?"on":"off"):(state.trem?"On":"Off")); }
+  trK.addEventListener("click", ()=>{ state.trem=!state.trem; caeInvoke("caeciliaSetTremulant",[state.trem?1:0]); trRender(); });
+  trK.addEventListener("keydown", e=>{ if(e.key===" "||e.key==="Enter"){ trK.click(); e.preventDefault(); }});
+  trWrap.append(trK, trLbl, trVal);
+  gTr.append(trWrap);
+
+  host.append(gOut, gRev, gEq, gTr);
+
+  // Push the saved output config to the engine on load (this panel is authoritative).
+  setTimeout(()=>{
+    kVol.set(outCfg.vol,false); kGain.set(outCfg.gain,false); kMix.set(outCfg.mix,false);
+    eqKnobs.forEach((k,b)=>k.set(eqGains[b],false)); trRender();
+    caeInvoke("caeciliaSetVolume",[outCfg.vol/100]);
+    caeInvoke("caeciliaSetMaster",[outCfg.gain/100]);
+    caeInvoke("caeciliaSetReverb",[SPACE_IDX[outCfg.space]||3, outCfg.mix/100]);
+    for (let b=0;b<5;b++) caeInvoke("caeciliaSetEq",[b, eqGains[b]]);
+  }, 800);
+})();
 
 const sim = { vuL: 0, vuR: 0, pkL: 0, pkR: 0, p: { ped:1, pos:1, go:1, rec:1 } };
 function dbFmt(x) { if (x <= 0.001) return "−∞ dB"; const db = 20 * Math.log10(x); return (db >= 0 ? "+" : "") + db.toFixed(1) + " dB"; }
@@ -1327,12 +1453,13 @@ function frame(now) {
     sim.p[d.id] += (p - sim.p[d.id]) * 0.14;
     maxSag = Math.max(maxSag, 1 - sim.p[d.id]);
     const g = gaugeNodes[d.id];
-    const frac = sim.p[d.id];                 // fraction of nominal (well is 84% = nominal line)
-    g.col.style.height = (frac * 84) + "%";
-    // colour shifts blue → amber → red as it sags
-    const hue = 205 - Math.min(1, (1 - frac) / 0.3) * 180;
-    g.col.style.background = `linear-gradient(180deg, hsl(${hue} 85% 68%), hsl(${hue} 80% 50%))`;
-    g.val.textContent = Math.round(d.nominal * frac);
+    if (g) {                                   // gauges replaced by the control panel; guard
+      const frac = sim.p[d.id];
+      g.col.style.height = (frac * 84) + "%";
+      const hue = 205 - Math.min(1, (1 - frac) / 0.3) * 180;
+      g.col.style.background = `linear-gradient(180deg, hsl(${hue} 85% 68%), hsl(${hue} 80% 50%))`;
+      g.val.textContent = Math.round(d.nominal * frac);
+    }
   }
   $("#sag-read").textContent = maxSag > 0.02 ? `sag −${Math.round(maxSag * 100)}%` : "stable";
   requestAnimationFrame(frame);
@@ -1516,7 +1643,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          enable:"Enable", prevKey:"Previous", nextKey:"Next", learn:"Learn", listening:"Press a key…",
          device:"Audio device & latency", deviceSub:"Pick a low-latency driver (ASIO / WASAPI exclusive) and a small buffer to remove the delay you feel", audioBtn:"Open audio settings…",
          eq:"Equalizer", eqSub:"5-band master voicing", warmth:"Warmth", boxiness:"Boxiness", bodyBand:"Body", presence:"Presence", air:"Air", flat:"Flat",
-         outputVu:"Output · VU", windLabel:"Wind · reservoir pressure (mm H₂O)", stableTxt:"stable", sagTxt:"sag", seq:"Seq", pedalNotes:"Pédale — 30 notes", swell:"Swell", cresc:"Cresc.", drawn:"Drawn", keysLbl:"Keys", polyphony:"Polyphony", enclosed:"enclosed", matchWord:"match", matchesWord:"matches", hintPlay:"Draw a stop, then play — the wind will breathe under the load.", famPrincipal:"Principal", famFlute:"Flute", famString:"String", famReed:"Reed", famMixture:"Mixture", famCornet:"Cornet", play:"Play", stop:"Stop", organPreset:"🎹 Organ preset…" },
+         outputVu:"Output · VU", windLabel:"Wind · reservoir pressure (mm H₂O)", stableTxt:"stable", sagTxt:"sag", seq:"Seq", pedalNotes:"Pédale — 30 notes", swell:"Swell", cresc:"Cresc.", drawn:"Drawn", keysLbl:"Keys", polyphony:"Polyphony", enclosed:"enclosed", matchWord:"match", matchesWord:"matches", hintPlay:"Draw a stop, then play — the wind will breathe under the load.", famPrincipal:"Principal", famFlute:"Flute", famString:"String", famReed:"Reed", famMixture:"Mixture", famCornet:"Cornet", play:"Play", stop:"Stop", organPreset:"🎹 Organ preset…", controlsLabel:"Console controls", grpOutput:"Output", grpReverb:"Reverb", grpEq:"EQ", vol:"Vol", gain:"Gain", warmthShort:"Warm", boxinessShort:"Box", bodyBandShort:"Body", presenceShort:"Pres", airShort:"Air" },
     pt:{ lang:"Português (BR)", settings:"Ajustes", settingsSub:"Reverb, saída e expressão",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Saída", master:"Volume geral",
          reverb:"Reverb", mix:"Mistura", space:"Espaço", tremulant:"Tremulante", on:"Ligado", off:"Desligado",
@@ -1526,7 +1653,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          enable:"Ativar", prevKey:"Anterior", nextKey:"Próximo", learn:"Aprender", listening:"Pressione uma tecla…",
          device:"Áudio e latência", deviceSub:"Escolha um driver de baixa latência (ASIO / WASAPI exclusivo) e um buffer pequeno para tirar o atraso", audioBtn:"Abrir configurações de áudio…",
          eq:"Equalizador", eqSub:"Voicing master de 5 bandas", warmth:"Calor (grave)", boxiness:"Caixa (médio)", bodyBand:"Corpo", presence:"Presença", air:"Brilho", flat:"Plano",
-         outputVu:"Saída · VU", windLabel:"Vento · pressão do fole (mm H₂O)", stableTxt:"estável", sagTxt:"queda", seq:"Seq", pedalNotes:"Pédale — 30 notas", swell:"Expressão", cresc:"Cresc.", drawn:"Registros", keysLbl:"Teclas", polyphony:"Polifonia", enclosed:"expressivo", matchWord:"resultado", matchesWord:"resultados", hintPlay:"Puxe um registro e toque — o vento respira sob a carga.", famPrincipal:"Principal", famFlute:"Flauta", famString:"Corda", famReed:"Palheta", famMixture:"Mistura", famCornet:"Corneta", play:"Tocar", stop:"Parar", organPreset:"🎹 Registro de órgão…" },
+         outputVu:"Saída · VU", windLabel:"Vento · pressão do fole (mm H₂O)", stableTxt:"estável", sagTxt:"queda", seq:"Seq", pedalNotes:"Pédale — 30 notas", swell:"Expressão", cresc:"Cresc.", drawn:"Registros", keysLbl:"Teclas", polyphony:"Polifonia", enclosed:"expressivo", matchWord:"resultado", matchesWord:"resultados", hintPlay:"Puxe um registro e toque — o vento respira sob a carga.", famPrincipal:"Principal", famFlute:"Flauta", famString:"Corda", famReed:"Palheta", famMixture:"Mistura", famCornet:"Corneta", play:"Tocar", stop:"Parar", organPreset:"🎹 Registro de órgão…", controlsLabel:"Controles", grpOutput:"Saída", grpReverb:"Reverb", grpEq:"EQ", vol:"Vol", gain:"Ganho", warmthShort:"Grave", boxinessShort:"Caixa", bodyBandShort:"Corpo", presenceShort:"Pres", airShort:"Ar" },
     es:{ lang:"Español", settings:"Ajustes", settingsSub:"Reverb, salida y expresión",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Salida", master:"Volumen general",
          reverb:"Reverb", mix:"Mezcla", space:"Espacio", tremulant:"Trémolo", on:"Activado", off:"Desactivado",
@@ -1536,7 +1663,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          enable:"Activar", prevKey:"Anterior", nextKey:"Siguiente", learn:"Aprender", listening:"Pulsa una tecla…",
          device:"Audio y latencia", deviceSub:"Elige un driver de baja latencia (ASIO / WASAPI exclusivo) y un búfer pequeño para quitar el retardo", audioBtn:"Abrir ajustes de audio…",
          eq:"Ecualizador", eqSub:"Voicing master de 5 bandas", warmth:"Calidez", boxiness:"Caja (medios)", bodyBand:"Cuerpo", presence:"Presencia", air:"Aire", flat:"Plano",
-         outputVu:"Salida · VU", windLabel:"Viento · presión del fuelle (mm H₂O)", stableTxt:"estable", sagTxt:"caída", seq:"Sec", pedalNotes:"Pédale — 30 notas", swell:"Expresión", cresc:"Cresc.", drawn:"Registros", keysLbl:"Teclas", polyphony:"Polifonía", enclosed:"expresivo", matchWord:"resultado", matchesWord:"resultados", hintPlay:"Registra y toca — el viento respira bajo la carga.", famPrincipal:"Principal", famFlute:"Flauta", famString:"Cuerda", famReed:"Lengüeta", famMixture:"Mixtura", famCornet:"Corneta", play:"Reproducir", stop:"Parar", organPreset:"🎹 Registro de órgano…" },
+         outputVu:"Salida · VU", windLabel:"Viento · presión del fuelle (mm H₂O)", stableTxt:"estable", sagTxt:"caída", seq:"Sec", pedalNotes:"Pédale — 30 notas", swell:"Expresión", cresc:"Cresc.", drawn:"Registros", keysLbl:"Teclas", polyphony:"Polifonía", enclosed:"expresivo", matchWord:"resultado", matchesWord:"resultados", hintPlay:"Registra y toca — el viento respira bajo la carga.", famPrincipal:"Principal", famFlute:"Flauta", famString:"Cuerda", famReed:"Lengüeta", famMixture:"Mixtura", famCornet:"Corneta", play:"Reproducir", stop:"Parar", organPreset:"🎹 Registro de órgano…", controlsLabel:"Controles", grpOutput:"Salida", grpReverb:"Reverb", grpEq:"EQ", vol:"Vol", gain:"Ganancia", warmthShort:"Grave", boxinessShort:"Caja", bodyBandShort:"Cuerpo", presenceShort:"Pres", airShort:"Aire" },
     de:{ lang:"Deutsch", settings:"Einstellungen", settingsSub:"Hall, Ausgang und Expression",
          releaseKeys:"Tasten lösen", enterDraw:"Enter zum Registrieren", output:"Ausgang", master:"Gesamtlautstärke",
          reverb:"Hall", mix:"Anteil", space:"Raum", tremulant:"Tremulant", on:"An", off:"Aus",
@@ -1546,7 +1673,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          enable:"Aktiv", prevKey:"Zurück", nextKey:"Weiter", learn:"Lernen", listening:"Taste drücken…",
          device:"Audio & Latenz", deviceSub:"Wähle einen Treiber mit geringer Latenz (ASIO / WASAPI exklusiv) und eine kleine Puffergröße", audioBtn:"Audioeinstellungen öffnen…",
          eq:"Equalizer", eqSub:"5-Band Master-Voicing", warmth:"Wärme", boxiness:"Mitten", bodyBand:"Körper", presence:"Präsenz", air:"Luft", flat:"Neutral",
-         outputVu:"Ausgang · VU", windLabel:"Wind · Balgdruck (mm H₂O)", stableTxt:"stabil", sagTxt:"Abfall", seq:"Seq", pedalNotes:"Pédale — 30 Töne", swell:"Schwellwerk", cresc:"Cresc.", drawn:"Register", keysLbl:"Tasten", polyphony:"Polyphonie", enclosed:"schwellbar", matchWord:"Treffer", matchesWord:"Treffer", hintPlay:"Zieh ein Register und spiele — der Wind atmet unter Last.", famPrincipal:"Prinzipal", famFlute:"Flöte", famString:"Streicher", famReed:"Zunge", famMixture:"Mixtur", famCornet:"Kornett", play:"Abspielen", stop:"Stopp", organPreset:"🎹 Orgel-Register…" },
+         outputVu:"Ausgang · VU", windLabel:"Wind · Balgdruck (mm H₂O)", stableTxt:"stabil", sagTxt:"Abfall", seq:"Seq", pedalNotes:"Pédale — 30 Töne", swell:"Schwellwerk", cresc:"Cresc.", drawn:"Register", keysLbl:"Tasten", polyphony:"Polyphonie", enclosed:"schwellbar", matchWord:"Treffer", matchesWord:"Treffer", hintPlay:"Zieh ein Register und spiele — der Wind atmet unter Last.", famPrincipal:"Prinzipal", famFlute:"Flöte", famString:"Streicher", famReed:"Zunge", famMixture:"Mixtur", famCornet:"Kornett", play:"Abspielen", stop:"Stopp", organPreset:"🎹 Orgel-Register…", controlsLabel:"Bedienung", grpOutput:"Ausgang", grpReverb:"Hall", grpEq:"EQ", vol:"Vol", gain:"Gain", warmthShort:"Bass", boxinessShort:"Mitte", bodyBandShort:"Körper", presenceShort:"Präs", airShort:"Luft" },
   };
   let lang = "en";
   const t = k => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
@@ -1657,8 +1784,8 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     master.oninput = () => { S.master = +master.value; window.__caeApplySettings(); emit("caeciliaSetMaster", [S.master]); refresh(); };
     mix.oninput = () => { S.mix = +mix.value; window.__caeApplySettings(); emitReverb(); refresh(); };
     space.onchange = () => { S.space = space.value; window.__caeApplySettings(); emitReverb(); };
-    // Push the initial settings to the engine so C++ matches the panel.
-    setTimeout(() => { emit("caeciliaSetMaster", [S.master]); emitReverb(); }, 700);
+    // (Master/reverb are pushed by the top rotary CONTROL panel, which is the
+    // authoritative source on load; the Settings sliders remain a live secondary.)
     trem.onclick = () => { S.trem = !S.trem; try { if (window.state) window.state.trem = S.trem; } catch(e){} emit("caeciliaSetTremulant", S.trem?1:0); refresh(); applyLang(); };
 
     function applyLang(){
@@ -1741,7 +1868,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     for (let b=0;b<5;b++){ const s=$("cae-eq-"+b); if (s) s.oninput = () => { eqCfg.gains[b]=+s.value; eqSave(); emit("caeciliaSetEq",[b,+s.value]); eqRefresh(); }; }
     if (eqFlat) eqFlat.onclick = () => { for (let b=0;b<5;b++){ eqCfg.gains[b]=0; emit("caeciliaSetEq",[b,0]); } eqSave(); eqRefresh(); };
     eqRefresh();
-    setTimeout(() => eqPush(), 760);
+    /* EQ is pushed on load by the top control panel (authoritative). */
 
     langSel.onchange = () => { lang = langSel.value; applyLang(); };
     refresh(); applyLang();

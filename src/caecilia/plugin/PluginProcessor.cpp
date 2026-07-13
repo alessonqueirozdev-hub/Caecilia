@@ -436,8 +436,9 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // Final safety clamp to +/-1 (the limiter already holds ~-1 dBFS, so this
     // almost never fires) AND harvest the true mastered peak for the console VU.
-    const int nSamp = buffer.getNumSamples();
-    const int nCh   = buffer.getNumChannels();
+    const int   nSamp = buffer.getNumSamples();
+    const int   nCh   = buffer.getNumChannels();
+    const float vol   = uiVolume_.load(std::memory_order_relaxed); // post-limiter output level
     float peaks[2] = { 0.0f, 0.0f };
     for (int ch = 0; ch < nCh; ++ch)
     {
@@ -445,7 +446,7 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         float  pk = 0.0f;
         for (int i = 0; i < nSamp; ++i)
         {
-            float v = d[i];
+            float v = d[i] * vol;
             v = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
             d[i] = v;
             const float a = v < 0.0f ? -v : v;

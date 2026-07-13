@@ -175,11 +175,17 @@ public:
     /// under the processing lock. This is the console's real audio path.
     void setUiRegistration(const std::vector<model::RegistrationRank>& ranks);
 
-    /// Console settings -> engine. Master is a linear output trim; reverb space is
-    /// a preset index (0=Room..4=Plate) and mix is 0..1. RT-safe / message thread.
+    /// Console GAIN (pre-limiter drive): how hard the instrument pushes into the
+    /// master limiter — affects loudness AND how much the limiter works. 0..2.
     void setUiMaster(float linearGain) noexcept
     {
         uiMaster_.store(juce::jlimit(0.0f, 2.0f, linearGain), std::memory_order_relaxed);
+    }
+    /// Console VOLUME (post-limiter output level): a clean final attenuation of the
+    /// mastered signal, distinct from Gain. 0..1 (unity = full). RT-safe.
+    void setUiVolume(float linear) noexcept
+    {
+        uiVolume_.store(juce::jlimit(0.0f, 1.0f, linear), std::memory_order_relaxed);
     }
     void setUiReverb(int spaceIndex, float mix);
 
@@ -259,8 +265,11 @@ private:
     /// (no bass pumping / distortion) instead of slamming it. N = active voices.
     juce::LinearSmoothedValue<float> polyGain_;
 
-    /// Console master trim (0..2, default 1) set from the Settings panel.
+    /// Console GAIN (pre-limiter drive, 0..2, default 1) — the "how hard we push".
     std::atomic<float> uiMaster_{ 1.0f };
+    /// Console VOLUME (post-limiter output level, 0..1, default 1) — the clean
+    /// final trim, applied after the limiter so it never re-introduces clipping.
+    std::atomic<float> uiVolume_{ 1.0f };
 
     /// Set by the console (stop demo / release keys); the audio thread panics and
     /// clears it. Fixes notes sticking when a demo is stopped mid-phrase.
