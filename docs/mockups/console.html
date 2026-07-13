@@ -589,7 +589,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
     <!-- ========================== METER BRIDGE ========================= -->
     <section class="bridge" aria-label="Meters">
       <div class="cluster">
-        <div class="cap"><span>Output · VU</span><b id="vu-read">−∞ dB</b></div>
+        <div class="cap"><span data-i18n="outputVu">Output · VU</span><b id="vu-read">−∞ dB</b></div>
         <div class="vu">
           <span class="lbl">L</span>
           <div class="track"><div class="fill" id="vuL"></div><div class="peak" id="pkL"></div></div>
@@ -599,7 +599,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
         </div>
       </div>
       <div class="cluster">
-        <div class="cap"><span>Wind · reservoir pressure (mm H₂O)</span><b id="sag-read">stable</b></div>
+        <div class="cap"><span data-i18n="windLabel">Wind · reservoir pressure (mm H₂O)</span><b id="sag-read">stable</b></div>
         <div class="wind" id="wind"></div>
       </div>
     </section>
@@ -616,7 +616,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
         <!-- Combination bar -->
         <div class="comb" aria-label="Combination action">
           <div class="grp">
-            <span class="cap">Seq</span>
+            <span class="cap" data-i18n="seq">Seq</span>
             <button class="piston" id="seq-prev" title="Sequencer previous (mapped to Si5)">◀</button>
             <button class="piston" id="seq-next" title="Sequencer next (mapped to Do6)">▶</button>
           </div>
@@ -633,7 +633,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
         <!-- Expression + pedalboard -->
         <div class="bottom">
           <div class="pedalboard-wrap">
-            <span class="cap">Pédale — 30 notes</span>
+            <span class="cap" data-i18n="pedalNotes">Pédale — 30 notes</span>
             <div class="pedals" id="pedals"></div>
           </div>
           <div class="expr">
@@ -641,14 +641,14 @@ of inline SVG data-URI textures. Open directly in any modern browser.
               <div class="track" data-shoe="swell" style="--sc:var(--fam-String)">
                 <div class="fill"></div><div class="pad"></div>
               </div>
-              <div class="s-lbl">Swell</div>
+              <div class="s-lbl" data-i18n="swell">Swell</div>
               <div class="s-val" id="swell-val">75%</div>
             </div>
             <div class="shoe" id="shoe-cresc">
               <div class="track" data-shoe="cresc" style="--sc:var(--fam-Mixture)">
                 <div class="fill"></div><div class="pad"></div>
               </div>
-              <div class="s-lbl">Cresc.</div>
+              <div class="s-lbl" data-i18n="cresc">Cresc.</div>
               <div class="s-val" id="cresc-val">0%</div>
             </div>
           </div>
@@ -660,8 +660,8 @@ of inline SVG data-URI textures. Open directly in any modern browser.
 
     <!-- =========================== STATUS ============================== -->
     <footer class="status">
-      <span class="reg">Drawn <b id="stat-drawn">0</b> · Keys <b id="stat-keys">0</b> · Polyphony <b id="stat-poly">0</b></span>
-      <span class="explain" id="explain">Draw a stop, then play — the wind will breathe under the load.</span>
+      <span class="reg"><span data-i18n="drawn">Drawn</span> <b id="stat-drawn">0</b> · <span data-i18n="keysLbl">Keys</span> <b id="stat-keys">0</b> · <span data-i18n="polyphony">Polyphony</span> <b id="stat-poly">0</b></span>
+      <span class="explain" id="explain" data-i18n="hintPlay">Draw a stop, then play — the wind will breathe under the load.</span>
       <div class="legend" id="legend"></div>
     </footer>
   </div>
@@ -909,7 +909,7 @@ MANUAL_ORDER.forEach(id => {
   const row = el("div", "manual");
   const plate = el("div", "name-plate");
   plate.innerHTML = `<span class="rn">${d.rn}</span><span class="dn">${d.name}</span>` +
-                    (d.enclosed ? `<span class="encl">enclosed</span>` : "");
+                    (d.enclosed ? `<span class="encl" data-i18n="enclosed">enclosed</span>` : "");
   const wrap = el("div", "kb-wrap");
   const kb = el("div", "keyboard" + (d.enclosed ? " enclosed" : ""));
   kb.id = "kb-" + id;
@@ -955,7 +955,8 @@ GENERALS.forEach((g, i) => {
   FAM.filter(f => f !== "Hybrid").forEach(f => {
     const it = el("div", "item");
     const sw = el("span", "sw"); sw.style.background = FAM_COLOR[f];
-    it.append(sw, document.createTextNode(f));
+    const lbl = el("span"); lbl.setAttribute("data-i18n", "fam" + f); lbl.textContent = f; // translated by applyLang
+    it.append(sw, lbl);
     host.append(it);
   });
 })();
@@ -1181,7 +1182,8 @@ function applyOmni() {
     node.classList.toggle("match", !!set && set.has(st.id));
     node.classList.toggle("dim", !!set && set.size > 0 && !set.has(st.id));
   });
-  $("#omni-hint").textContent = set ? `${set.size} match${set.size === 1 ? "" : "es"} · Enter to draw` : "Enter to draw";
+  { const T = window.__caeT || (k => k);
+    $("#omni-hint").textContent = set ? `${set.size} ${T(set.size === 1 ? "matchWord" : "matchesWord")} · ${T("enterDraw")}` : T("enterDraw"); }
 }
 omni.addEventListener("input", applyOmni);
 omni.addEventListener("keydown", e => {
@@ -1248,7 +1250,7 @@ function updateStatus() {
 }
 let explainTimer;
 function explain(txt) { $("#explain").textContent = txt; clearTimeout(explainTimer);
-  explainTimer = setTimeout(() => $("#explain").textContent = "Draw a stop, then play — the wind will breathe under the load.", 6000); }
+  explainTimer = setTimeout(() => $("#explain").textContent = (window.__caeT ? window.__caeT("hintPlay") : "Draw a stop, then play — the wind will breathe under the load."), 6000); }
 
 /* ================================================================= *
  *  WIND CLUSTER + LIVE SIMULATION LOOP (mock StateMirror poll).     *
@@ -1418,11 +1420,11 @@ requestAnimationFrame(frame);
     caeInvoke("caeciliaPanic", []);   // kill any notes already sent to the engine
     try { state.held.clear(); } catch (e) {}
     document.querySelectorAll('.held').forEach(e => e.classList.remove('held'));
-    playing = false; if (playBtn){ playBtn.textContent = '▶ Play'; playBtn.classList.remove('playing'); }
+    playing = false; if (playBtn){ playBtn.textContent = ('▶ ' + (window.__caeT ? window.__caeT('play') : 'Play')); playBtn.classList.remove('playing'); }
   }
   function playDemo(p){
     audio(); if (actx.state === 'suspended') actx.resume();
-    stopDemo(); playing = true; if (playBtn){ playBtn.textContent = '■ Stop'; playBtn.classList.add('playing'); }
+    stopDemo(); playing = true; if (playBtn){ playBtn.textContent = ('■ ' + (window.__caeT ? window.__caeT('stop') : 'Stop')); playBtn.classList.add('playing'); }
     if (p.reg) drawStops(p.reg);
     const base = p.notes.length ? Math.min.apply(null, p.notes.map(n => n.t)) : 0;
     const t0 = actx.currentTime + 0.15; let end = 0;
@@ -1453,7 +1455,7 @@ requestAnimationFrame(frame);
     const demo = el('div','demo');
     const sel = document.createElement('select');
     PIECES.forEach((p,i) => { const o = document.createElement('option'); o.value = i; o.textContent = '♪ ' + p.name; sel.append(o); });
-    playBtn = document.createElement('button'); playBtn.className = 'play'; playBtn.textContent = '▶ Play';
+    playBtn = document.createElement('button'); playBtn.className = 'play'; playBtn.textContent = ('▶ ' + (window.__caeT ? window.__caeT('play') : 'Play'));
     playBtn.addEventListener('click', () => { playing ? stopDemo() : playDemo(PIECES[sel.value|0]); });
     demo.append(sel, playBtn);
     const seg = topbar.querySelector('.seg');
@@ -1513,7 +1515,8 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          pageturn:"Page-turn keys", pageturnSub:"Step registrations from your keyboard (any model)",
          enable:"Enable", prevKey:"Previous", nextKey:"Next", learn:"Learn", listening:"Press a key…",
          device:"Audio device & latency", deviceSub:"Pick a low-latency driver (ASIO / WASAPI exclusive) and a small buffer to remove the delay you feel", audioBtn:"Open audio settings…",
-         eq:"Equalizer", eqSub:"5-band master voicing", warmth:"Warmth", boxiness:"Boxiness", bodyBand:"Body", presence:"Presence", air:"Air", flat:"Flat" },
+         eq:"Equalizer", eqSub:"5-band master voicing", warmth:"Warmth", boxiness:"Boxiness", bodyBand:"Body", presence:"Presence", air:"Air", flat:"Flat",
+         outputVu:"Output · VU", windLabel:"Wind · reservoir pressure (mm H₂O)", stableTxt:"stable", sagTxt:"sag", seq:"Seq", pedalNotes:"Pédale — 30 notes", swell:"Swell", cresc:"Cresc.", drawn:"Drawn", keysLbl:"Keys", polyphony:"Polyphony", enclosed:"enclosed", matchWord:"match", matchesWord:"matches", hintPlay:"Draw a stop, then play — the wind will breathe under the load.", famPrincipal:"Principal", famFlute:"Flute", famString:"String", famReed:"Reed", famMixture:"Mixture", famCornet:"Cornet", play:"Play", stop:"Stop", organPreset:"🎹 Organ preset…" },
     pt:{ lang:"Português (BR)", settings:"Ajustes", settingsSub:"Reverb, saída e expressão",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Saída", master:"Volume geral",
          reverb:"Reverb", mix:"Mistura", space:"Espaço", tremulant:"Tremulante", on:"Ligado", off:"Desligado",
@@ -1522,7 +1525,8 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          pageturn:"Teclas de troca", pageturnSub:"Trocar registros pelo teclado (qualquer modelo)",
          enable:"Ativar", prevKey:"Anterior", nextKey:"Próximo", learn:"Aprender", listening:"Pressione uma tecla…",
          device:"Áudio e latência", deviceSub:"Escolha um driver de baixa latência (ASIO / WASAPI exclusivo) e um buffer pequeno para tirar o atraso", audioBtn:"Abrir configurações de áudio…",
-         eq:"Equalizador", eqSub:"Voicing master de 5 bandas", warmth:"Calor (grave)", boxiness:"Caixa (médio)", bodyBand:"Corpo", presence:"Presença", air:"Brilho", flat:"Plano" },
+         eq:"Equalizador", eqSub:"Voicing master de 5 bandas", warmth:"Calor (grave)", boxiness:"Caixa (médio)", bodyBand:"Corpo", presence:"Presença", air:"Brilho", flat:"Plano",
+         outputVu:"Saída · VU", windLabel:"Vento · pressão do fole (mm H₂O)", stableTxt:"estável", sagTxt:"queda", seq:"Seq", pedalNotes:"Pédale — 30 notas", swell:"Expressão", cresc:"Cresc.", drawn:"Registros", keysLbl:"Teclas", polyphony:"Polifonia", enclosed:"expressivo", matchWord:"resultado", matchesWord:"resultados", hintPlay:"Puxe um registro e toque — o vento respira sob a carga.", famPrincipal:"Principal", famFlute:"Flauta", famString:"Corda", famReed:"Palheta", famMixture:"Mistura", famCornet:"Corneta", play:"Tocar", stop:"Parar", organPreset:"🎹 Registro de órgão…" },
     es:{ lang:"Español", settings:"Ajustes", settingsSub:"Reverb, salida y expresión",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Salida", master:"Volumen general",
          reverb:"Reverb", mix:"Mezcla", space:"Espacio", tremulant:"Trémolo", on:"Activado", off:"Desactivado",
@@ -1531,7 +1535,8 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          pageturn:"Teclas de cambio", pageturnSub:"Cambiar registros desde el teclado (cualquier modelo)",
          enable:"Activar", prevKey:"Anterior", nextKey:"Siguiente", learn:"Aprender", listening:"Pulsa una tecla…",
          device:"Audio y latencia", deviceSub:"Elige un driver de baja latencia (ASIO / WASAPI exclusivo) y un búfer pequeño para quitar el retardo", audioBtn:"Abrir ajustes de audio…",
-         eq:"Ecualizador", eqSub:"Voicing master de 5 bandas", warmth:"Calidez", boxiness:"Caja (medios)", bodyBand:"Cuerpo", presence:"Presencia", air:"Aire", flat:"Plano" },
+         eq:"Ecualizador", eqSub:"Voicing master de 5 bandas", warmth:"Calidez", boxiness:"Caja (medios)", bodyBand:"Cuerpo", presence:"Presencia", air:"Aire", flat:"Plano",
+         outputVu:"Salida · VU", windLabel:"Viento · presión del fuelle (mm H₂O)", stableTxt:"estable", sagTxt:"caída", seq:"Sec", pedalNotes:"Pédale — 30 notas", swell:"Expresión", cresc:"Cresc.", drawn:"Registros", keysLbl:"Teclas", polyphony:"Polifonía", enclosed:"expresivo", matchWord:"resultado", matchesWord:"resultados", hintPlay:"Registra y toca — el viento respira bajo la carga.", famPrincipal:"Principal", famFlute:"Flauta", famString:"Cuerda", famReed:"Lengüeta", famMixture:"Mixtura", famCornet:"Corneta", play:"Reproducir", stop:"Parar", organPreset:"🎹 Registro de órgano…" },
     de:{ lang:"Deutsch", settings:"Einstellungen", settingsSub:"Hall, Ausgang und Expression",
          releaseKeys:"Tasten lösen", enterDraw:"Enter zum Registrieren", output:"Ausgang", master:"Gesamtlautstärke",
          reverb:"Hall", mix:"Anteil", space:"Raum", tremulant:"Tremulant", on:"An", off:"Aus",
@@ -1540,10 +1545,15 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          pageturn:"Blätter-Tasten", pageturnSub:"Registrierungen per Tastatur wechseln (jedes Modell)",
          enable:"Aktiv", prevKey:"Zurück", nextKey:"Weiter", learn:"Lernen", listening:"Taste drücken…",
          device:"Audio & Latenz", deviceSub:"Wähle einen Treiber mit geringer Latenz (ASIO / WASAPI exklusiv) und eine kleine Puffergröße", audioBtn:"Audioeinstellungen öffnen…",
-         eq:"Equalizer", eqSub:"5-Band Master-Voicing", warmth:"Wärme", boxiness:"Mitten", bodyBand:"Körper", presence:"Präsenz", air:"Luft", flat:"Neutral" },
+         eq:"Equalizer", eqSub:"5-Band Master-Voicing", warmth:"Wärme", boxiness:"Mitten", bodyBand:"Körper", presence:"Präsenz", air:"Luft", flat:"Neutral",
+         outputVu:"Ausgang · VU", windLabel:"Wind · Balgdruck (mm H₂O)", stableTxt:"stabil", sagTxt:"Abfall", seq:"Seq", pedalNotes:"Pédale — 30 Töne", swell:"Schwellwerk", cresc:"Cresc.", drawn:"Register", keysLbl:"Tasten", polyphony:"Polyphonie", enclosed:"schwellbar", matchWord:"Treffer", matchesWord:"Treffer", hintPlay:"Zieh ein Register und spiele — der Wind atmet unter Last.", famPrincipal:"Prinzipal", famFlute:"Flöte", famString:"Streicher", famReed:"Zunge", famMixture:"Mixtur", famCornet:"Kornett", play:"Abspielen", stop:"Stopp", organPreset:"🎹 Orgel-Register…" },
   };
   let lang = "en";
   const t = k => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
+  // Expose the translator so the main script (legend, status, hints) can localise
+  // too. Reads the current `lang` at call time, so it always reflects the choice.
+  window.__caeT = t;
+  window.__caeLang = () => lang;
 
   const SPACES = { room:[1.1,3.0], chamber:[1.7,2.8], hall:[2.8,2.6], cathedral:[4.6,2.2], plate:[1.0,3.5] };
   const SPACE_IDX = { room:0, chamber:1, hall:2, cathedral:3, plate:4 };
@@ -1653,6 +1663,16 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
 
     function applyLang(){
       langSel.value = lang;
+      // Generic pass: translate every element tagged with data-i18n (the whole
+      // console chrome — meters, footer, expression, legend, section tags, etc.).
+      document.querySelectorAll("[data-i18n]").forEach(e => {
+        const v = t(e.dataset.i18n); if (v) e.textContent = v;
+      });
+      if (presetSel && presetSel.options[0]) presetSel.options[0].textContent = t("organPreset");
+      // Demo Play/Stop button lives in another module; relabel it here on lang change
+      // (leave it alone mid-playback — it shows Stop then).
+      const pb = document.querySelector(".demo .play");
+      if (pb && !pb.classList.contains("playing")) pb.textContent = "▶ " + t("play");
       const set = (id,key) => { const e = document.getElementById(id); if (e) e.textContent = t(key); };
       set("cae-t-settings","settings"); set("cae-t-settingsSub","settingsSub");
       set("cae-t-output","output"); set("cae-t-master","master");
