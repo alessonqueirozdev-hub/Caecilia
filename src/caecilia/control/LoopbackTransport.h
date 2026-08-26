@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -23,10 +20,11 @@ namespace caecilia::control
  * (@c StateEvent) is captured into an inspectable buffer instead of being
  * serialised anywhere.
  *
- * This lets Catch2 tests exercise the entire @c ControlServer / @c ICommandSink
- * path — and lets an embedded script host drive Caecilia — without any socket,
- * OSC library, or JSON parser. The OSC and JSON-RPC transports are thin codecs
- * over this exact same dispatch, so anything proven here holds for them too.
+ * This lets Catch2 tests exercise the whole @c ControlServer / @c ICommandSink
+ * path — and would let an embedded script host drive Caecilia — without any
+ * socket, OSC library, or JSON parser. The OSC and JSON-RPC transports are thin
+ * codecs over this exact same dispatch, so anything proven here holds for them
+ * too. @todo neither a test suite nor a sink implementation exists yet.
  */
 class LoopbackTransport final : public IControlTransport
 {

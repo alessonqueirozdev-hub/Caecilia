@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # caecilia::tuning
@@ -43,9 +42,12 @@ layer 4 is a pure per-pipe hash evaluated on the fly.
 - **On the audio thread:** `frequencyForNote` and `frequencyForPipe` are
   `noexcept`, allocation-free, lock-free lookups that never mutate live state.
 
-The engine hands the synthesis layer a stable `TuningModel` in `prepare()`; a
-temperament change is a command that swaps/reconfigures the model off-thread, not
-a live mutation of a model being read mid-block.
+The engine hands the synthesis layer a stable `TuningModel` in `prepare()`. A
+temperament change is *designed* as a command that swaps/reconfigures the model
+off-thread rather than a live mutation of a model read mid-block — but that
+command is not implemented: `EngineCommandType::SetTemperament` is still an empty
+case in `AudioEngine::drainCommands`, so whatever temperament `prepare()`
+installs is the only one that ever sounds.
 
 ## Footage-exact sounding pitch
 

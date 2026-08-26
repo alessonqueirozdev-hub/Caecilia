@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -18,17 +15,20 @@ namespace caecilia::control
  *
  * The control module contains no registration or playback logic of its own —
  * it only decodes wire formats into a @c ControlCommand and hands it to an
- * @c ICommandSink. The concrete implementation lives on the engine side (it
- * wraps the off-thread @c registration engine plus the note-event path): it
- * parses @c ControlCommand::selector once with the shared
- * @c registration::SelectorParser, derives a new @c RegistrationState, and
- * pushes the resulting @c registration::StateDelta across the audio seam via
- * the SPSC command ring. Query opcodes are answered by reading the off-thread
+ * @c ICommandSink. The concrete implementation belongs on the engine side (it
+ * would wrap the off-thread @c registration engine plus the note-event path):
+ * parse @c ControlCommand::selector once with the shared
+ * @c registration::SelectorParser, derive a new @c RegistrationState, and push
+ * the resulting @c registration::StateDelta across the audio seam via the SPSC
+ * command ring. Query opcodes are answered by reading the off-thread
  * registration model and filling @c ControlResult::payload.
  *
  * Because every transport (OSC, JSON-RPC, in-proc, MIDI-learn bridge) funnels
- * through this ONE interface, the whole product is programmable with zero
+ * through this ONE interface, the product becomes programmable with zero
  * behavioural drift between control surfaces.
+ *
+ * @todo No ICommandSink is implemented anywhere in the tree, so nothing external
+ *       can drive Caecilia yet and every transport dead-ends here.
  *
  * @note All calls happen OFF the audio thread and may allocate. The sink is the
  *       boundary that guarantees nothing here ever touches the RT path directly.

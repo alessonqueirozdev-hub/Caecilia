@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -23,9 +20,10 @@ namespace caecilia::tuning
  * entry is an absolute sounding frequency in Hz for the corresponding key played
  * on an 8' unison stop.
  *
- * The table is @ref build "built" off the audio thread (in prepare(), or when a
- * temperament-change command is handled off-thread) and thereafter read with
- * cheap, RT-safe index lookups.
+ * The table is @ref build "built" off the audio thread and thereafter read with
+ * cheap, RT-safe index lookups. Today that only ever happens in prepare(): the
+ * engine's SetTemperament command is still an empty case in
+ * @c AudioEngine::drainCommands, so no runtime temperament change rebuilds it.
  *
  * Anchoring: A4 (MIDI note 69) is pinned @e exactly to the requested reference
  * pitch by subtracting the temperament's own A deviation from every degree. This

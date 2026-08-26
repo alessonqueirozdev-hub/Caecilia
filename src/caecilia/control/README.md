@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # caecilia::control
@@ -12,15 +11,24 @@ hardware, accessibility tech — can drive Caecilia's registration brain and
 playback the same way the UI does.
 
 This module contributes to the pure `caecilia_core` static library
-(standard-library only, **no JUCE**, **no networking dependency**) and is fully
-headless-unit-testable via the in-proc `LoopbackTransport`.
+(standard-library only, **no JUCE**, **no networking dependency**) and is
+headless-unit-testable via the in-proc `LoopbackTransport`, though no test suite
+covers it yet.
+
+> **Status: nothing drives this bus.** No `ICommandSink` is implemented anywhere
+> in the tree, and the plugin never constructs a `ControlServer` or a transport,
+> so Caecilia is not externally controllable today: neither OSC nor JSON-RPC
+> listens on a port, and both socket transports are deliberately inert codec
+> shells (see their `@warning` blocks). Read what follows as the intended design
+> of the surface, not as a description of a running one.
 
 ## Design in one sentence
 
 Every control surface decodes its wire format into a transport-agnostic
 `ControlCommand`, hands it to the **one** `ICommandSink`, and receives state
 changes back through the **one** `IStatePublisher` — so OSC, JSON-RPC, in-proc
-and (via a bridge) MIDI-learn all drive identical behaviour with zero drift.
+and (via a bridge) MIDI-learn would all drive identical behaviour with zero
+drift, once a sink exists to receive them.
 
 ```
   OSC datagram  ─┐
@@ -51,8 +59,9 @@ to, from day one:
   and the JSON-RPC method names, all generated from the single `opcodeName`
   table so they can never disagree.
 
-`ICommandSink::grammarVersion()` reports it for the client handshake; a script
-built against an incompatible major refuses to run (`GrammarVersion::supports`).
+`ICommandSink::grammarVersion()` is where an implementation reports it for the
+client handshake, so a script built against an incompatible major can refuse to
+run (`GrammarVersion::supports`). No sink implements it yet.
 
 ## Contents
 
@@ -61,7 +70,7 @@ built against an incompatible major refuses to run (`GrammarVersion::supports`).
 | `ControlCommand` / `ControlOpcode` | `ControlCommand.h` | The one decoded, transport-agnostic request. Verb + small opcode-dependent payload; selector carried as shared grammar text. |
 | `ControlResult` / `ControlStatus` | `ControlResult.h` | The response: status, echoed `requestId`, human message, and a structured `payload` for query answers. |
 | `GrammarVersion` | `GrammarVersion.h` | The versioned selector-grammar + protocol contract. |
-| `ICommandSink` | `ICommandSink.h` | The single seam into the engine (registration + playback). Implemented on the engine side. |
+| `ICommandSink` | `ICommandSink.h` | The single seam into the engine (registration + playback). To be implemented on the engine side; no implementation exists yet. |
 | `IStatePublisher` / `IStateObserver` / `StateEvent` | `IStatePublisher.h` | Outbound fan-out of settled state changes to feedback observers. |
 | `IControlTransport` / `IControlEndpoint` | `IControlTransport.h` | The pluggable transport interface + the inbound endpoint it dispatches to. |
 | `ControlServer` | `ControlServer.h` | The hub: forwards commands to the sink, fans state to observers, owns the transport list. |
@@ -93,13 +102,14 @@ auto r2 = loop.send(ControlCommand::resolve("family:principal",      /*id*/ 2));
 Nothing in `control` runs on the audio thread. Transports do I/O, `ControlServer`
 manages `std::vector`s of observers/transports, and `ControlCommand`/`StateEvent`
 may hold `std::string` — all deliberately off-thread. The RT boundary is the
-`ICommandSink`, whose implementation is the only thing that touches the SPSC
-ring; from there on only a trivially-copyable `registration::StateDelta` crosses
-into the audio callback.
+`ICommandSink`, whose implementation is the only thing that may touch the SPSC
+ring; from there on only a trivially-copyable `registration::StateDelta` would
+cross into the audio callback.
 
 ## Status / roadmap notes
 
-The scaffold wires the entire bus end-to-end with coherent, compilable bodies.
+The scaffold wires the bus from transport down to `ICommandSink` with coherent,
+compilable bodies; the engine-side sink that would terminate it is not written.
 `// TODO(phase8)` items are the remaining depth work, all behind stable public
 signatures:
 
