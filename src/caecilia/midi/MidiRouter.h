@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -39,6 +36,10 @@ namespace caecilia::midi
  * thread before rendering. The router itself is stateless beyond that pointer,
  * so per-voice/per-note state (sustain latching, pipe expansion) lives in the
  * engine, not here.
+ *
+ * @todo Nothing in the plugin constructs a MidiRouter. The shipping audio
+ *       callback walks juce::MidiMessage directly in plugin::CommandBridge,
+ *       which handles note on/off, all-notes-off and sustain only.
  */
 class MidiRouter
 {

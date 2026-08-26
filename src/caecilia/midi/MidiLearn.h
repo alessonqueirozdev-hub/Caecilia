@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -25,11 +22,12 @@ namespace caecilia::midi
  * live @ref MidiMap.
  *
  * ## Threading
- * MIDI-learn is an interactive, OFF-audio-thread activity. @ref observe is fed a
- * copy of incoming events from a message-thread tap (not the render callback),
- * so it may touch this mutable state freely. Once a binding is installed into the
- * published @ref MidiMap, the audio-thread router reads only that immutable map —
- * the learn machine is never on the hot path.
+ * MIDI-learn is an interactive, OFF-audio-thread activity. @ref observe is meant
+ * to be fed a copy of incoming events from a message-thread tap (not the render
+ * callback), so it may touch this mutable state freely. Once a binding is
+ * installed into the published @ref MidiMap, the audio-thread router reads only
+ * that immutable map — the learn machine is never on the hot path. @todo no such
+ * tap exists: nothing outside this directory constructs a MidiLearn.
  */
 class MidiLearn
 {

@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/midi/MidiRouter.h"
 
@@ -87,6 +84,16 @@ MidiRouteResult MidiRouter::routeControlChange(const MidiEvent& ev) const noexce
         return MidiRouteResult::ignored(ev.sampleOffset);
     }
 
+    // Swell shoe, scoped to the channel's division. Unlike the sustain pedal this
+    // is CONTINUOUS: every value is meaningful, so there is no threshold.
+    if (ev.data1 == cc::kExpression && map_->channels().isMapped(ev.channel))
+    {
+        ExpressionRoute e;
+        e.division = map_->channels().division(ev.channel);
+        e.position = static_cast<float>(ev.data2) * (1.0f / 127.0f);
+        return MidiRouteResult::makeExpression(e, ev.sampleOffset);
+    }
+
     // Sustain / damper pedal, scoped to the channel's division.
     if (ev.data1 == cc::kSustainPedal && map_->channels().isMapped(ev.channel))
     {
@@ -117,11 +124,30 @@ bool MidiRouter::toEngineCommand(const MidiRouteResult& result,
     switch (result.kind)
     {
         case MidiRouteKind::Panic:
-            out = core::engine::EngineCommand::makePanic();
+            // Carry the offset through. Dropping it put a panic at the top of the
+            // block regardless of where in it the host asked for one, which cuts
+            // off up to a block of audio that should still have been sounding.
+            out = core::engine::EngineCommand::makePanic(result.sampleOffset);
+            return true;
+
+        // Both of these ARE direct encodings and always have been. Sustain
+        // returning false was a plain bug: makeSustain has existed since the pedal
+        // was implemented and maps one to one, so anything driving the engine
+        // through the router rather than through CommandBridge silently lost the
+        // damper pedal.
+        case MidiRouteKind::Sustain:
+            out = core::engine::EngineCommand::makeSustain(result.sustain.division,
+                                                           result.sustain.down,
+                                                           result.sampleOffset);
+            return true;
+
+        case MidiRouteKind::Expression:
+            out = core::engine::EngineCommand::makeExpression(result.expression.division,
+                                                              result.expression.position,
+                                                              result.sampleOffset);
             return true;
 
         case MidiRouteKind::Note:
-        case MidiRouteKind::Sustain:
         case MidiRouteKind::Registration:
         case MidiRouteKind::Ignored:
         default:

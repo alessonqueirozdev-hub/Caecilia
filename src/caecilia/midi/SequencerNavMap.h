@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -19,10 +16,12 @@ namespace caecilia::midi
 /**
  * @brief Binds specific keys to sequencer navigation (Previous / Next / ...).
  *
- * The user maps si5 / do6 on the lowest manual to step the combination
- * sequencer backwards and forwards — the classic "page turner" workflow. Each
- * entry binds a note (optionally on one channel) to a @ref SequencerDirection;
- * the router swallows those keys so they never sound a pipe.
+ * The classic "page turner" workflow maps si5 / do6 on the lowest manual to step
+ * the combination sequencer backwards and forwards. Each entry binds a note
+ * (optionally on one channel) to a @ref SequencerDirection; @ref MidiRouter
+ * swallows those keys so they never sound a pipe. @todo the shipping console
+ * runs its own page-turn on raw juce MIDI inside plugin::CaeciliaAudioProcessor
+ * and never reads this map.
  *
  * Edits are off-thread; @ref lookup is a @c noexcept scan the router performs
  * per note event. Trivially copyable (a small fixed table).

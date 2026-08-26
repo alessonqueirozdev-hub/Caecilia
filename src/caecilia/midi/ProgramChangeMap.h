@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -20,10 +17,12 @@ namespace caecilia::midi
 /**
  * @brief Maps MIDI Program Change to a registration recall.
  *
- * The user's real workflow is PC -> Generals: sending program @c p recalls
- * general combination @c p (offset by @ref generalBase). A channel bound to a
- * division instead recalls that division's divisional @c p, so a controller that
- * emits PC per manual drives divisionals directly.
+ * The workflow this models is PC -> Generals: program @c p resolves to general
+ * combination @c p (offset by @ref generalBase). A channel bound to a division
+ * instead resolves to that division's divisional @c p, so a controller emitting
+ * PC per manual would drive divisionals directly. @todo the plugin ignores
+ * program change entirely; only @ref MidiRouter consults this map, and nothing
+ * constructs a MidiRouter.
  *
  * Edits happen off the audio thread; @ref resolve is a @c noexcept pure lookup
  * the router calls while rendering. Trivially copyable.

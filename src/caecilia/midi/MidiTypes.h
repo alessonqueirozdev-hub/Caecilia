@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -43,10 +40,11 @@ enum class SequencerDirection : std::uint8_t
 /**
  * @brief A fixed-capacity, allocation-free selector expression string.
  *
- * Holds the SAME textual selector grammar the UI omnibar, OSC and JSON-RPC use
- * (e.g. `family:reed & pitch:8 & div:swell`). A MIDI-learned control therefore
- * carries the identical semantic identity as every other control surface; the
- * registration module parses this text later with its shared @c SelectorParser.
+ * Holds the textual selector grammar @c registration::SelectorParser defines
+ * (e.g. `family:reed & pitch:8 & div:swell`), which the OSC and JSON-RPC surfaces
+ * also carry, so a MIDI-learned control can be given the same semantic identity
+ * as any other control surface. @todo nothing parses this text yet, and the
+ * console omnibar runs a separate, simpler grammar in JavaScript.
  *
  * Storing the expression inline (rather than a @c std::string) keeps
  * @ref SelectorExpr trivially copyable so bindings can travel through the SPSC

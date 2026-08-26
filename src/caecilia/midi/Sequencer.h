@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -19,11 +16,13 @@ namespace caecilia::midi
  * @brief One entry in the combination sequencer's ordered program.
  *
  * A step names the registration to install when the sequencer lands on it. In
- * the resolved form the off-thread registration engine fills @ref stateDeltaId
- * with the handle of a pre-computed, published @c StateDelta so advancing the
- * sequencer is a single @c ApplyStateDelta command. @ref generalIndex records
- * which stored general (in the @ref CombinationStore) the step captured, so the
- * program survives re-resolution when the organ or registration changes.
+ * the intended resolved form the off-thread registration engine fills
+ * @ref stateDeltaId with the handle of a pre-computed, published @c StateDelta
+ * so advancing the sequencer is a single @c ApplyStateDelta command.
+ * @ref generalIndex records which stored general (in the @ref CombinationStore)
+ * the step captured, so the program survives re-resolution when the organ or
+ * registration changes. @todo nothing resolves a step yet: no code writes
+ * @ref stateDeltaId, and the engine's @c ApplyStateDelta case is a no-op.
  */
 struct SequencerStep
 {
@@ -38,9 +37,12 @@ struct SequencerStep
  * @brief The combination stepper: an ordered list of registrations a performer
  *        walks with Previous/Next during a piece.
  *
- * The user drives it from si5/do6 (mapped to Previous/Next by the
- * @ref SequencerNavMap). Advancing yields the @ref SequencerStep to apply, which
- * the registration bridge turns into an @c ApplyStateDelta engine command.
+ * The design is for the user to drive it from si5/do6 (mapped to Previous/Next
+ * by the @ref SequencerNavMap): advancing yields the @ref SequencerStep to apply,
+ * which a registration bridge would turn into an @c ApplyStateDelta engine
+ * command. @todo neither that bridge nor any Sequencer instance exists in the
+ * plugin — the console's page-turn is implemented separately, on raw juce MIDI,
+ * inside plugin::CaeciliaAudioProcessor.
  *
  * ## Real-time contract
  * The step *program* (the ordered list) is edited OFF the audio thread and then

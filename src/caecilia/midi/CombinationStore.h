@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -52,14 +49,17 @@ struct Combination
  * @brief Piston memory: general and per-division divisional combinations.
  *
  * Generals apply to the whole instrument; divisionals are scoped to one manual.
- * MIDI program-change (PC->generals) and learned piston controls recall these;
- * the sequencer's steps are typically references to stored generals.
+ * The intent is for MIDI program-change (PC->generals) and learned piston
+ * controls to recall these, with the sequencer's steps referencing stored
+ * generals. @todo nothing constructs a CombinationStore outside this directory:
+ * the plugin ignores program change, and the console's generals live in the
+ * WebView page.
  *
  * ## Real-time contract
- * Capturing (writing) a combination is OFF-thread work (it snapshots live state
- * into a published StateDelta first). Recall is a @c noexcept lookup returning
- * the stored @ref Combination, which the registration bridge turns into an
- * @c ApplyStateDelta engine command. Fixed-capacity: never allocates.
+ * Capturing (writing) a combination is OFF-thread work (it would snapshot live
+ * state into a published StateDelta first). Recall is a @c noexcept lookup
+ * returning the stored @ref Combination, which a registration bridge would turn
+ * into an @c ApplyStateDelta engine command. Fixed-capacity: never allocates.
  */
 class CombinationStore
 {

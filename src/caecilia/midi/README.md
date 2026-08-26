@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # caecilia::midi
@@ -11,12 +10,25 @@ turns **raw, core-native MIDI into typed engine intent**: keyboard notes routed
 to divisions, the combination **sequencer** (si5/do6 = Previous/Next), the
 **generals + divisionals** piston memory, **program-change → generals**, CC
 mapping, and **MIDI-learn** bindings that carry the *same* selector-grammar
-identity the UI, OSC and JSON-RPC surfaces use.
+identity the OSC and JSON-RPC surfaces carry. (The console omnibar is not part of
+that: it matches with its own, simpler grammar written in JavaScript.)
 
-It is part of the pure, JUCE-free `caecilia_core` static library and is fully
-unit-testable headless. No `juce::` MIDI type ever reaches it — the `plugin`
-module translates `juce::MidiMessage` into [`MidiEvent`](MidiEvent.h) at the
-seam.
+It is part of the pure, JUCE-free `caecilia_core` static library and is
+headless-unit-testable, though no test suite covers it yet. No `juce::` MIDI type
+ever reaches it: the design is for the `plugin` module to translate
+`juce::MidiMessage` into [`MidiEvent`](MidiEvent.h) at the seam.
+
+> **Status: not wired into the plugin.** Only
+> [`ChannelToDivisionMap`](ChannelToDivisionMap.h) is used by the shipping
+> VST3/Standalone: `plugin::CommandBridge` reads it while walking
+> `juce::MidiMessage`s directly and builds no `MidiEvent`. `MidiRouter`,
+> `MidiMap`, `MidiLearn`, `CombinationStore`, `Sequencer`, `VelocityCurve` and
+> `ProgramChangeMap` are never instantiated outside this directory. What the
+> plugin handles today is note on/off with channel→division routing,
+> all-notes-off and sustain (CC 64); expression (CC 11), program change,
+> aftertouch and pitch bend are not handled at all. The console's si5/do6
+> page-turn is a separate implementation on raw juce MIDI inside
+> `plugin::CaeciliaAudioProcessor`, not this module's `Sequencer`.
 
 ## Design in one paragraph
 
@@ -27,8 +39,10 @@ keyboard **note** (division + transpose + shaped velocity), a **sustain** change
 a **registration** action, or a **panic**. The router owns *no* registration or
 voice-allocation logic — that keeps the strict layering intact. Notes still need
 per-division pipe expansion (engine-side, against the live registration), and
-registration actions are resolved **off the audio thread** into a `StateDelta`
-that becomes an `ApplyStateDelta` engine command. Every registration action the
+registration actions are to be resolved **off the audio thread** into a
+`StateDelta` that becomes an `ApplyStateDelta` engine command — that bridge is
+unwritten, and `AudioEngine`'s `ApplyStateDelta` case is still an empty body.
+Every registration action the
 router emits is a [`RegistrationCommandTemplate`](RegistrationCommandTemplate.h)
 whose selector text is the shared grammar (`family:reed & div:swell`), so a
 MIDI-learned drawstop is indistinguishable from one toggled anywhere else.
@@ -111,9 +125,10 @@ The MIDI module intentionally stops at *intent*. It never parses selectors,
 computes a `StateDelta`, or resolves a `Sequencer` step into audible stops — that
 is the `registration` module's off-thread work. The
 [`RegistrationCommandTemplate`](RegistrationCommandTemplate.h) is the contract
-between them: MIDI produces it; registration consumes it, parsing the embedded
-selector text with the one shared `SelectorParser` grammar. This keeps the whole
-control fan-in (MIDI, OSC, JSON-RPC, UI) speaking a single semantic language.
+between them: MIDI produces it; registration is meant to consume it, parsing the
+embedded selector text with the one shared `SelectorParser` grammar. Nothing
+consumes one today, so that control fan-in (MIDI, OSC, JSON-RPC, UI) speaks a
+single semantic language on paper only.
 
 ## Status
 
