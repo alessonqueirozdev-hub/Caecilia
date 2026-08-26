@@ -11,6 +11,8 @@
 #include "caecilia/engine/AudioEngine.h"
 #include "caecilia/wind/WindModel.h"
 #include "caecilia/engine/SpscRing.h"
+#include "caecilia/midi/MidiLearn.h"
+#include "caecilia/midi/MidiMap.h"
 #include "caecilia/model/DemoOrgan.h"
 #include "caecilia/model/Organ.h"
 #include "caecilia/plugin/CommandBridge.h"
@@ -207,6 +209,42 @@ public:
 
     /// Arm MIDI-learn: the next note-on becomes the binding. 1 = Previous,
     /// 2 = Next, 0 = cancel. Message thread.
+    // --- MIDI learn ---------------------------------------------------------
+    //
+    // Binding a physical control to a drawstop or a piston. An organist with a
+    // stop-tab console or a rank of toe studs has one instrument in front of them
+    // and another on the screen, and this is what makes them the same instrument.
+    //
+    // Program change already reached the generals before any of this, because a
+    // toe stud usually sends one. What did not work was a stud that sends a NOTE
+    // or a CC, and nothing at all could reach a drawstop.
+
+    /// Arm learn on one stop: the next control the organist actuates binds to it.
+    /// Message thread. Re-arming replaces the pending target.
+    void armMidiLearnStop(core::StopId stop);
+
+    /// Arm learn on a general piston.
+    void armMidiLearnGeneral(std::size_t index);
+
+    /// Abandon a pending learn.
+    void cancelMidiLearn();
+
+    /// @return true while a learn is waiting for a control.
+    [[nodiscard]] bool midiLearnArmed() const noexcept
+    {
+        return midiLearnArmed_.load(std::memory_order_relaxed);
+    }
+
+    /// Forget every learned binding. Message thread.
+    void clearMidiBindings();
+
+    /// Forget whatever is bound to this stop / this general. Message thread.
+    void clearMidiBindingForStop(core::StopId stop);
+    void clearMidiBindingForGeneral(std::size_t index);
+
+    /// The learned bindings, for the console and for the saved document.
+    [[nodiscard]] const midi::MidiMap& midiMap() const noexcept { return midiMap_; }
+
     void armSeqLearn(int which) noexcept { seqLearn_.store(which, std::memory_order_relaxed); }
 
     /// Editor drain: pop one page-turn direction (-1 = Previous, +1 = Next).
@@ -557,6 +595,82 @@ private:
     std::atomic<int>  seqPrevNote_{ 83 };     ///< MIDI note for "previous" (si5 default).
     std::atomic<int>  seqNextNote_{ 84 };     ///< MIDI note for "next" (do6 default).
     std::atomic<bool> seqNavEnabled_{ true }; ///< Master enable for the page-turn keys.
+    // --- MIDI learn ---------------------------------------------------------
+
+    /// The learned bindings and the capture machine. BOTH message-thread only:
+    /// installing a binding writes a table and resolving one parses a selector,
+    /// and neither belongs on the audio thread.
+    midi::MidiMap   midiMap_{};
+    midi::MidiLearn midiLearn_{};
+
+    /// Which physical controls have a binding, as a bitset the audio thread can
+    /// test with one load.
+    ///
+    /// The audio thread does NOT get the map. It has exactly two decisions to make
+    /// -- swallow this event, and tell the message thread about it -- and both
+    /// need only "is anything bound to this control", which is one bit. The exact
+    /// match, the selector and the action all happen on the message thread, which
+    /// already owns the map. 512 bytes instead of thirty kilobytes through the
+    /// triple buffer, and no question about whether a MidiMap is safe to copy.
+    struct BoundControls
+    {
+        /// One bit per (channel, number), for notes and for CCs.
+        std::array<std::uint32_t, 64> notes{};
+        std::array<std::uint32_t, 64> ccs{};
+
+        [[nodiscard]] static constexpr std::size_t bit(int channel, int number) noexcept
+        {
+            return static_cast<std::size_t>((channel & 0x0F) * 128 + (number & 0x7F));
+        }
+        [[nodiscard]] constexpr bool test(const std::array<std::uint32_t, 64>& w,
+                                          int channel, int number) const noexcept
+        {
+            const std::size_t b = bit(channel, number);
+            return (w[b >> 5] & (std::uint32_t{ 1 } << (b & 31))) != 0;
+        }
+        constexpr void set(std::array<std::uint32_t, 64>& w, int channel, int number) noexcept
+        {
+            const std::size_t b = bit(channel, number);
+            w[b >> 5] |= (std::uint32_t{ 1 } << (b & 31));
+        }
+    };
+    core::TripleBuffer<BoundControls> boundControls_{};
+
+    /// The audio thread's own copy, refreshed only when the message thread has
+    /// published a new one. Read per event; a triple-buffer read per event would be
+    /// an atomic exchange per note.
+    BoundControls boundSnapshot_{};
+
+    /// Set while a learn is pending, so the audio thread knows to capture rather
+    /// than to play.
+    std::atomic<bool> midiLearnArmed_{ false };
+
+    /// Audio -> message: packed MidiEvents that either hit a binding or completed
+    /// a learn. One producer (the audio thread), one consumer (handleAsyncUpdate).
+    core::engine::SpscRing<std::uint32_t, 64> midiActions_{};
+
+    /// Note-ons this swallowed, so their note-offs go the same way. Deciding on the
+    /// note-off instead would eat one whose note-on had sounded -- the same bug the
+    /// sequencer navigation already learned once, and for the same reason.
+    std::bitset<2048> boundSwallowed_{};
+
+    /// Recompute @ref boundControls_ from @ref midiMap_ and publish it. Message
+    /// thread; called after every binding edit.
+    void publishBoundControls();
+
+    /// Drain @ref midiActions_ on the message thread: capture a learn, or fire the
+    /// binding an event matched.
+    void handleMidiActions();
+
+    /// Apply one learned binding's action. Message thread.
+    void applyMidiBinding(const midi::MidiLearnBinding& binding);
+
+    /// Arm learn on an arbitrary action.
+    void armMidiLearn(const midi::RegistrationCommandTemplate& target);
+
+    /// Drop every binding whose action equals @p target.
+    void clearMidiBindingFor(const midi::RegistrationCommandTemplate& target);
+
     std::atomic<int>  seqLearn_{ 0 };         ///< MIDI-learn arm: 0=off, 1=Prev, 2=Next.
     std::atomic<int>  seqLearnedNote_{ -1 };  ///< Captured learn result (which*256+note); -1 = none.
     core::engine::SpscRing<std::int8_t, 64> seqNav_; ///< Audio -> editor: page-turn directions.

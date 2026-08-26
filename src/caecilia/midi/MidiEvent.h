@@ -57,6 +57,34 @@ struct MidiEvent
             || (type == MidiMessageType::NoteOn && data2 == 0);
     }
 
+    /**
+     * @brief Squeeze the message into a single word.
+     * @return Kind, channel and both data bytes: twenty-one bits of thirty-two.
+     *
+     * For carrying an event across a lock-free queue of plain integers, which is
+     * how the plugin hands a learned control from the audio thread to the message
+     * thread. @ref sampleOffset is deliberately NOT packed: what travels this way
+     * is a drawstop or a piston, and the thread hop it is about to take is orders
+     * of magnitude longer than the intra-block timing it would preserve.
+     */
+    [[nodiscard]] constexpr std::uint32_t pack() const noexcept
+    {
+        return (static_cast<std::uint32_t>(type)    << 18)
+             | (static_cast<std::uint32_t>(channel) << 14)
+             | (static_cast<std::uint32_t>(data1)   << 7)
+             |  static_cast<std::uint32_t>(data2);
+    }
+
+    /// @brief The inverse of @ref pack; @ref sampleOffset comes back zero.
+    [[nodiscard]] static constexpr MidiEvent unpack(std::uint32_t packed) noexcept
+    {
+        return { static_cast<MidiMessageType>((packed >> 18) & 0x07u),
+                 static_cast<MidiChannel>((packed >> 14) & 0x0Fu),
+                 static_cast<std::uint8_t>((packed >> 7) & 0x7Fu),
+                 static_cast<std::uint8_t>(packed & 0x7Fu),
+                 0 };
+    }
+
     // --- factory helpers ----------------------------------------------------
 
     [[nodiscard]] static constexpr MidiEvent noteOn(MidiChannel ch, core::MidiNote note,

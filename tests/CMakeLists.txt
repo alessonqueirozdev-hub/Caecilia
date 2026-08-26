@@ -53,6 +53,7 @@ add_executable(caecilia_tests
     registration/RegistrationTest.cpp
     registration/HostRegistrationTest.cpp
     registration/FactoryGeneralsTest.cpp
+    midi/MidiLearnTest.cpp
     model/OrganLoaderTest.cpp
     model/RegistrationDynamicsTest.cpp
     model/PerRankDynamicsTest.cpp

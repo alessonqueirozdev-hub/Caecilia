@@ -247,6 +247,30 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   .cluster > .cap { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); display:flex; justify-content:space-between; align-items:center;}
   .cluster > .cap b { color: var(--ink-dim); font-family: var(--font-mono); font-weight: 500; letter-spacing:.5px; }
   .cluster > .cap .reads { display: flex; gap: 12px; align-items: center; }
+
+  /* A control that answers to a real one. Small, and on the plate rather than the
+     knob, so it reads as a label on the stop and not as part of the drawknob. */
+  .stop { position: relative; }
+  .stop.bound .plate::after {
+    content: ""; position: absolute; right: -9px; top: 2px;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: linear-gradient(180deg, #f6dd9f, #c99b3f);
+    box-shadow: 0 0 4px rgba(217,173,87,.65);
+  }
+  .piston.bound { box-shadow: inset 0 0 0 1.5px #d9ad57; }
+
+  /* Learning: the whole jamb waits, so it says so where the eye already is. */
+  #midi-learn {
+    display: none; align-items: center; gap: 8px;
+    font: 600 10px var(--font-mono); letter-spacing: 1px; text-transform: uppercase;
+    color: #1a1206; background: linear-gradient(180deg,#f6dd9f,#d9ad57);
+    padding: 3px 10px; border-radius: 5px;
+  }
+  #midi-learn.on { display: inline-flex; }
+  #midi-learn button {
+    font: 700 9px var(--font-mono); background: rgba(0,0,0,.18); color: inherit;
+    border: 0; border-radius: 3px; padding: 2px 6px; cursor: pointer;
+  }
   /* The load readout only draws attention when there is something to say: quiet
      grey while the machine is coping, amber once the governor is trimming the
      budget, red once a block has actually run past its deadline. */
@@ -667,7 +691,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
         </div>
       </div>
       <div class="cluster ctrl-cluster">
-        <div class="cap"><span data-i18n="controlsLabel">Console controls</span><span class="reads"><b id="cpu-read" title="engine CPU load">0%</b><b id="sag-read" title="wind reservoir sag" data-i18n-title="windReservoirSag">stable</b></span></div>
+        <div class="cap"><span data-i18n="controlsLabel">Console controls</span><span class="reads"><span id="midi-learn"><span>MIDI</span><span id="midi-learn-what"></span><button id="midi-learn-cancel">esc</button></span><b id="cpu-read" title="engine CPU load">0%</b><b id="sag-read" title="wind reservoir sag" data-i18n-title="windReservoirSag">stable</b></span></div>
         <div class="controls" id="controls"></div>
       </div>
     </section>
@@ -908,6 +932,39 @@ const state = {
 const $ = sel => document.querySelector(sel);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 
+/* ---- MIDI learn -----------------------------------------------------------
+ * Binding a drawstop or a piston to a physical control. The plugin owns the
+ * table; this arms a learn and draws what came back, and never assumes a binding
+ * took -- the pip lights from the state frame, so the console cannot show a
+ * binding the instrument does not have.
+ */
+let CAE_MIDI_BOUND_STOPS = new Set();
+let CAE_MIDI_BOUND_GENS  = 0;
+
+function midiLearnArm(kind, index, label) {
+  caeInvoke("caeciliaMidiLearn", [kind, index]);
+  const what = document.getElementById("midi-learn-what");
+  if (what) what.textContent = label || "";
+  const bar = document.getElementById("midi-learn");
+  if (bar) bar.classList.add("on");
+}
+
+function midiLearnCancel() {
+  caeInvoke("caeciliaMidiLearn", []);
+  const bar = document.getElementById("midi-learn");
+  if (bar) bar.classList.remove("on");
+}
+
+/// Right-click menu on anything bindable: learn, or forget what is bound.
+function midiBindMenu(ev, kind, index, label, isBound) {
+  ev.preventDefault();
+  if (isBound) {
+    caeInvoke("caeciliaMidiUnlearn", [kind, index]);
+    return;
+  }
+  midiLearnArm(kind, index, label);
+}
+
 function stopEl(st) {
   const b = el("button", "stop");
   b.dataset.id = st.id;
@@ -918,6 +975,10 @@ function stopEl(st) {
     `<span class="knob"><span class="ft">${st.ft}</span></span>` +
     `<span class="plate"><span class="nm">${st.n}</span><span class="fam">${st.fam}</span></span>`;
   b.addEventListener("click", () => toggleStop(st.id));
+  // Right-click binds this drawstop to a physical control, or forgets the one it
+  // already answers to. Nothing on the jamb has to make room for it.
+  b.addEventListener("contextmenu", e =>
+    midiBindMenu(e, 0, st.id, st.n, CAE_MIDI_BOUND_STOPS.has(st.id)));
   b.addEventListener("pointerenter", e => showTip(e, st));
   b.addEventListener("pointermove", e => moveTip(e));
   b.addEventListener("pointerleave", hideTip);
@@ -1175,8 +1236,26 @@ GENERALS.forEach((g, i) => {
   b.append(el("span", "sub", g.tag));
   b.title = `General ${i + 1} — recall intent (${g.tag})`;
   b.addEventListener("click", () => pressGeneral(i));
+  // Right-click binds this piston to a physical control -- a toe stud that sends
+  // a note or a CC rather than a program change, which already had a path.
+  b.addEventListener("contextmenu", e =>
+    midiBindMenu(e, 1, i, "General " + (i + 1),
+                 (CAE_MIDI_BOUND_GENS & (1 << i)) !== 0));
   genHost.append(b);
 });
+
+// Escape, or the bridge's own button, abandons a pending learn. A console left
+// armed would swallow the next key the organist played, which is the one thing
+// this feature must never do quietly.
+(function () {
+  const cancel = document.getElementById("midi-learn-cancel");
+  if (cancel) cancel.addEventListener("click", midiLearnCancel);
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    const bar = document.getElementById("midi-learn");
+    if (bar && bar.classList.contains("on")) { midiLearnCancel(); e.preventDefault(); }
+  });
+})();
 (function () {
   const host = $("#legend");
   FAM.filter(f => f !== "Hybrid").forEach(f => {
@@ -1329,6 +1408,31 @@ if (CAE_BRIDGE) {
         const m = +k.dataset.midi;
         k.classList.toggle("held", lit.has(m) || state.held.has(ld + ":" + m));
       });
+      // Which controls answer to a physical one, and whether a learn is waiting.
+      // The instrument is the authority on both: the console lights from this
+      // frame rather than from its own click, so it can never show a binding that
+      // did not take.
+      if (typeof st.midiLo === "number") {
+        const lo = st.midiLo >>> 0, hi = st.midiHi >>> 0;
+        CAE_MIDI_BOUND_STOPS = new Set();
+        for (let b = 0; b < 32; ++b) {
+          if (lo & (1 << b)) CAE_MIDI_BOUND_STOPS.add(b);
+          if (hi & (1 << b)) CAE_MIDI_BOUND_STOPS.add(b + 32);
+        }
+        document.querySelectorAll(".stop").forEach(el2 => {
+          el2.classList.toggle("bound", CAE_MIDI_BOUND_STOPS.has(+el2.dataset.id));
+        });
+      }
+      if (typeof st.midiGen === "number" && CAE_MIDI_BOUND_GENS !== st.midiGen) {
+        CAE_MIDI_BOUND_GENS = st.midiGen;
+        for (let i = 0; i < genHost.children.length; i++)
+          genHost.children[i].classList.toggle("bound", (st.midiGen & (1 << i)) !== 0);
+      }
+      if (typeof st.midiLearn === "boolean") {
+        const bar = document.getElementById("midi-learn");
+        if (bar) bar.classList.toggle("on", st.midiLearn);
+      }
+
       // What the engine costs, and what it is giving up to stay inside its block.
       //
       // The peak drives the colour rather than the average, because an xrun is ONE

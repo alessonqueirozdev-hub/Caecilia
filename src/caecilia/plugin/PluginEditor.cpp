@@ -297,6 +297,49 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
             {
                 proc.armSeqLearn(args.isEmpty() ? 0 : static_cast<int>(args[0]));
                 complete(juce::var());
+            })
+
+        // --- MIDI learn ---------------------------------------------------------
+        //
+        // kind 0 = a drawstop (index is its stop id), 1 = a general piston. The
+        // same two numbers arm a learn, clear a binding, and light the console --
+        // so what the page says is bound and what the instrument acts on are the
+        // same pair, not two lists that can drift.
+        .withNativeFunction("caeciliaMidiLearn",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (args.size() >= 2)
+                {
+                    const int kind  = static_cast<int>(args[0]);
+                    const int index = static_cast<int>(args[1]);
+                    if (kind == 0)
+                        proc.armMidiLearnStop(core::StopId{ static_cast<std::uint16_t>(index) });
+                    else if (kind == 1)
+                        proc.armMidiLearnGeneral(static_cast<std::size_t>(index));
+                }
+                else
+                {
+                    proc.cancelMidiLearn(); // no arguments means "never mind"
+                }
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaMidiUnlearn",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (args.size() >= 2)
+                {
+                    const int kind  = static_cast<int>(args[0]);
+                    const int index = static_cast<int>(args[1]);
+                    if (kind == 0)
+                        proc.clearMidiBindingForStop(core::StopId{ static_cast<std::uint16_t>(index) });
+                    else if (kind == 1)
+                        proc.clearMidiBindingForGeneral(static_cast<std::size_t>(index));
+                }
+                else
+                {
+                    proc.clearMidiBindings();
+                }
+                complete(juce::var());
             });
 }
 
@@ -438,6 +481,48 @@ void CaeciliaEditor::timerCallback()
     // What the engine is costing, and what it is giving up for it. cpuPeak rather
     // than cpuLoad alone because an xrun is ONE block over 1.0 and a third of a
     // second of averaging cannot show one.
+    // What is bound to a physical control, and whether a learn is waiting. Two
+    // 32-bit halves for the stops, exactly as the registration travels, because a
+    // JS number cannot carry 64 bits of integer precision.
+    {
+        std::uint64_t stops = 0;
+        std::uint32_t generals = 0;
+        const midi::MidiMap& map = processor_.midiMap();
+        for (std::size_t i = 0; i < map.bindingCount(); ++i)
+        {
+            const midi::RegistrationCommandTemplate& c = map.bindingAt(i).command;
+            if (c.verb == midi::RegistrationVerb::RecallGeneral)
+            {
+                if (c.index < 32)
+                    generals |= (std::uint32_t{ 1 } << c.index);
+            }
+            else if (c.verb == midi::RegistrationVerb::Toggle)
+            {
+                // The selector a learned drawstop carries is `id:<n>`, which is the
+                // one form the console creates. Anything else -- a hand-authored
+                // family selector, say -- lights no single stop, and should not:
+                // it is not bound to one.
+                const std::string_view sel = c.selector.view();
+                if (sel.size() > 3 && sel.substr(0, 3) == "id:")
+                {
+                    unsigned id = 0;
+                    bool     ok = sel.size() > 3;
+                    for (std::size_t k = 3; k < sel.size(); ++k)
+                    {
+                        if (sel[k] < '0' || sel[k] > '9') { ok = false; break; }
+                        id = id * 10 + static_cast<unsigned>(sel[k] - '0');
+                    }
+                    if (ok && id < 64)
+                        stops |= (std::uint64_t{ 1 } << id);
+                }
+            }
+        }
+        obj->setProperty("midiLo",    static_cast<int>(static_cast<std::uint32_t>(stops)));
+        obj->setProperty("midiHi",    static_cast<int>(static_cast<std::uint32_t>(stops >> 32)));
+        obj->setProperty("midiGen",   static_cast<int>(generals));
+        obj->setProperty("midiLearn", processor_.midiLearnArmed());
+    }
+
     obj->setProperty("cpuLoad",  frame.meters.cpuLoad);
     obj->setProperty("cpuPeak",  frame.meters.cpuPeakLoad);
     obj->setProperty("shed",     static_cast<int>(frame.meters.voicesShed));

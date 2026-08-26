@@ -8,6 +8,7 @@
 #include "caecilia/registration/StopSet.h"
 
 #include "caecilia/midi/ChannelToDivisionMap.h"
+#include "caecilia/registration/FactoryGenerals.h"
 #include "caecilia/model/Division.h"
 #include "caecilia/plugin/PluginEditor.h"
 
@@ -239,6 +240,226 @@ void CaeciliaAudioProcessor::setUiTremulant(bool on)
         p->setValueNotifyingHost(on ? 1.0f : 0.0f);
 }
 
+// ---------------------------------------------------------------------------
+// MIDI learn.
+//
+// Binding a physical control to a drawstop or a piston. An organist with a
+// stop-tab console or a rank of toe studs has one instrument in front of them and
+// another on the screen, and this is what makes them the same instrument.
+//
+// The split of work across the two threads is the whole design. The audio thread
+// has two decisions -- swallow this event, and mention it -- and both need only
+// one bit ("is anything bound to this control"), so that is all it is given. The
+// exact match, the selector, the registration change and the table edit all happen
+// on the message thread, which already owns the map and is allowed to allocate.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+/// Translate a juce::MidiMessage into the core-native event at the module seam.
+///
+/// This is the seam the midi module's README describes and nothing crossed: every
+/// MIDI decision in the plugin was made on juce types. It crosses here now for the
+/// learn table, which is core code and JUCE-free, and the note path still does not
+/// -- so this is a start on one implementation rather than two, not the end of it.
+[[nodiscard]] caecilia::midi::MidiEvent toMidiEvent(const juce::MidiMessage& m) noexcept
+{
+    namespace midi = caecilia::midi;
+
+    midi::MidiEvent ev;
+    ev.channel = static_cast<midi::MidiChannel>(juce::jlimit(1, 16, m.getChannel()) - 1);
+
+    if (m.isNoteOn())
+    {
+        ev.type  = midi::MidiMessageType::NoteOn;
+        ev.data1 = static_cast<std::uint8_t>(m.getNoteNumber());
+        ev.data2 = m.getVelocity();
+    }
+    else if (m.isNoteOff())
+    {
+        ev.type  = midi::MidiMessageType::NoteOff;
+        ev.data1 = static_cast<std::uint8_t>(m.getNoteNumber());
+    }
+    else if (m.isController())
+    {
+        ev.type  = midi::MidiMessageType::ControlChange;
+        ev.data1 = static_cast<std::uint8_t>(m.getControllerNumber());
+        ev.data2 = static_cast<std::uint8_t>(m.getControllerValue());
+    }
+    else if (m.isProgramChange())
+    {
+        ev.type  = midi::MidiMessageType::ProgramChange;
+        ev.data1 = static_cast<std::uint8_t>(m.getProgramChangeNumber());
+    }
+    return ev; // anything else stays MidiMessageType::Other
+}
+
+/// The actuation edges MidiLearn accepts, restated where the audio thread can see
+/// them. Kept in step with MidiLearn::observe: an event this lets through and that
+/// rejects is one the organist actuated and nothing bound, which is a learn that
+/// silently did not happen.
+[[nodiscard]] bool isActuation(const caecilia::midi::MidiEvent& ev) noexcept
+{
+    return ev.isNoteOn()
+        || ev.type == caecilia::midi::MidiMessageType::ProgramChange
+        || (ev.type == caecilia::midi::MidiMessageType::ControlChange && ev.data2 > 0);
+}
+} // namespace
+
+void CaeciliaAudioProcessor::armMidiLearn(const midi::RegistrationCommandTemplate& target)
+{
+    midiLearn_.arm(target);
+    midiLearnArmed_.store(true, std::memory_order_relaxed);
+}
+
+void CaeciliaAudioProcessor::armMidiLearnStop(core::StopId stop)
+{
+    // `id:<n>` rather than a name: every other surface in this instrument names a
+    // stop by its id, and a name substring is ambiguous by construction -- a real
+    // organ has the same Trompette 8 on two divisions.
+    armMidiLearn(midi::RegistrationCommandTemplate::toggle(
+        "id:" + std::to_string(static_cast<int>(stop.value))));
+}
+
+void CaeciliaAudioProcessor::armMidiLearnGeneral(std::size_t index)
+{
+    if (index >= kNumGenerals)
+        return;
+    armMidiLearn(midi::RegistrationCommandTemplate::recallGeneral(
+        static_cast<std::uint16_t>(index)));
+}
+
+void CaeciliaAudioProcessor::cancelMidiLearn()
+{
+    midiLearn_.cancel();
+    midiLearnArmed_.store(false, std::memory_order_relaxed);
+}
+
+void CaeciliaAudioProcessor::clearMidiBindings()
+{
+    midiMap_.clearBindings();
+    publishBoundControls();
+}
+
+void CaeciliaAudioProcessor::clearMidiBindingFor(const midi::RegistrationCommandTemplate& target)
+{
+    // Backwards, because removing compacts the table and a forward walk would skip
+    // the entry that slid into the hole.
+    for (std::size_t i = midiMap_.bindingCount(); i-- > 0;)
+        if (midiMap_.bindingAt(i).command == target)
+            midiMap_.removeBindingAt(i);
+    publishBoundControls();
+}
+
+void CaeciliaAudioProcessor::clearMidiBindingForStop(core::StopId stop)
+{
+    clearMidiBindingFor(midi::RegistrationCommandTemplate::toggle(
+        "id:" + std::to_string(static_cast<int>(stop.value))));
+}
+
+void CaeciliaAudioProcessor::clearMidiBindingForGeneral(std::size_t index)
+{
+    if (index < kNumGenerals)
+        clearMidiBindingFor(midi::RegistrationCommandTemplate::recallGeneral(
+            static_cast<std::uint16_t>(index)));
+}
+
+void CaeciliaAudioProcessor::publishBoundControls()
+{
+    BoundControls bound;
+    for (std::size_t i = 0; i < midiMap_.bindingCount(); ++i)
+    {
+        const midi::MidiSource& src = midiMap_.bindingAt(i).source;
+        const int number = static_cast<int>(src.data1);
+
+        // A wildcard channel has to light every channel's bit, or the audio thread
+        // would pass the event through on fifteen of the sixteen.
+        const int first = src.channel == midi::kAnyChannel ? 0  : static_cast<int>(src.channel);
+        const int last  = src.channel == midi::kAnyChannel ? 15 : static_cast<int>(src.channel);
+
+        for (int ch = first; ch <= last; ++ch)
+        {
+            if (src.kind == midi::MidiSource::Kind::Note)
+                bound.set(bound.notes, ch, number);
+            else if (src.kind == midi::MidiSource::Kind::ControlChange)
+                bound.set(bound.ccs, ch, number);
+            // Program change is not here: it already has its own path to the
+            // generals, and a learned program-change binding rides that instead of
+            // being swallowed here.
+        }
+    }
+    boundControls_.write(bound);
+}
+
+void CaeciliaAudioProcessor::applyMidiBinding(const midi::MidiLearnBinding& binding)
+{
+    const midi::RegistrationCommandTemplate& c = binding.command;
+    switch (c.verb)
+    {
+        case midi::RegistrationVerb::Toggle:
+        case midi::RegistrationVerb::Engage:
+        case midi::RegistrationVerb::Disengage:
+        {
+            const std::uint64_t mask =
+                registration::resolveSelectorMask(organ_, c.selector.view());
+            if (mask == 0)
+                return; // an expression that matches nothing draws nothing
+
+            const std::uint64_t next =
+                c.verb == midi::RegistrationVerb::Toggle    ? (registration_ ^ mask)
+              : c.verb == midi::RegistrationVerb::Engage    ? (registration_ | mask)
+                                                            : (registration_ & ~mask);
+            applyRegistration(next, RegistrationOrigin::Console);
+            break;
+        }
+
+        case midi::RegistrationVerb::RecallGeneral:
+            recallGeneral(static_cast<std::size_t>(c.index));
+            break;
+
+        case midi::RegistrationVerb::ClearAll:
+            applyRegistration(0, RegistrationOrigin::Console);
+            break;
+
+        default:
+            // The verb set is wider than what can be bound today -- sequencer
+            // steps, divisionals, the crescendo. Nothing arms them, so nothing
+            // reaches here; when something does, it lands as a case rather than as
+            // a silent no-op.
+            break;
+    }
+}
+
+void CaeciliaAudioProcessor::handleMidiActions()
+{
+    std::uint32_t packed = 0;
+    while (midiActions_.pop(packed))
+    {
+        const midi::MidiEvent ev = midi::MidiEvent::unpack(packed);
+
+        if (midiLearn_.isArmed())
+        {
+            if (midiLearn_.observe(ev))
+            {
+                // One control, one action: re-binding a control that already had
+                // one replaces it (installBinding matches on the source), and the
+                // action's own previous binding goes too, so a stop cannot end up
+                // answering to two tabs the organist has forgotten about.
+                const midi::MidiLearnBinding captured = midiLearn_.takeCaptured();
+                clearMidiBindingFor(captured.command);
+                (void) midiMap_.installBinding(captured);
+                midiLearnArmed_.store(false, std::memory_order_relaxed);
+                publishBoundControls();
+            }
+            continue;
+        }
+
+        if (const midi::MidiLearnBinding* b = midiMap_.findBinding(ev))
+            if (b->shouldFire(ev))
+                applyMidiBinding(*b);
+    }
+}
+
 void CaeciliaAudioProcessor::handleAsyncUpdate()
 {
     // Message thread, and TWO producers share this one dispatch: the audio thread's
@@ -266,6 +487,12 @@ void CaeciliaAudioProcessor::handleAsyncUpdate()
     if (pendingCouplersValid_.exchange(false, std::memory_order_relaxed))
         applyCouplers(pendingCouplers_.load(std::memory_order_relaxed),
                       RegistrationOrigin::HostParameters);
+
+    // Learned controls, before the program change below and after the parameter
+    // diff above, for the same reason the piston goes last: a bound tab is an
+    // explicit gesture and should overwrite what automation was doing, not be
+    // overwritten by it.
+    handleMidiActions();
 
     // The piston goes last. It is an explicit gesture, and any parameter diff it
     // arrived alongside describes the registration it means to replace.
@@ -738,10 +965,74 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const int  navPrev     = seqPrevNote_.load(std::memory_order_relaxed);
     const int  navNext     = seqNextNote_.load(std::memory_order_relaxed);
     int        navLearn    = seqLearn_.load(std::memory_order_relaxed);
+
+    // The learn table's view for this block, read once. `hasFresh` is the whole
+    // cost when nothing has changed, which is every block but the handful after an
+    // organist binds something.
+    const bool learnArmed = midiLearnArmed_.load(std::memory_order_relaxed);
+    if (boundControls_.hasFresh())
+        boundSnapshot_ = boundControls_.read();
+
     hostScratch_.clear();
     for (const juce::MidiMessageMetadata meta : midi)
     {
         const juce::MidiMessage m = meta.getMessage();
+
+        // --- learned controls ------------------------------------------------
+        //
+        // Two questions, both answerable from one bit, which is why the audio
+        // thread has a bitset and not the map: is a learn waiting for a control,
+        // and does this control have a binding. Everything that follows from
+        // either -- the exact match, the selector, the registration change -- is
+        // the message thread's, reached through a ring and one async wake.
+        {
+            const midi::MidiEvent ev = toMidiEvent(m);
+            const bool isNote = ev.type == midi::MidiMessageType::NoteOn
+                             || ev.type == midi::MidiMessageType::NoteOff;
+            const bool isCc   = ev.type == midi::MidiMessageType::ControlChange;
+
+            const std::size_t slot =
+                BoundControls::bit(static_cast<int>(ev.channel), static_cast<int>(ev.data1));
+
+            if (learnArmed && isActuation(ev))
+            {
+                // Capturing, not playing. The note is swallowed so binding a tab
+                // does not also sound the pipe it is being bound to.
+                (void) midiActions_.push(ev.pack());
+                triggerAsyncUpdate();
+                if (ev.type == midi::MidiMessageType::NoteOn)
+                    boundSwallowed_.set(slot);
+                continue;
+            }
+
+            const bool bound =
+                (isNote && boundSnapshot_.test(boundSnapshot_.notes,
+                                               static_cast<int>(ev.channel),
+                                               static_cast<int>(ev.data1)))
+             || (isCc   && boundSnapshot_.test(boundSnapshot_.ccs,
+                                               static_cast<int>(ev.channel),
+                                               static_cast<int>(ev.data1)));
+
+            if (bound)
+            {
+                // Swallowed on the way in, and the paired note-off swallowed with
+                // it -- decided on the note-ON and remembered, because deciding it
+                // afresh on the note-off eats one whose note-on had sounded. The
+                // sequencer navigation right below learned that the hard way.
+                if (ev.type == midi::MidiMessageType::NoteOn)
+                    boundSwallowed_.set(slot);
+
+                (void) midiActions_.push(ev.pack());
+                triggerAsyncUpdate();
+                continue;
+            }
+
+            if (ev.type == midi::MidiMessageType::NoteOff && boundSwallowed_.test(slot))
+            {
+                boundSwallowed_.reset(slot);
+                continue;
+            }
+        }
 
         // A program change is a piston, not a note. It is swallowed here -- nothing
         // downstream has any use for it -- and handed to the message thread, which
@@ -1081,6 +1372,41 @@ juce::ValueTree CaeciliaAudioProcessor::captureConsoleState() const
         state.setProperty("generals", packed, nullptr);
     }
 
+    // The learned MIDI bindings. One record per binding, fields separated by ':'
+    // and records by ';', with the selector hex-encoded because it is free text
+    // that may contain either separator.
+    //
+    // A packed string rather than a child tree for the same reason the combination
+    // memory is one: an absent property means "this document predates the feature"
+    // and must leave the bindings alone, where an empty child tree would read as
+    // "the user cleared them" and silently unbind a console.
+    {
+        juce::String packed;
+        for (std::size_t i = 0; i < midiMap_.bindingCount(); ++i)
+        {
+            const midi::MidiLearnBinding& b = midiMap_.bindingAt(i);
+            if (! b.isValid())
+                continue;
+
+            juce::String selectorHex;
+            for (const char c : b.command.selector.view())
+                selectorHex << juce::String::toHexString(static_cast<int>(
+                                    static_cast<unsigned char>(c))).paddedLeft('0', 2);
+
+            if (packed.isNotEmpty())
+                packed << ';';
+            packed << static_cast<int>(b.source.kind)    << ':'
+                   << static_cast<int>(b.source.channel) << ':'
+                   << static_cast<int>(b.source.data1)   << ':'
+                   << static_cast<int>(b.triggerThreshold) << ':'
+                   << static_cast<int>(b.command.verb)   << ':'
+                   << static_cast<int>(b.command.index)  << ':'
+                   << static_cast<int>(b.command.division.value) << ':'
+                   << selectorHex;
+        }
+        state.setProperty("midiBindings", packed, nullptr);
+    }
+
     state.setProperty("seqPrev", seqPrevNote_.load(std::memory_order_relaxed), nullptr);
     state.setProperty("seqNext", seqNextNote_.load(std::memory_order_relaxed), nullptr);
     state.setProperty("seqOn",   seqNavEnabled_.load(std::memory_order_relaxed), nullptr);
@@ -1116,6 +1442,49 @@ void CaeciliaAudioProcessor::applyConsoleState(const juce::ValueTree& state)
 
     setUiMaster(static_cast<float>(state.getProperty("master", 1.0)));
     setUiVolume(static_cast<float>(state.getProperty("volume", 1.0)));
+
+    // The learned MIDI bindings, if the document has an opinion about them. A
+    // document written before they existed has none, and its silence must not clear
+    // a console the organist has already bound.
+    if (state.hasProperty("midiBindings"))
+    {
+        midiMap_.clearBindings();
+
+        const juce::String packed = state.getProperty("midiBindings").toString();
+        juce::StringArray  records;
+        records.addTokens(packed, ";", "");
+
+        for (const juce::String& record : records)
+        {
+            if (record.isEmpty())
+                continue;
+
+            juce::StringArray f;
+            f.addTokens(record, ":", "");
+            if (f.size() < 8)
+                continue; // a record this build does not understand is skipped, not guessed at
+
+            midi::MidiLearnBinding b;
+            b.source.kind      = static_cast<midi::MidiSource::Kind>(f[0].getIntValue());
+            b.source.channel   = static_cast<midi::MidiChannel>(f[1].getIntValue());
+            b.source.data1     = static_cast<std::uint8_t>(f[2].getIntValue());
+            b.triggerThreshold = static_cast<std::uint8_t>(f[3].getIntValue());
+            b.command.verb     = static_cast<midi::RegistrationVerb>(f[4].getIntValue());
+            b.command.index    = static_cast<std::uint16_t>(f[5].getIntValue());
+            b.command.division = core::DivisionId{ static_cast<std::uint16_t>(f[6].getIntValue()) };
+
+            const juce::String hex = f[7];
+            std::string        selector;
+            for (int i = 0; i + 1 < hex.length(); i += 2)
+                selector.push_back(static_cast<char>(
+                    hex.substring(i, i + 2).getHexValue32()));
+            b.command.selector.assign(selector);
+
+            if (b.isValid())
+                (void) midiMap_.installBinding(b);
+        }
+        publishBoundControls();
+    }
 
     // The combination memory, if the document has one. A document written before
     // v5 has no opinion about the pistons, so the factory row built in the

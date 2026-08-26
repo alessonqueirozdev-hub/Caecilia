@@ -79,6 +79,22 @@ public:
     /// @return Number of active learned bindings.
     [[nodiscard]] std::size_t bindingCount() const noexcept { return bindingCount_; }
 
+    /**
+     * @brief Read one learned binding by slot.
+     * @return The binding, or a default (invalid) one if @p index is out of range.
+     *
+     * The table is what a console draws and what a saved document carries, and
+     * both have to walk it. @c noexcept and allocation-free, so the audio thread
+     * may also read it -- though the plugin deliberately does not: see
+     * CaeciliaAudioProcessor::BoundControls for why one bit per control is enough
+     * there.
+     */
+    [[nodiscard]] const MidiLearnBinding& bindingAt(std::size_t index) const noexcept
+    {
+        static const MidiLearnBinding kNone{};
+        return index < bindingCount_ ? bindings_[index] : kNone;
+    }
+
     // --- Real-time-safe query -----------------------------------------------
 
     /**
