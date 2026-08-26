@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -24,10 +21,13 @@ namespace caecilia::core::engine
  * @c RenderContext, so it is independent of the pool's compile-time capacity.
  *
  * Its degradation policy is the product promise: while the @c DeadlineBudget has
- * room every voice renders in full; once the budget tightens the scheduler first
- * demotes expensive voices to a cheaper @c VoiceTier and, at the hard wall,
- * stops starting new expensive voices and steals the quietest — so a worst-case
- * tutti thins subtly instead of xrunning.
+ * room every voice renders in full; once a voice no longer fits, the scheduler
+ * releases it into its own release tail instead of skipping it for a block — so
+ * a worst-case tutti thins subtly instead of xrunning or gating.
+ *
+ * @todo Tier demotion and quietest-first stealing are the two gentler rungs
+ *       intended above that, and neither exists: releasing is currently the
+ *       only response to budget pressure. See VoiceScheduler::renderBatch().
  *
  * ## Real-time contract
  * - @ref prepare is off-thread setup (no per-block allocation happens here yet,

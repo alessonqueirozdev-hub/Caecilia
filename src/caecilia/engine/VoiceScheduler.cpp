@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/engine/VoiceScheduler.h"
 
@@ -44,14 +41,32 @@ std::size_t VoiceScheduler::renderBatch(const VoiceBatchView& batch, RenderConte
             continue;
 
         // Deadline governor: if this voice will not fit, shed it this block.
-        // Cheapest voices are shed last because the active set is walked in
-        // ascending index within a kind; a later phase reorders by audibility.
-        if (ctx.budget != nullptr && !ctx.budget->tryConsume(voice->cpuCostEstimate()))
+        //
+        // Shedding means starting its RELEASE, not skipping it. Skipping made the
+        // voice silent for exactly one block and then brought it back the next --
+        // a hole punched into a sustained note, and, if the budget stayed tight,
+        // an audible amplitude modulation at block rate. That is the opposite of
+        // the promise that a worst-case tutti thins subtly rather than xruns: a
+        // released voice fades over its own release time and then frees its slot.
+        //
+        // TODO(phase0.6): demote to a cheaper VoiceTier first, and only release
+        // when even the cheapest tier will not fit.
+        // The cost is scaled by the slice's share of the block: cpuCostEstimate()
+        // describes rendering a whole block, and an event-sliced block asks for
+        // this voice several times.
+        if (ctx.budget != nullptr
+            && !ctx.budget->tryConsume(voice->cpuCostEstimate() * ctx.costScale))
         {
-            // TODO(phase0.6): demote to a cheaper VoiceTier and retry instead of
-            // dropping; steal the quietest voice when even Modal will not fit.
+            voice->noteOff();
             continue;
         }
+
+        // The swell shoe of the division this pipe belongs to. Per voice rather
+        // than per bus because the buses are per WINDCHEST, and enclosure is a
+        // property of the division -- see RenderContext::expression for why the
+        // spectral half of a real shutter is deliberately not here.
+        const auto ramp = ctx.expressionFor(core::DivisionId{ batch.pipe(i).divisionId });
+        voice->setExpression(ramp.start, ramp.inc);
 
         // Route the voice to its windchest accumulation bus. Wind supply owns the
         // pipe→chest mapping; fall back to bus 0 when no wind snapshot is bound.

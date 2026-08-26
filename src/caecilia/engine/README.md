@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # `caecilia::core::engine` — real-time voice engine
@@ -37,15 +36,18 @@ nesting is deliberate; it does **not** imply that `core` depends on `engine`
 1. **Drain commands** — pop every `EngineCommand` off the SPSC ring (note
    on/off, panic, reverb params, and the stubs for stop-delta / tremulant /
    wind / temperament) and apply it at the block boundary.
-2. **Step wind** — advance the reservoir ODE once (stub until the `wind`
-   module lands) so the read-only snapshot reflects sag + tremulant.
+2. **Step wind** — *not implemented*. `AudioEngine::stepWind()` is an empty
+   stub, so a bound `IWindSupply` is never advanced: no sag, no tremulant.
+   `WindModel` itself is finished and unit-tested; only the call is missing.
 3. **Zero the per-windchest buses**, build the immutable `RenderContext`.
 4. **Refresh the pool** — cull finished voices, sort survivors by `EngineKind`
    into contiguous SoA runs.
 5. **Render** every active voice into its chest bus under the `DeadlineBudget`.
 6. **Mix** the chests down, **apply** the master chain (reverb), advance the
    frame clock.
-7. **Publish** a double-buffered `MeterSnapshot` for the UI to poll.
+7. **Publish** a `MeterSnapshot` through a triple buffer for the UI to poll
+   (master peak/RMS, voice count and frame position only — the per-division and
+   tremulant fields are still left at zero).
 
 ## Public API
 
@@ -68,11 +70,12 @@ nesting is deliberate; it does **not** imply that `core` depends on `engine`
   former owner's `VoiceHandle` fails `resolve` instead of addressing a foreign
   note.
 - **SPSC in, snapshot out** — engine state is mutated only via the command ring
-  and read only via the double-buffered meter snapshot; the audio thread never
+  and read only via the triple-buffered meter snapshot; the audio thread never
   shares mutable state with another thread.
-- **Graceful degradation** — the `DeadlineBudget` sheds the cheapest voices (and,
-  in a later phase, demotes tiers / steals the quietest) so a worst-case tutti
-  thins subtly rather than xrunning.
+- **Graceful degradation** — when the `DeadlineBudget` runs out, the scheduler
+  releases the voices that no longer fit into their own release tails rather
+  than skipping them for a block, so a worst-case tutti thins subtly rather than
+  xrunning. Tier demotion and quietest-first stealing are still to come.
 
 ## Roadmap touch-points
 

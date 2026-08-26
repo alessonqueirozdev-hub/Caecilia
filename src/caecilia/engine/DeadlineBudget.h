@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -13,14 +10,18 @@ namespace caecilia::core::engine
  * @brief The per-block CPU cost governor that turns "we are out of time" into a
  *        graceful, audible-only-as-thinning degradation instead of an xrun.
  *
- * Each block the scheduler @ref reset()s the budget to the number of abstract
- * cost units it can afford (derived offline from the measured block deadline).
- * Before rendering each voice it calls @ref tryConsume with that voice's
- * @c cpuCostEstimate(); once the budget is exhausted the scheduler stops
- * starting new expensive work and instead sheds additive partials or steals the
- * quietest voices. The cost unit is intentionally abstract (a voice's estimated
- * relative weight), not wall-clock time, so the policy is deterministic and
- * host-independent.
+ * Each block the engine @ref reset()s the budget to the number of abstract cost
+ * units it can afford (AudioEngine::makeContext(); AudioEngine::prepare()
+ * defaults the total to one unit per voice slot unless the host tightens it via
+ * AudioEngine::setBlockBudget()). Before rendering each voice the scheduler
+ * calls @ref tryConsume with that voice's @c cpuCostEstimate(); a voice that no
+ * longer fits is released into its own tail rather than skipped. The cost unit
+ * is intentionally abstract (a voice's estimated relative weight), not
+ * wall-clock time, so the policy is deterministic and host-independent.
+ *
+ * @todo Shedding partials and demoting tiers are not implemented; releasing the
+ *       voice is the only response to a spent budget. See
+ *       VoiceScheduler::renderBatch().
  *
  * Real-time contract: every method is @c noexcept, allocation-free and lock-free.
  */
