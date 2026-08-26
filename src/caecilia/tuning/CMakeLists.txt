@@ -17,6 +17,7 @@ target_sources(caecilia_core PRIVATE
     Temperament.cpp
     TemperamentLibrary.cpp
     TuningTable.cpp
+    LiveTuning.cpp
     TuningModel.cpp)
 
 # Public headers are consumed via the project-wide include root (<root>/src):

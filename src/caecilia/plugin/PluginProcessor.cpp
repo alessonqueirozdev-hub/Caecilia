@@ -15,6 +15,7 @@
 #include <array>
 #include <bitset>
 #include <cmath>
+#include <cstring>
 #include <span>
 #include <utility>
 
@@ -39,17 +40,14 @@ constexpr std::size_t kPolyphony = 512;
 void CaeciliaAudioProcessor::buildInstrument(double sampleRate, std::size_t maxBlockFrames)
 {
     synth::VoiceContext ctx;
-    // Bind the tuning table. Without this the voices fell back to a hard-coded
-    // equal-tempered A=440 inside VoiceContext, which meant the Temperament and
-    // Tuning A4 parameters were exposed to the host, automatable, and had no
-    // effect whatsoever -- historical temperaments were implemented, unit-tested,
-    // and simply never consulted.
-    // @todo The binding is only half the path. prepareToPlay leaves this model at
-    // equal temperament / A=440, and EngineCommandType::SetTemperament is an
-    // unhandled case in AudioEngine::drainCommands, so the host's Temperament and
-    // Tuning A4 parameters STILL change nothing audible. Applying them here (or
-    // handling the command) is what finishes the job.
-    ctx.tuning  = &tuning_;
+    // The sounding tuning, which every voice consults at note-on. Without this
+    // binding the voices fell back to a hard-coded equal-tempered A=440 inside
+    // VoiceContext; with the binding but no way to REPLACE the table, the host's
+    // Temperament and Tuning A4 parameters were automatable, saved in the document
+    // and still silent. LiveTuning closes the second half: the rebuild happens off
+    // the audio thread and arrives as a snapshot the audio thread adopts at a block
+    // boundary.
+    ctx.tuning  = &liveTuning_;
 
     // The wind supply, so a voice's partials actually respond to pressure. The
     // voice re-points the coupling at its own chest when it adopts a rank; this is
@@ -178,6 +176,13 @@ void CaeciliaAudioProcessor::setDrawnStops(std::uint64_t bits)
     applyRegistration(bits, RegistrationOrigin::Console);
 }
 
+void CaeciliaAudioProcessor::republishTuning(int choice, float a4Hz)
+{
+    liveTuning_.publish(tuning::makeSnapshot(
+        ParameterLayout::temperamentFromChoice(choice),
+        static_cast<double>(a4Hz)));
+}
+
 void CaeciliaAudioProcessor::setUiTremulant(bool on)
 {
     // Through the PARAMETER, exactly as the master EQ's enable goes. The console
@@ -198,6 +203,18 @@ void CaeciliaAudioProcessor::handleAsyncUpdate()
         // parameters, which is what stops a redundant automation point per change.
         applyRegistration(pendingHostRegistration_.load(std::memory_order_relaxed),
                           RegistrationOrigin::HostParameters);
+
+    // A temperament the audio thread noticed. Rebuilding is 128 exp2 calls and an
+    // allocation-free table copy, both of which belong here rather than there.
+    if (pendingTuningValid_.exchange(false, std::memory_order_relaxed))
+    {
+        const std::uint64_t packed = pendingTuning_.load(std::memory_order_relaxed);
+        const auto  choice = static_cast<int>(static_cast<std::uint32_t>(packed >> 32));
+        const auto  bits   = static_cast<std::uint32_t>(packed & 0xFFFFFFFFu);
+        float a4 = 440.0f;
+        std::memcpy(&a4, &bits, sizeof(a4));
+        republishTuning(choice, a4);
+    }
 
     // The piston goes last. It is an explicit gesture, and any parameter diff it
     // arrived alongside describes the registration it means to replace.
@@ -498,8 +515,11 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
 
     // Equal-tempered A=440 tuning table (historical temperaments swap in here via
     // the temperament parameter in a later phase). Bound read-only into the engine.
-    tuning_.setReferenceA4Hz(440.0);
-    engine_.setTuning(&tuning_);
+    engine_.setTuning(&liveTuning_);
+
+    // A fresh prepare has not sent the tuning yet, so the next block must.
+    sentTemperament_ = -1;
+    sentTuningA4_    = 0.0f;
 
     // Build the drawn registration's voices and bind them into the engine.
     buildInstrument(sampleRate, frames);
@@ -612,6 +632,12 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         std::min(getTotalNumOutputChannels(), buffer.getNumChannels()));
     const auto numFrames   = static_cast<std::size_t>(buffer.getNumSamples());
 
+    // Adopt any temperament the message thread published, BEFORE a single note-on
+    // is drained -- a block must sound in one tuning throughout, not change pitch
+    // partway because a rebuild landed between two commands. Costs one relaxed load
+    // on every block where nothing changed.
+    liveTuning_.adoptPending();
+
     // --- Sequencer page-turn: swallow the configured nav keys and turn them into
     // Previous/Next intents (delivered to the console by the editor's timer). The
     // remaining host MIDI is copied into a pre-reserved scratch buffer so the nav
@@ -715,6 +741,34 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // anyway, so a coarse arrival is not a coarse sound.
     for (UiExpressionEvent ev; uiExpression_.pop(ev); )
         commandBridge_.pushExpression(ev.division, ev.position);
+
+    // Temperament and reference pitch. The audio thread only NOTICES: realising a
+    // temperament is 128 exp2 calls into a table a note-on may be reading, so the
+    // rebuild happens on the message thread and arrives as a snapshot.
+    {
+        const std::atomic<float>* tp = parameters_.rawParameter(ParameterLayout::kTemperament);
+        const std::atomic<float>* ap = parameters_.rawParameter(ParameterLayout::kTuningA4Hz);
+        if (tp != nullptr && ap != nullptr)
+        {
+            const int   choice = static_cast<int>(std::lround(tp->load(std::memory_order_relaxed)));
+            const float a4     = ap->load(std::memory_order_relaxed);
+
+            if (choice != sentTemperament_ || a4 != sentTuningA4_)
+            {
+                sentTemperament_ = choice;
+                sentTuningA4_    = a4;
+
+                std::uint32_t bits = 0;
+                std::memcpy(&bits, &a4, sizeof(bits));
+                pendingTuning_.store((static_cast<std::uint64_t>(
+                                          static_cast<std::uint32_t>(choice)) << 32)
+                                         | bits,
+                                     std::memory_order_relaxed);
+                pendingTuningValid_.store(true, std::memory_order_relaxed);
+                triggerAsyncUpdate();
+            }
+        }
+    }
 
     // Console panic (stop demo / release keys): silence every sounding voice and
     // clear the lit-key display so nothing sticks.

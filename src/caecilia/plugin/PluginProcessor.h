@@ -17,7 +17,7 @@
 #include "caecilia/plugin/MeterBridge.h"
 #include "caecilia/plugin/ParameterMirror.h"
 #include "caecilia/synthesis/AdditiveVoice.h"
-#include "caecilia/tuning/TuningModel.h"
+#include "caecilia/tuning/LiveTuning.h"
 #include "caecilia/ui/StateMirror.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -332,7 +332,28 @@ private:
     dsp::FdnReverb                                      reverb_;
     dsp::MasterEq                                       masterEq_;  ///< Post-reverb tone voicing.
     dsp::Limiter                                        limiter_;   ///< Brick-wall master limiter (Tutti safety).
-    tuning::TuningModel                                 tuning_;
+    /// The sounding tuning, and the only thing the voices ever point at.
+    ///
+    /// A LiveTuning rather than a TuningModel because a model rebuilds its table in
+    /// place, and a note-on reading that table mid-rebuild is a data race. Its
+    /// address is stable for the life of the instrument, so changing temperament
+    /// costs a snapshot handoff rather than re-pointing five hundred voices.
+    tuning::LiveTuning                                  liveTuning_;
+
+    /// A temperament change the audio thread noticed, packed into one word so the
+    /// two halves cannot be read from different parameter snapshots: the choice
+    /// index in the high 32 bits, the A4 reference as float bits in the low 32.
+    ///
+    /// -1 in the high half means nothing pending.
+    std::atomic<std::uint64_t> pendingTuning_{ 0 };
+    std::atomic<bool>          pendingTuningValid_{ false };
+
+    /// What the audio thread last saw, so a change is sent once and not every block.
+    int   sentTemperament_ = -1;
+    float sentTuningA4_    = 0.0f;
+
+    /// Off-thread: rebuild the table for @p choice / @p a4 and hand it over.
+    void republishTuning(int choice, float a4Hz);
 
     // --- host-facing state + bridges ----------------------------------------
     CaeciliaParameterMirror parameters_;
