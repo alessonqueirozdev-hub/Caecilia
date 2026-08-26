@@ -1,6 +1,5 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential; unauthorized copying,
-# distribution, or use of any part is prohibited. See LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # ---------------------------------------------------------------------------
 # dsp module : the independently-written DSP building blocks.
@@ -19,6 +18,8 @@
 
 target_sources(caecilia_core PRIVATE
     Kernels.cpp
+    KernelsPartial.cpp
+    KernelsAvx2.cpp
     OnePole.cpp
     Biquad.cpp
     FormantFilter.cpp
@@ -58,3 +59,26 @@ target_sources(caecilia_core PUBLIC
     TYPE HEADERS
     BASE_DIRS "${CMAKE_SOURCE_DIR}/src"
     FILES ${CAECILIA_DSP_PUBLIC_HEADERS})
+
+# ---------------------------------------------------------------------------
+# KernelsAvx2.cpp is the ONLY unit compiled with AVX2, and the flag applies to the
+# whole unit rather than to the function that wants it. Anything else that landed
+# here -- an inline function from a header, a container's growth path -- would be
+# compiled with AVX2 too, and COMDAT folding is free to splice that copy into a
+# caller that never ran the CPU probe. The crash is an illegal instruction on a
+# pre-Haswell machine, in unrelated-looking code, and it does not reproduce on the
+# developer's machine.
+#
+# The file's own defence is that it includes only <immintrin.h> and Kernels.h and
+# defines exactly one function. This is the other half: nothing else gets the flag.
+#
+# Verify:  dumpbin /disasm caecilia_core.lib | findstr ymm
+# ---------------------------------------------------------------------------
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i.86)" OR
+   CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "(arm|aarch64)")
+    if(MSVC)
+        set_source_files_properties(KernelsAvx2.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        set_source_files_properties(KernelsAvx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+    endif()
+endif()
