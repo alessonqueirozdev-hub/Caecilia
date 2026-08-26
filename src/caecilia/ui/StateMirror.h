@@ -1,12 +1,10 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
 #include "caecilia/core/EngineTypes.h"
+#include "caecilia/core/TripleBuffer.h"
 #include "caecilia/engine/MeterSnapshot.h"
 
 #include <array>
@@ -31,6 +29,10 @@ namespace caecilia::ui
 
 /// Why a key is currently lit — chooses its illumination colour, mirroring real
 /// console practice (blue = played here, red = coupled in, purple = combination).
+/// @note Only Off and PlayedDirect are ever published today (see
+///       CaeciliaAudioProcessor::processBlock). Couplers are defined in the model
+///       but never applied, and combination recalls are resolved in the web
+///       console, so red and purple never actually appear.
 enum class KeySource : std::uint8_t
 {
     Off         = 0, ///< Not sounding.
@@ -71,18 +73,17 @@ struct KeyStateSnapshot
 /// One consistent frame of animatable console truth.
 struct ConsoleFrame
 {
-    core::engine::MeterSnapshot meters{}; ///< Levels, wind sag, tremulant phase, voice count.
+    core::engine::MeterSnapshot meters{}; ///< Levels and voice count; wind fields unfilled.
     KeyStateSnapshot            keys{};   ///< Which keys are lit and why.
 };
 
 /**
- * @brief Double-buffered single-writer / single-reader mirror of the console's
- *        animatable state.
+ * @brief Single-writer / single-reader mirror of the console's animatable state.
  *
- * @c publish (audio thread) writes the back buffer then flips the published
- * index with release semantics; @c read (message thread) acquires the index and
- * copies the front buffer. There is exactly one writer and one reader, so no
- * lock is required and neither thread ever blocks.
+ * @c publish runs on the audio thread, @c read on the UI thread, and neither
+ * ever blocks. The handoff is a @ref core::TripleBuffer: a two-buffer flip looks
+ * correct but lets the writer come back round onto the slot the reader is still
+ * copying, which is a data race, not merely a torn frame. See TripleBuffer.h.
  */
 class StateMirror
 {
@@ -92,39 +93,28 @@ public:
     /**
      * @brief Publish a new frame. Call only from the audio thread.
      *
-     * Real-time safe: writes into the inactive buffer and flips an atomic index.
-     * No allocation, no lock, @c noexcept.
+     * Real-time safe: one copy and one atomic exchange. No allocation, no lock.
      */
-    void publish(const ConsoleFrame& frame) noexcept
-    {
-        const std::size_t back = 1u - live_.load(std::memory_order_relaxed);
-        buffers_[back] = frame;
-        live_.store(back, std::memory_order_release);
-    }
+    void publish(const ConsoleFrame& frame) noexcept { buffer_.write(frame); }
 
     /// Convenience overload publishing meters + keys separately.
     void publish(const core::engine::MeterSnapshot& meters,
                  const KeyStateSnapshot&            keys) noexcept
     {
-        const std::size_t back = 1u - live_.load(std::memory_order_relaxed);
-        buffers_[back].meters = meters;
-        buffers_[back].keys   = keys;
-        live_.store(back, std::memory_order_release);
+        ConsoleFrame frame;
+        frame.meters = meters;
+        frame.keys   = keys;
+        buffer_.write(frame);
     }
 
     /**
      * @brief Read the most recently published frame. Call from the UI thread.
-     * @return a copy of the current front buffer (never torn).
+     * @return a complete frame, never torn.
      */
-    [[nodiscard]] ConsoleFrame read() const noexcept
-    {
-        const std::size_t front = live_.load(std::memory_order_acquire);
-        return buffers_[front];
-    }
+    [[nodiscard]] ConsoleFrame read() const noexcept { return buffer_.read(); }
 
 private:
-    std::array<ConsoleFrame, 2> buffers_{};
-    std::atomic<std::size_t>    live_{ 0 };
+    core::TripleBuffer<ConsoleFrame> buffer_{};
 };
 
 } // namespace caecilia::ui

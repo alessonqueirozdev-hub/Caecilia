@@ -1,120 +1,50 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
-# `caecilia::ui` — the console UI pillar
+# `caecilia::ui`
 
-The `ui` module is Caecilia's **first-class user-interface pillar** (benchmark:
-Organteq). It renders a resolution-independent, vector-drawn organ console with
-**two runtime-selectable modes** — a tactile **PhotorealConsole** (wood, turned
-drawknobs) and a clean **FlatConsole** (modern minimal) — over a single shared
-model and a single live-state feed, so every capability (live key illumination,
-MIDI-learn, zoom/pan, theming, accessibility) is built exactly once.
+One header: [`StateMirror.h`](StateMirror.h).
 
-It is one of only **two modules that may include JUCE** (the other is `plugin`).
-It contributes its sources to the `Caecilia` JUCE target, not to the pure
-`caecilia_core` static library, and it depends on `core`, `engine`, `model` and
-`registration` for its vocabulary — never the other way round.
+## What this module is
 
----
+`StateMirror` is the audio thread's window onto the console. Each block the
+audio thread publishes one `ConsoleFrame` — the meters plus which keys are lit
+and why — and the UI reads the newest complete frame at frame rate. It is
+JUCE-free and allocation-free, and the handoff is a `core::TripleBuffer`, so
+neither thread ever blocks and neither can see a torn frame.
 
-## The three-layer split
+That is the whole module. It builds nothing; a header needs no target.
 
-The whole module is organised so both console modes share everything:
+## What used to be here, and why it is gone
 
-```
-   OrganSpec ──layout──▶ ConsoleLayoutModel ─┐
-   (model)              (immutable geometry   │
-                         + semantic identity)  ├─▶ ConsoleView ──paint──▶ ISkin
-                                               │   (one Component,        (Photoreal | Flat)
-   audio thread ──publish──▶ StateMirror ──────┘    no per-key children)
-                            (lock-free frame:
-                             lit keys, meters,
-                             wind sag, tremulant)
-```
+This directory held a second, hand-built JUCE console: `ConsoleView`,
+`PhotorealConsole`, `FlatConsole`, `ConsoleLayoutModel`, `ViewportController`,
+`ManualKeyboardComponent`, `DrawstopComponent`, `CouplerRail`, `CombinationBar`,
+`ExpressionPedal`, `VuMeter`, `WindPressureMeter`, `RegistrationPanel`,
+`MidiLearnOverlay`, `ConsoleAccessibilityHandler`, `ThemeManager` and
+`CaeciliaLookAndFeel` — around 5,000 lines across 37 files.
 
-1. **`ConsoleLayoutModel`** *(JUCE-free, testable)* — auto-lays-out the loaded
-   `OrganSpec` into immutable `ConsoleElement` records. Each carries its
-   **`SemanticId`** ("Great Principal 8'"), the single fact that feeds the
-   tooltip, the screen-reader label, the MIDI-learn target and the OSC address.
+Every one of them was compiled into the shipping binary. **Not one was ever
+instantiated.** The editor is a `juce::WebBrowserComponent` serving
+`docs/mockups/console.html`, and has been since the console was rebuilt as a
+web view because it looked better.
 
-2. **`StateMirror`** *(JUCE-free, lock-free)* — a double-buffered SPSC bridge the
-   audio thread writes (via `ConsoleFrame`: `KeyStateSnapshot` + the engine's
-   `MeterSnapshot`) and the UI polls at frame rate. The audio thread **never**
-   touches a `juce::Component`.
+Carrying both cost build time. It did NOT cost binary size -- measured before and
+after removal, the Standalone came out within 512 bytes of the same, because the
+linker was already discarding every one of those symbols as unreachable. The real
+cost was to anyone reading the tree: a `ConsoleAccessibilityHandler` sitting in the source implies
+the console is reachable by a screen reader, and it is not — a WebView is opaque
+to the host's accessibility layer. That is a real limitation of the current UI
+and it deserves to be stated plainly rather than papered over by dead code.
 
-3. **`ISkin`** *(paint strategy)* — knows only *how* to draw an element.
-   `PhotorealConsole` (aliased `PhotorealSkin`) and `FlatConsole` (aliased
-   `FlatVectorSkin`) are the two implementations. Swapping console modes is a
-   pointer swap and a repaint.
+The files are in the git history if the JUCE console is ever revived.
 
-`ConsoleView` is the single Component that ties them together: it hit-tests in
-logical space through a `ViewportController` (zoom/pan), repaints on a
-`juce::VBlankAttachment`, and exposes semantic callbacks the plugin editor wires
-to the registration engine.
+## Where the console lives now
 
----
-
-## Type map
-
-| Type | Role |
-|------|------|
-| `CaeciliaLookAndFeel` | Custom look-and-feel for **standard JUCE dialogs only** (the console is painted by skins, not the LnF) |
-| `Theme` / `ThemeTokens` / `ThemeManager` | JUCE-free, hot-swappable design tokens (skins + light/dark); tonal-family tint is a first-class token |
-| `ConsoleLayoutModel` / `ConsoleElement` / `SemanticId` | Data-driven layout auto-built from the `OrganSpec` |
-| `StateMirror` / `ConsoleFrame` / `KeyStateSnapshot` / `KeySource` | Lock-free audio→UI truth; keys lit blue/red/purple by why they sound |
-| `ISkin` / `PhotorealConsole` / `FlatConsole` | Pluggable vector paint strategy = the two console modes |
-| `ConsoleView` / `ViewportController` | The single console Component + zoom/pan transform |
-| `ManualKeyboardComponent` | Reusable keyboard whose keys light up live from the mirror |
-| `DrawstopComponent` | Animated drawknob showing `TonalFamily` + `Footage` |
-| `CouplerRail` | Rail of first-class coupler tabs |
-| `CombinationBar` | Pistons + sequencer (Set / Previous / Next), pending-combo readout |
-| `ExpressionPedal` | Swell shoe (drag or MIDI driven) |
-| `VuMeter` / `WindPressureMeter` | Output meter; animated reservoir gauge that **sags** under polyphony |
-| `RegistrationPanel` (= `RegistrationPaletteComponent`) | The registration-**by-intent** family × footage surface |
-| `MidiLearnOverlay` | Badges learnable elements; emits the shared semantic identity |
-| `ConsoleAccessibilityHandler` | Turns one `SemanticId` into screen-reader descriptions |
-| `JuceInterop.h` / `UiGeometry.h` | The single JUCE-free ↔ `juce` conversion point and logical geometry |
-
----
-
-## Registration by intent
-
-`RegistrationPanel` is the visual face of Caecilia's registration moat. Rather
-than hunting drawknobs, the player picks a **tonal family × footage** cell and a
-set operation (**Add / Remove / Keep / Solo / Set**), or asks for a
-domain-intelligent **Build Plenum**, all with **Undo**. Every action is built
-through the **same `SelectorParser` grammar** the OSC, JSON-RPC and MIDI-learn
-surfaces use (`family:reed & pitch:8`), so a click and a script mean exactly the
-same thing. Hovering a cell previews the matching `StopSet` so the console can
-highlight the drawstops that would change before the intent is applied.
-
----
-
-## Real-time safety
-
-- **Audio thread**: only ever calls `StateMirror::publish` — allocation-free,
-  lock-free, `noexcept`. It never constructs, mutates or reads a JUCE object.
-- **Message thread**: everything else (layout, painting, hit-testing, selector
-  resolution, theme swaps). `ConsoleView` polls the mirror once per display
-  refresh and repaints; selector previews resolve lazily against the `OrganSpec`.
-- Interaction is emitted as **semantic callbacks** (`onDrawstopClicked`,
-  `onApplyIntent`, …); the UI owns no registration state and mutates the engine
-  only indirectly, through the host, over the command ring.
-
----
-
-## Status
-
-Scaffold (roadmap `v0.2` onward). The three-layer architecture, the JUCE-free
-layout model / state mirror / theme tokens, the skin interface and every named
-component are in place with coherent interfaces and self-consistent stub bodies.
-Painting is deliberately simple (flat fills, gradient shading) and marked with
-`// TODO(vX)` where the polished work lands: the procedural wood-grain brush and
-cached chrome layers (`v0.9`), dirty-region invalidation, the true white/black
-key hit geometry (`v0.2`), the drawstop pull animator, the JUCE accessibility
-virtual tree (`v0.9`), and the full `RegistrationPanel` wiring to the brain
-(`v0.7`). The module compiles into the `Caecilia` plugin target only; the
-core-only and headless test builds are unaffected.
+- The markup and styling: [`docs/mockups/console.html`](../../../docs/mockups/console.html),
+  compiled into the binary by `juce_add_binary_data`.
+- The bridge: [`plugin/PluginEditor.cpp`](../plugin/PluginEditor.cpp) — a
+  resource provider serves the page, `withNativeFunction` turns its drawstops and
+  keys into engine commands, and a 30 Hz timer pushes `StateMirror` frames back.
