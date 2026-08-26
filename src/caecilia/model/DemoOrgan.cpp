@@ -73,7 +73,7 @@ namespace
                        float onsetSeconds,
                        float brightnessTrack,
                        float phase = 0.0f,
-                       bool  breaksBack = false)
+                       float rankRatioToF0 = 0.0f)
     {
         synth::PartialTrack t;
         t.ratioToF0       = ratio;
@@ -82,7 +82,7 @@ namespace
         t.windSensitivity = windSensitivity;
         t.onsetSeconds    = onsetSeconds;
         t.brightnessTrack = brightnessTrack;
-        t.breaksBack      = breaksBack;
+        t.rankRatioToF0   = rankRatioToF0;
         model.partials.push_back(t);
     }
 } // namespace
@@ -241,12 +241,15 @@ synth::SpectralModel makeSpectralMixture(std::span<const core::Footage> ranks,
         const float ratio = footageRatioToUnison(f);
         if (ratio <= 0.0f)
             continue;
+
         const float ampDb = -4.0f - 3.0f * static_cast<float>(idx) + brightBoost;
         appendPartial(model, ratio, ampDb, 0.45f, 0.001f * static_cast<float>(idx), 0.05f,
-                      /*phase*/ 0.0f, /*breaksBack*/ true);
+                      /*phase*/ 0.0f, /*rank*/ ratio);
         // The octave above each rank pitch adds the characteristic mixture shimmer.
+        // It names its RANK's pitch, not its own: it is the second harmonic of that
+        // pipe and moves when the pipe does.
         appendPartial(model, ratio * 2.0f, ampDb - 10.0f, 0.50f, 0.002f * static_cast<float>(idx), 0.06f,
-                      /*phase*/ 0.0f, /*breaksBack*/ true);
+                      /*phase*/ 0.0f, /*rank*/ ratio);
         ++idx;
     }
     return model;
@@ -266,9 +269,14 @@ synth::SpectralModel makeSpectralMutation(core::Footage footage,
     appendPartial(model, 1.0f, -20.0f, 0.25f, 0.0f, 0.01f);
     if (ratio > 0.0f)
     {
-        appendPartial(model, ratio,        0.0f + brightBoost, 0.30f, 0.002f, 0.02f, 0.0f, true);
-        appendPartial(model, ratio * 2.0f, -14.0f,             0.30f, 0.004f, 0.03f, 0.0f, true);
-        appendPartial(model, ratio * 3.0f, -22.0f,             0.35f, 0.006f, 0.04f, 0.0f, true);
+        // All three name the SAME rank: they are one pipe's fundamental and its own
+        // second and third harmonics. They used to fold independently, and at the
+        // top of the compass a Tierce's three partials landed at 2.5, 2.5 and 1.875
+        // -- two on one pitch and one BELOW the fundamental. The rank had stopped
+        // being a harmonic series.
+        appendPartial(model, ratio,        0.0f + brightBoost, 0.30f, 0.002f, 0.02f, 0.0f, ratio);
+        appendPartial(model, ratio * 2.0f, -14.0f,             0.30f, 0.004f, 0.03f, 0.0f, ratio);
+        appendPartial(model, ratio * 3.0f, -22.0f,             0.35f, 0.006f, 0.04f, 0.0f, ratio);
     }
     return model;
 }

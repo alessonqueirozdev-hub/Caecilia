@@ -61,9 +61,13 @@ struct Partial
     float driftCents      = 0.0f; ///< Current slow random-walk detune, in cents (persistent).
     std::uint32_t rng     = 0x2545F491u; ///< Per-partial PRNG state for the drift walk.
     std::uint32_t seed    = 0u;   ///< Stable identity from the spectrum (NOT the array index).
-    bool  breaksBack      = false;///< Mixture rank: fold down an octave rather than be muted.
+    float rankRatio       = 0.0f; ///< Pitch of the rank this partial belongs to; 0 = none.
+    std::int8_t rankSeries = -1;  ///< That rank's index in kMixtureSeries, or -1.
     float soundingRatio   = 1.0f; ///< ratioToF0 after any break-back, resolved at note-on.
     float logRatio        = 0.0f; ///< log2(ratioToF0), precomputed at seed time.
+    /// log2(soundingRatio). Not the same as @ref logRatio once a break has moved
+    /// the rank, and it is the one anything about ABSOLUTE pitch has to use.
+    float logSounding     = 0.0f;
 
     // --- Placement in the case ------------------------------------------------
     // Each RANK occupies its own position on the windchest, so the same key played
@@ -250,6 +254,43 @@ public:
                  : envGain_ * masterGain_ * velocityGain_ * exprGain_;
     }
 
+    /// How a stop's ranks move when they break back.
+    enum class BreakMode : std::uint8_t
+    {
+        None,   ///< Nothing here breaks.
+        Series, ///< A COMPOUND stop: one row down kMixtureSeries per break.
+        Octave  ///< A SINGLE rank: an octave per break, so a Tierce stays a tierce.
+    };
+
+    /// @return How this bank's ranks break, decided in @ref seedFrom from the
+    ///         spectrum it was given.
+    [[nodiscard]] BreakMode breakMode() const noexcept { return breakMode_; }
+
+    /// @return The most breaks this composition can take before its lowest rank
+    ///         would reach the unison, which is where breaking stops.
+    [[nodiscard]] int maxBreakShift() const noexcept { return breakMaxShift_; }
+
+    /**
+     * @brief How far this bank's ranks have broken back at @p note.
+     * @return Rows down the series (@c Series) or octaves (@c Octave); 0 below the
+     *         first break and never more than @ref maxBreakShift.
+     *
+     * Public because it is the thing worth testing, and because a tool that wants
+     * to print a stop's break scheme should not have to sound a note to get it.
+     * Pure: depends on the note number and the bank's composition, and on nothing
+     * else -- not on the tuning, not on the sample rate. A break is a fact about
+     * the instrument's compass, and moving it when the organist changes
+     * temperament would be absurd.
+     */
+    [[nodiscard]] int breakShiftForNote(core::MidiNote note) const noexcept;
+
+    /**
+     * @brief What a rank at @p rankRatio sounds at once it has broken @p shift.
+     * @return The rank's new pitch as a ratio to 8' unison.
+     */
+    [[nodiscard]] float brokenRankRatio(float rankRatio, int seriesIndex,
+                                        int shift) const noexcept;
+
     /// @return Number of partials currently seeded.
     [[nodiscard]] std::size_t activePartialCount() const noexcept { return partialCount_; }
 
@@ -288,6 +329,12 @@ private:
     float  exprGain_      = 1.0f;
     float  exprInc_       = 0.0f;
     float  velocityGain_  = 1.0f;  ///< Note-velocity gain, set on trigger().
+
+    /// What the seeded spectrum said about breaking. Derived once per re-voicing.
+    BreakMode breakMode_      = BreakMode::None;
+    float     breakTopRatio_  = 0.0f; ///< Highest rank pitch in the stop.
+    int       breakTopSeries_ = -1;   ///< Its series index (Series mode only).
+    int       breakMaxShift_  = 0;    ///< Breaks available before the unison.
 
     // Simple linear attack/release envelope gating the whole bank.
     Stage  stage_          = Stage::Idle;

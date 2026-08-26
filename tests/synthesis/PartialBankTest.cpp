@@ -382,42 +382,41 @@ TEST_CASE("Drawing a stop under a held chord changes its colour without cutting 
 }
 
 
-TEST_CASE("A folded mixture partial blooms at the pitch it actually sounds",
+TEST_CASE("A broken mixture partial blooms at the pitch it actually sounds",
           "[synthesis][partialbank][mixture]")
 {
     // Each partial's attack bloom comes from its ABSOLUTE pitch: a low partial
-    // fills slowly, a high one speaks at once. trigger() now reaches that pitch by
+    // fills slowly, a high one speaks at once. trigger() reaches that pitch by
     // ADDING a log ratio precomputed at seed time to the note's own log pitch,
-    // rather than taking a log2 per partial -- which means the octaves a mixture
-    // partial folds down by have to be subtracted from that sum. Drop the fold
-    // term and every folded partial across the whole treble gets the bloom of a
-    // pitch it is not sounding at, with nothing to show for it but a subtly wrong
-    // attack on exactly the stops that break.
+    // rather than taking a log2 per partial -- so a rank that has broken back has
+    // to add the log of where it MOVED to, not of where it was written. Get that
+    // wrong and every rank of every mixture across the whole treble gets the bloom
+    // of a pitch it is not sounding at, with nothing to show for it but a subtly
+    // wrong attack on exactly the stops that break.
     //
     // Set up so the two banks are indistinguishable when the term is right:
-    //   A: one partial at ratio 8, breaking back -> folds once, sounds at 4*f0
-    //   B: one partial at ratio 4, not breaking  -> sounds at 4*f0
-    // At C6 (1046.5 Hz) ratio 8 is 8372 Hz, above the 6 kHz mixture ceiling, so A
-    // folds exactly once and the two banks sound the same pitch.
+    //   A: a lone rank at ratio 8 (a 1' pipe), which breaks by OCTAVES because a
+    //      single rank does -- one octave at C6, so it sounds at ratio 4.
+    //   B: one partial at ratio 4, belonging to no rank, so it never moves.
     constexpr int    kNote   = 84;       // C6
     constexpr double kF0     = 1046.502;
     constexpr std::size_t kFrames = 4096; // the attack, where the bloom lives
 
-    const auto build = [](float ratio, bool breaksBack)
+    const auto build = [](float ratio, float rankRatio)
     {
         synth::SpectralModel m;
         synth::PartialTrack t;
-        t.ratioToF0  = ratio;
-        t.ampDb      = 0.0f;
-        t.phase      = 0.0f;
-        t.seed       = 0x51ED2701u;      // same identity, so the same start phase
-        t.breaksBack = breaksBack;
+        t.ratioToF0     = ratio;
+        t.ampDb         = 0.0f;
+        t.phase         = 0.0f;
+        t.seed          = 0x51ED2701u; // same identity, so the same start phase
+        t.rankRatioToF0 = rankRatio;
         m.partials.push_back(t);
         m.fundamentalHz = static_cast<float>(kF0);
         return m;
     };
 
-    const auto renderOne = [&](float ratio, bool breaksBack)
+    const auto renderOne = [&](float ratio, float rankRatio)
     {
         synth::PartialBank bank;
         bank.setMaxPartials(4);
@@ -425,7 +424,7 @@ TEST_CASE("A folded mixture partial blooms at the pitch it actually sounds",
         // The treble tilt is keyed on the harmonic INDEX, which is 8 for one bank
         // and 4 for the other; turning it off is what isolates the bloom.
         bank.setLiveliness(5.5f, -18.0f, 0.060f, 7000.0f, /*trebleTiltDb*/ 0.0f);
-        bank.seedFrom(build(ratio, breaksBack), 0.0f);
+        bank.seedFrom(build(ratio, rankRatio), 0.0f);
         bank.trigger(core::PipeId{ 0, static_cast<std::uint8_t>(kNote), 1 }, 100, kF0);
 
         std::vector<float> l(kFrames, 0.0f), r(kFrames, 0.0f);
@@ -433,8 +432,8 @@ TEST_CASE("A folded mixture partial blooms at the pitch it actually sounds",
         return l;
     };
 
-    const std::vector<float> folded   = renderOne(8.0f, true);
-    const std::vector<float> unfolded = renderOne(4.0f, false);
+    const std::vector<float> folded   = renderOne(8.0f, /*rank*/ 8.0f);
+    const std::vector<float> unfolded = renderOne(4.0f, /*no rank*/ 0.0f);
 
     double worst = 0.0, peak = 0.0;
     for (std::size_t i = 0; i < kFrames; ++i)

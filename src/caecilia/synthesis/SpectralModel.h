@@ -56,17 +56,60 @@ struct PartialTrack
     /// registration does not change with the order the stops were drawn in.
     std::uint32_t seed     = 0u;
 
-    /// True for the ranks of a compound stop (mixture / plein jeu / cornet).
+    /// The sounding pitch of the RANK this partial belongs to, as a ratio to 8'
+    /// unison. Zero means "this partial does not belong to a breaking rank".
     ///
-    /// A real mixture REPEATS: at fixed points up the compass its ranks fold back
-    /// an octave, so the crown never climbs out of the audible band. Without that,
-    /// a Fourniture's top ranks simply pass Nyquist in the treble and are muted —
-    /// so the plenum grows DARKER up the keyboard, the exact opposite of what a
+    /// Mixtures and mutations REPEAT: at fixed points up the compass their ranks
+    /// BREAK BACK, so the upperwork never climbs out of the audible band. Without
+    /// that, a Fourniture's top ranks pass Nyquist in the treble and are muted --
+    /// the plenum grows darker up the keyboard, the exact opposite of what a
     /// mixture exists to do, and the timbre changes with the project's sample rate.
-    /// Partials marked here are folded down an octave at a time by the voice
-    /// instead of being silenced.
-    bool breaksBack        = false;
+    ///
+    /// Naming the RANK rather than marking each partial is the whole point. A
+    /// partial at ratio 10 might be a 4/5' rank or the second harmonic of a 1 3/5'
+    /// Tierce, and those two move differently when the stop breaks. Letting each
+    /// partial fold on its own schedule -- which is all a bare flag can express --
+    /// let two ranks of a mixture converge onto one pitch, let ranks descend below
+    /// the unison, and pulled a mutation's own harmonics apart until the rank was
+    /// no longer a harmonic series.
+    ///
+    /// So a partial that is a HARMONIC of a rank carries the RANK's pitch here,
+    /// not its own: it is that pipe speaking, and it moves when the pipe does.
+    float rankRatioToF0 = 0.0f;
 };
+
+/**
+ * @brief The pitches a mixture rank is drawn from, as ratios to 8' unison.
+ *
+ * 1, 2, 3, 4, 6, 8, 12, 16, 24, 32 -- unison, octave, twelfth, fifteenth,
+ * nineteenth, twenty-second, and so on. Every rank of every mixture ever built
+ * sits on one of these, and a mixture's composition is always a run of CONSECUTIVE
+ * entries: 15-19-22-26 is {4, 6, 8, 12}, indices 3 to 6.
+ *
+ * That is what makes a break expressible as arithmetic. A break moves the whole
+ * composition one entry down the series -- 15-19-22-26 becomes 12-15-19-22 becomes
+ * 8-12-15-19 becomes 1-8-12-15 -- so the ranks stay distinct, the interval shape
+ * survives, and the window stops when it reaches the bottom, which is the unison.
+ * Note that a step down the series is a fourth or a fifth, not an octave; that is
+ * what a mixture break actually sounds like.
+ */
+inline constexpr std::array<float, 10> kMixtureSeries = {
+    1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f, 12.0f, 16.0f, 24.0f, 32.0f
+};
+
+/**
+ * @brief Where @p ratioToUnison sits in @ref kMixtureSeries.
+ * @return The index, or -1 if this pitch is not a series member (in which case it
+ *         is not a mixture rank and does not break).
+ */
+[[nodiscard]] inline int mixtureSeriesIndex(float ratioToUnison) noexcept
+{
+    for (std::size_t i = 0; i < kMixtureSeries.size(); ++i)
+        if (ratioToUnison > kMixtureSeries[i] * 0.995f
+            && ratioToUnison < kMixtureSeries[i] * 1.005f)
+            return static_cast<int>(i);
+    return -1;
+}
 
 /// A single resonant formant peak of the steady-state spectral envelope.
 struct FormantPeak

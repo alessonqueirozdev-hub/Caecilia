@@ -107,6 +107,77 @@ void PartialBank::seedFrom(const SpectralModel& model, float /*phaseAlignSeconds
     // held notes change colour — instead of the note being cut dead.
     const bool sounding = (stage_ != Stage::Idle);
 
+    // How this stop breaks, derived here rather than in trigger() because it is a
+    // property of the SPECTRUM: this runs once per re-voicing and trigger() needs
+    // the answer once per note.
+    //
+    // Two things have to come out of one pass over the ranks: which rule applies,
+    // and how far it may go. A stop with two or more distinct ranks, all of them on
+    // the organ series, is a COMPOUND and walks the series a row at a time. Anything
+    // else -- one rank, or a pitch the series has no entry for, like a Tierce's 5 --
+    // breaks by octaves, which is what keeps a tierce a tierce and a nazard a
+    // nazard.
+    //
+    // This reads a bank as ONE STOP, which is what a bank is since one voice per
+    // (rank, note): the plugin seeds each voice from a single rank's spectrum. The
+    // pre-ARCH-001 composite path -- several stops merged into one spectrum, still
+    // used by the bench tool -- would present a Fourniture and a lone Nazard as one
+    // compound and break them together. That is wrong, and it is wrong only where
+    // nothing musical is being judged.
+    breakMode_      = BreakMode::None;
+    breakTopRatio_  = 0.0f;
+    breakTopSeries_ = -1;
+    breakMaxShift_  = 0;
+    {
+        constexpr std::size_t kMaxRanks = 12;
+        float       ranks[kMaxRanks]{};
+        std::size_t rankCount = 0;
+        bool        allOnSeries = true;
+        float       lowest      = 0.0f;
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const float rr = model.partials[i].rankRatioToF0;
+            if (!(rr > 0.0f))
+                continue;
+
+            bool seen = false;
+            for (std::size_t k = 0; k < rankCount; ++k)
+                seen = seen || (ranks[k] > rr * 0.995f && ranks[k] < rr * 1.005f);
+            if (seen)
+                continue;
+
+            if (rankCount < kMaxRanks)
+                ranks[rankCount++] = rr;
+            if (rr > breakTopRatio_)
+                breakTopRatio_ = rr;
+            if (lowest <= 0.0f || rr < lowest)
+                lowest = rr;
+            if (mixtureSeriesIndex(rr) < 0)
+                allOnSeries = false;
+        }
+
+        if (rankCount >= 2 && allOnSeries)
+        {
+            breakMode_      = BreakMode::Series;
+            breakTopSeries_ = mixtureSeriesIndex(breakTopRatio_);
+            // Stop when the LOWEST rank reaches the unison: below it a mixture is
+            // no longer crowning anything.
+            breakMaxShift_  = mixtureSeriesIndex(lowest);
+        }
+        else if (rankCount >= 1)
+        {
+            breakMode_     = BreakMode::Octave;
+            // Same floor, expressed in octaves: how many times the lowest rank can
+            // halve while staying at or above unison.
+            breakMaxShift_ = lowest > 1.0f
+                           ? static_cast<int>(std::floor(std::log2(lowest)))
+                           : 0;
+            if (breakMaxShift_ <= 0)
+                breakMode_ = BreakMode::None; // a unison rank has nowhere to break to
+        }
+    }
+
     for (std::size_t i = 0; i < count; ++i)
     {
         const PartialTrack& t = model.partials[i];
@@ -115,13 +186,17 @@ void PartialBank::seedFrom(const SpectralModel& model, float /*phaseAlignSeconds
         p.amplitude         = dbToLinear(t.ampDb);
         p.windSensitivity   = t.windSensitivity;
         p.onsetSeconds      = t.onsetSeconds;
-        p.breaksBack        = t.breaksBack;
+        p.rankRatio         = t.rankRatioToF0;
+        p.rankSeries        = static_cast<std::int8_t>(
+                                  t.rankRatioToF0 > 0.0f
+                                      ? mixtureSeriesIndex(t.rankRatioToF0) : -1);
         p.soundingRatio     = t.ratioToF0;
         // log2 of the ratio, so trigger() can reach a partial's absolute octave
         // by ADDING to the note's own log-pitch instead of taking a log2 per
         // partial per note-on. Guarded because a malformed model could carry a
         // non-positive ratio, and log2(0) is -inf.
         p.logRatio          = std::log2(t.ratioToF0 > 1.0e-6f ? t.ratioToF0 : 1.0e-6f);
+        p.logSounding       = p.logRatio;
         p.blockGain         = 0.0f;
         p.gainInc           = 0.0f;
 
@@ -268,6 +343,11 @@ void PartialBank::trigger(core::PipeId pipe, core::Velocity velocity, double fre
 
     const float bloomSpan = maxBloomSeconds_ - 0.008f;
 
+    // One break for the whole stop, worked out once. Every rank moves together by
+    // the same number of series steps, which is what keeps them distinct and keeps
+    // the mixture's interval shape intact across the break.
+    const int breakShift = breakShiftForNote(pipe.midiNote);
+
     // Formant peak gains are constant for the whole note; converting them inside
     // the partial loop meant peakCount * partialCount exponentials per note-on.
     // Peak gains AND the reciprocal of each half-bandwidth: the latter was a
@@ -303,21 +383,29 @@ void PartialBank::trigger(core::PipeId pipe, core::Velocity velocity, double fre
         p.driftCents = 0.0f;
         p.gainInc = 0.0f;
 
-        // Mixture break-back. A compound stop's ranks repeat down an octave at
-        // fixed points up the compass so the crown stays in the audible band; a
-        // fixed ratio would instead run past Nyquist in the treble and be silenced,
-        // darkening the plenum exactly where it should shine. Folding by octaves
-        // is the same operation a real break performs, applied automatically.
+        // Mixture break-back. The rank this partial belongs to moves `breakShift`
+        // steps down the organ series, and the partial moves with it -- including
+        // when the partial is a HARMONIC of that rank rather than its fundamental,
+        // because it is the same pipe speaking.
+        //
+        // This used to fold each partial on its own, halving it until it fell under
+        // the ceiling, with only `ratio > 1.5` to stop it. Measured on the demo
+        // organ's Fourniture IV, that left two distinct pitches out of four above
+        // A5 -- two pairs of ranks landing together, so half the stop vanished --
+        // and at the top of the compass a stop nominally at 2' was sounding a 4'
+        // and a 5 1/3'. A quint below the unison, in a mixture.
         p.soundingRatio = p.ratioToF0;
-        int foldOctaves = 0;
-        if (p.breaksBack)
+        p.logSounding   = p.logRatio;
+        if (breakShift > 0 && p.rankRatio > 0.0f)
         {
-            while (f0 * static_cast<double>(p.soundingRatio) > kMixtureCeilingHz
-                   && p.soundingRatio > 1.5f)
-            {
-                p.soundingRatio *= 0.5f;
-                ++foldOctaves;
-            }
+            // The scale is the RANK's move, applied to whatever this partial is --
+            // the rank's own pitch or one of its harmonics. That is what keeps a
+            // broken rank a harmonic series instead of a heap of partials that each
+            // folded on a different schedule.
+            const float scale =
+                brokenRankRatio(p.rankRatio, p.rankSeries, breakShift) / p.rankRatio;
+            p.soundingRatio *= scale;
+            p.logSounding   += std::log2(scale);
         }
 
         const double freq = f0 * static_cast<double>(p.soundingRatio);
@@ -325,12 +413,11 @@ void PartialBank::trigger(core::PipeId pipe, core::Velocity velocity, double fre
         // Per-partial attack bloom, derived from the partial's ABSOLUTE pitch so a
         // bass note blooms fast and treble partials speak progressively later.
         //
-        // log2(f0 * ratio / 2^folds / 120) == logF0Over120 + logRatio - folds. The
-        // fold term is not optional: drop it and every folded mixture partial gets
-        // the bloom of the pitch it WOULD have had unfolded, which is silently
-        // wrong across the whole treble -- exactly where mixtures break.
-        const float oct  = (logF0Over120 + p.logRatio - static_cast<float>(foldOctaves))
-                         * (1.0f / kBloomOctaveSpan);
+        // logSounding, not logRatio: a broken-back rank speaks at the pitch it
+        // actually sounds. Using the unbroken ratio gives every rank of every
+        // mixture the bloom of a pitch it is not playing, silently, across the
+        // whole treble -- exactly where mixtures break.
+        const float oct  = (logF0Over120 + p.logSounding) * (1.0f / kBloomOctaveSpan);
         const float frac = oct < 0.0f ? 0.0f : (oct > 1.0f ? 1.0f : oct);
         p.bloomSeconds   = 0.008f + bloomSpan * frac;
 
@@ -399,6 +486,56 @@ void PartialBank::trigger(core::PipeId pipe, core::Velocity velocity, double fre
     stage_ = Stage::Attack;
     if (!retrigger)
         envGain_ = 0.0f; // a stolen voice keeps its level; only the pitch moves
+}
+
+float PartialBank::brokenRankRatio(float rankRatio, int seriesIndex,
+                                   int shift) const noexcept
+{
+    if (shift <= 0 || !(rankRatio > 0.0f))
+        return rankRatio;
+
+    if (breakMode_ == BreakMode::Series)
+    {
+        const int to = seriesIndex - shift;
+        if (to < 0 || seriesIndex < 0)
+            return rankRatio;
+        return kMixtureSeries[static_cast<std::size_t>(to)];
+    }
+
+    return rankRatio * std::exp2(static_cast<float>(-shift));
+}
+
+int PartialBank::breakShiftForNote(core::MidiNote note) const noexcept
+{
+    if (breakMode_ == BreakMode::None || breakMaxShift_ <= 0)
+        return 0;
+
+    // Breaks land at a C or an F sharp, and each one holds for the six semitones
+    // it opens -- so the test is that span's TOP note, not the note being played.
+    // Deciding it per note would put the break wherever the ceiling happened to be
+    // crossed, and an organist would hear the crown wobble rather than step.
+    //
+    // Six semitones rather than twelve because of the arithmetic, not fashion: a
+    // step down the organ series is a fourth or a fifth, and an octave is neither.
+    // Breaking once an octave means every break has to be a DOUBLE step to keep the
+    // crown under the ceiling -- 15-19-22-26 straight to 8-12-15-19, skipping the
+    // row in between -- which is a bigger jump than any builder would put in an
+    // instrument. A span of a tritone is close enough to one series step that each
+    // break moves the composition exactly one row, which is what a break scheme is.
+    const int spanTop = (static_cast<int>(note) / 6) * 6 + 5;
+
+    // Equal-tempered on purpose. See the header: a break is a fact about the
+    // compass, and a temperament that moved it would be absurd.
+    const double f = 440.0 * std::exp2(static_cast<double>(spanTop - 69) / 12.0);
+
+    int shift = 0;
+    while (shift < breakMaxShift_
+           && f * static_cast<double>(
+                  brokenRankRatio(breakTopRatio_, breakTopSeries_, shift))
+              > kMixtureCeilingHz)
+        ++shift;
+
+    return shift;
 }
 
 void PartialBank::release() noexcept
