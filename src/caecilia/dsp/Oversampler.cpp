@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/dsp/Oversampler.h"
 
@@ -36,6 +33,7 @@ void Oversampler::prepare(std::size_t maxBlockFrames, std::size_t factor)
     work_.assign(maxBlockFrames * factor_, 0.0f);
 
     // One half-band interpolation/decimation state slot per doubling stage.
+    // Reserved for phase6: the placeholder up/downsample below never reads them.
     std::size_t stages = 0;
     for (std::size_t f = factor_; f > 1; f >>= 1)
         ++stages;

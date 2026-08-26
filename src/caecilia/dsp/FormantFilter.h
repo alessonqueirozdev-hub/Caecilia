@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -56,8 +53,9 @@ public:
      * @param formants Pointer to @p count Formant descriptors.
      * @param count    Number of active formants (clamped to kMaxFormants).
      *
-     * Designs one peaking biquad per formant (Q derived from centre/bandwidth).
-     * RT-safe: no allocation.
+     * Designs one constant-peak-gain band-pass per formant (Q = centre/bandwidth)
+     * and uses @ref Formant::gainDb as that section's summing weight, not as a
+     * biquad gain. RT-safe: no allocation.
      */
     void setFormants(const Formant* formants, std::size_t count) noexcept;
 

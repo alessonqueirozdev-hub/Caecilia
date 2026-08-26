@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -17,10 +14,13 @@
  *
  * The second reverb path: convolves the signal with a measured room impulse
  * response for maximum realism where a specific acoustic must be reproduced. The
- * production design is uniform-partitioned block convolution (an FFT per
+ * body that ships today is a direct-form time-domain convolution -- correct and
+ * zero-latency, but O(frames * irLength), so only cheap for short IRs.
+ * TODO(phase9): move to uniform-partitioned block convolution (an FFT per
  * partition, overlap-add across partitions) so latency stays at one partition
  * while long tails remain affordable. The impulse response is owned by this
- * object and loaded off the audio thread.
+ * object and loaded off the audio thread. Nothing constructs this class yet; the
+ * plugin installs @ref FdnReverb as its master reverb.
  *
  * Only Caecilia's own / public-domain impulse responses are used; no GPL sample
  * set or GPL convolution code is referenced.
@@ -34,10 +34,12 @@ namespace caecilia::dsp
  *
  * ## Real-time contract
  * - @ref prepare and @ref loadImpulseResponse allocate the IR store and the
- *   partition/overlap buffers. Not RT-safe.
- * - @ref setParams updates the wet/dry and pre-delay taps. RT-safe.
+ *   convolution history. Not RT-safe.
+ * - @ref setParams stores the wet/dry mix; pre-delay and width are accepted but
+ *   not yet applied (see the TODO in ConvolutionReverb::setParams). RT-safe.
  * - @ref process convolves in place. RT-safe, @c noexcept, allocation-free.
- * - @ref latencySamples reports the first-partition delay for host PDC.
+ * - @ref latencySamples reports 0 while the direct-form body is in use; the
+ *   first-partition delay for host PDC arrives with the partitioned engine.
  */
 class ConvolutionReverb final : public core::IReverb
 {
@@ -61,7 +63,8 @@ public:
      * @param ir     Impulse-response samples.
      * @param length Number of samples in @p ir.
      *
-     * Copies and partitions the IR. Must run off the audio thread; not RT-safe.
+     * Copies the IR and sizes the convolution history; partitioning arrives with
+     * the FFT path. Must run off the audio thread; not RT-safe.
      * Passing @p length 0 clears the IR (the reverb then passes audio through dry).
      */
     void loadImpulseResponse(const float* ir, std::size_t length);

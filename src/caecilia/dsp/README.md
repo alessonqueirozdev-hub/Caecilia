@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # caecilia::dsp
@@ -21,8 +20,11 @@ referenced.
 - `process()` / `render()` paths are `noexcept`, allocation-free, lock-free.
 - Feedback paths flush denormals (`DspMath::flushDenormal`) and assume per-thread
   FTZ/DAZ set by the host seam.
-- SIMD backends live behind the `kernels::` seam and are ULP/bit-compared against
-  the scalar reference in CI.
+- The `kernels::` seam is where SIMD backends will live; today every build runs
+  its portable scalar reference. The partial oscillator — the one that
+  matters — has SSE2 and AVX2 backends behind a CPU probe, measured at
+  2.5–3.0x the reference on a per-rank Tutti; the other kernels are not on
+  the critical path and still run the reference.
 
 ## Contents
 
@@ -57,12 +59,19 @@ reverb.process(block); // in place, denormal-flushed
 ```
 
 Both reverbs satisfy the same `core::IReverb` interface, so the engine's master
-chain can swap or run them interchangeably.
+chain can swap or run them interchangeably. The plugin installs `FdnReverb` (see
+`CaeciliaAudioProcessor::prepareToPlay`); nothing constructs `ConvolutionReverb`
+yet.
 
 ## Status / roadmap notes
 
-The scaffold wires every type end-to-end with coherent, compilable bodies. Items
-marked `// TODO(phaseN)` in the sources are the remaining depth work, chiefly:
+Every type here compiles, and the master chain — `FdnReverb`, `MasterEq`,
+`Limiter` and the `Biquad`/`OnePole` filters they are built from — is live in
+the plugin. The rest are not reached by anything that ships yet: `Oversampler`,
+`PolyphaseResampler`, `Resampler`, `SincKaiser16Interpolator`, `FormantFilter`,
+`Spatializer`, `ConvolutionReverb` and the `Bandlimited` residuals are waiting on
+the sample and nonlinear tiers. Items marked `// TODO(phaseN)` in the sources are
+the remaining depth work, chiefly:
 
 - `phase3` — SSE/AVX2/NEON backends for the `kernels::` seam; full polyphase
   commutator inner loop; adjacent-phase blending in the sinc interpolator.

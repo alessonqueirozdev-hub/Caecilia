@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -11,6 +8,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 /**
@@ -48,7 +46,8 @@ enum class ReverbPreset
  * - @ref prepare allocates the delay lines and pre-delay buffer and precomputes
  *   coefficients. Not RT-safe.
  * - @ref setParams / @ref setPreset recompute feedback gains and damper cutoffs
- *   in place (a handful of @c pow / @c exp calls, no allocation). RT-safe.
+ *   in place: three transcendental calls total, no allocation, and skipped
+ *   entirely when nothing audible moved. RT-safe.
  * - @ref process runs the network in place with denormal-flushed feedback.
  *   RT-safe, @c noexcept.
  * - @ref reset clears every delay line and filter. RT-safe.
@@ -67,6 +66,15 @@ public:
                         std::size_t      maxBlockFrames,
                         std::size_t      numChannels) override;
     void        setParams(const core::ReverbParams& params) noexcept override;
+
+    /// @return true if @p params would force a coefficient recompute. The command
+    ///         producer uses this to avoid sending a message for a change too
+    ///         small to hear: automating reverb decay otherwise put the whole
+    ///         recompute inside the audio callback on every block of the sweep.
+    ///         @ref setParams applies the same gate itself, so this is the
+    ///         producer's way to skip the message, not the reverb's only defence.
+    [[nodiscard]] bool wouldRecompute(const core::ReverbParams& params) const noexcept;
+
     void        process(core::AudioBlock& block) noexcept override;
     void        reset() noexcept override;
     [[nodiscard]] std::size_t latencySamples() const noexcept override { return 0; }
@@ -81,6 +89,15 @@ public:
 
     /// @return The parameters currently in effect.
     [[nodiscard]] const core::ReverbParams& params() const noexcept { return params_; }
+
+    /// @return How many times @ref setParams has actually rebuilt the coefficient
+    ///         tables since construction. Purely observational: the whole point of
+    ///         the gate is that this stops tracking the block count, and a counter
+    ///         is the only way to prove it did.
+    [[nodiscard]] std::uint32_t coefficientRecomputes() const noexcept
+    {
+        return coefficientRecomputes_;
+    }
 
 private:
     /// Recompute per-line feedback gains from the current decay time.
@@ -98,6 +115,29 @@ private:
     std::size_t        maxBlockFrames_ = 0;
     std::size_t        numChannels_   = 2;
     core::ReverbParams params_{};
+
+    /// Set once the decay / damping / width tables reflect params_.
+    ///
+    /// prepare() MUST clear this. Two reasons, and the second is fatal: prepare()
+    /// re-derives every delay length for a new sample rate, which invalidates
+    /// gains computed for the old one; and prepare() ends by calling
+    /// setParams(params_) with an IDENTICAL parameter set, which the epsilon gate
+    /// would otherwise discard — leaving every feedback_ entry at its
+    /// zero-initialised value and the reverb completely silent.
+    bool          coefficientsReady_     = false;
+    std::uint32_t coefficientRecomputes_ = 0; ///< @see coefficientRecomputes()
+
+    /// The parameter set the coefficient tables were last built from.
+    ///
+    /// The gate compares against THIS, not against params_. Comparing against the
+    /// last stored value turns the epsilon into a ratchet: an automation ramp
+    /// walks past the threshold one sub-epsilon step at a time and never rebuilds
+    /// at all, so two hundred steps of a quarter-millisecond each move the decay
+    /// by a quarter of a second while every individual comparison stays under
+    /// 0.01. Against builtFrom_ the error is bounded at one epsilon, which is
+    /// what an epsilon is supposed to mean. params_ still tracks every call,
+    /// because mix and pre-delay are applied unconditionally.
+    core::ReverbParams builtFrom_{};
 
     std::array<std::vector<float>, kLines> lines_{};      ///< Circular delay buffers.
     std::array<std::size_t, kLines>        lengths_{};    ///< Delay length per line (samples).

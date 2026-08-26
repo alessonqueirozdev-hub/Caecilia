@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -15,6 +12,8 @@
  * residual around each discontinuity cancels most of the aliased energy cheaply,
  * without the latency of a full band-limited-impulse-train table. These are the
  * standard closed-form polynomial approximations (public-domain), written fresh.
+ * Nothing calls them yet: the nonlinear voices that will are not wired into the
+ * plugin.
  */
 
 namespace caecilia::dsp

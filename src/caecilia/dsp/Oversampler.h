@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -17,11 +14,15 @@
  * @brief Power-of-two oversampling for the nonlinear synthesis island.
  *
  * Nonlinear stages (jet saturation, beating-reed clipping) create harmonics that
- * would alias at the base rate. This oversampler runs a cascade of half-band
- * stages to raise the rate by a power of two, hands the caller a wider working
- * buffer to apply the nonlinearity in, then decimates back through the mirror
- * cascade. Half-band designs are the efficient choice because every other
- * polyphase coefficient is zero. Built fresh from public windowed-sinc math.
+ * would alias at the base rate. This class owns the round trip: it hands the
+ * caller a wider working buffer to apply the nonlinearity in, then brings the
+ * result back to the base rate. The rate change itself is still a placeholder --
+ * linear interpolation up, box average down (see Oversampler::upsample and
+ * Oversampler::downsample) -- so the working buffer is length-correct and
+ * continuous, but images are NOT properly rejected yet. TODO(phase6): replace it
+ * with the true half-band cascade, efficient because every other polyphase
+ * coefficient of a half-band design is zero. Built fresh from public
+ * windowed-sinc math.
  */
 
 namespace caecilia::dsp
@@ -34,9 +35,9 @@ namespace caecilia::dsp
  * nonlinearity to @ref oversampledData across @ref oversampledFrames samples,
  * then @ref downsample back into the base-rate block.
  *
- * Real-time contract: @ref prepare allocates the working buffers and designs the
- * half-band filters (not RT-safe). @ref upsample, @ref downsample and @ref reset
- * are @c noexcept and allocation-free.
+ * Real-time contract: @ref prepare allocates the working buffers and the (as yet
+ * unused) per-stage filter state (not RT-safe). @ref upsample, @ref downsample
+ * and @ref reset are @c noexcept and allocation-free.
  */
 class Oversampler
 {
@@ -44,7 +45,7 @@ public:
     Oversampler() = default;
 
     /**
-     * @brief Allocate buffers and design the half-band cascade.
+     * @brief Allocate the working buffers and the per-stage filter state.
      * @param maxBlockFrames Largest base-rate block that will be processed.
      * @param factor         Oversampling factor; rounded to a power of two in [1, 8].
      *
@@ -84,16 +85,20 @@ public:
     void reset() noexcept;
 
     /**
-     * @brief Group delay introduced by the half-band cascade, in BASE-rate samples.
+     * @brief Group delay this oversampler would add, in BASE-rate samples.
      *
-     * Reported to the host for plugin delay compensation. RT-safe.
+     * A placeholder (one per doubling stage): the placeholder rate change has no
+     * designed group delay, and no caller reports this to a host. TODO(phase6):
+     * compute it from the designed half-band taps. RT-safe.
      */
     [[nodiscard]] std::size_t latencySamples() const noexcept { return latencySamples_; }
 
 private:
     std::vector<float> work_;              ///< Oversampled working buffer.
-    std::vector<float> upState_;           ///< Interpolation half-band memory.
-    std::vector<float> downState_;         ///< Decimation half-band memory.
+    std::vector<float> upState_;           ///< Interpolation half-band memory
+                                           ///< (unused until phase6).
+    std::vector<float> downState_;         ///< Decimation half-band memory
+                                           ///< (unused until phase6).
     std::size_t        factor_            = 1;
     std::size_t        maxBaseFrames_     = 0;
     std::size_t        oversampledFrames_ = 0;

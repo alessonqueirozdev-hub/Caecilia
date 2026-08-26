@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/dsp/ConvolutionReverb.h"
 
@@ -34,8 +31,9 @@ void ConvolutionReverb::prepare(core::SampleRate sampleRate,
 
 void ConvolutionReverb::setParams(const core::ReverbParams& params) noexcept
 {
-    params_     = params;
-    params_.mix = clamp(params_.mix, 0.0f, 1.0f);
+    // Same clamp as the FDN path, so params() reports a legal set whichever
+    // reverb a caller is holding — and so one NaN cannot multiply the output away.
+    params_ = core::clampReverbParams(params, sampleRate_);
     // TODO(phase9): apply preDelayMs / widthNorm taps once the partitioned engine
     // exposes per-channel output routing.
 }

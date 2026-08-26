@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -14,12 +11,13 @@
  * @file Resampler.h
  * @brief Arbitrary, continuously-variable-ratio sample reader.
  *
- * The playback engine reads proprietary sample material at a fractional rate
- * that changes per note (pitch, per-pipe detune, temperament) and per block
- * (wind-driven pitch modulation). This reader walks a source buffer at a
- * floating-point increment and reconstructs each output sample either by cheap
- * linear interpolation or by the fresh 16-tap Kaiser-windowed-sinc kernel. For a
- * FIXED integer ratio prefer @ref PolyphaseResampler; for a moving ratio use this.
+ * Sample playback needs its source read at a fractional rate that changes per
+ * note (pitch, per-pipe detune, temperament) and per block (wind-driven pitch
+ * modulation). This reader walks a source buffer at a floating-point increment
+ * and reconstructs each output sample either by cheap linear interpolation or by
+ * the fresh 16-tap Kaiser-windowed-sinc kernel. It is complete and unit-tested,
+ * but no voice calls it yet: the shipping engine is additive-only. For a FIXED
+ * integer ratio prefer @ref PolyphaseResampler; for a moving ratio use this.
  */
 
 namespace caecilia::dsp

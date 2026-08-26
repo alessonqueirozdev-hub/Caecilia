@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -18,9 +15,12 @@
  * For a fixed conversion ratio the classic efficient structure is a single
  * windowed-sinc low-pass prototype decomposed into @c L polyphase sub-filters:
  * upsampling by @c L then decimating by @c M without ever materialising the
- * zero-stuffed intermediate. Used to bring proprietary sample material recorded
- * at one rate onto the host rate. The prototype is built fresh from public
- * windowed-sinc math.
+ * zero-stuffed intermediate. @ref PolyphaseResampler::prepare designs that
+ * prototype fresh from public windowed-sinc math; the commutator that walks the
+ * sub-filters is still outstanding, so see the note on
+ * @ref PolyphaseResampler::process for what the body does today. Nothing calls
+ * this class yet -- it is for the sample tier, which is not wired into the
+ * plugin.
  *
  * For arbitrary, continuously-varying ratios (pitch bend, per-pipe detune) use
  * @ref Resampler with its Kaiser-sinc interpolator instead; this class targets a

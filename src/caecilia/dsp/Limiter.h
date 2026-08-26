@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -39,6 +36,13 @@ namespace caecilia::dsp
 class Limiter
 {
 public:
+    /// Largest look-ahead @ref setParams will ever accept, and therefore the
+    /// window @ref prepare must reserve room for. The ring is sized from THIS,
+    /// never from the current @c lookAheadMs_ — sizing it from the current value
+    /// let a later setParams() raise look_ past the ring length, which wrapped the
+    /// read offset and put a hard splice into every ring cycle of the output.
+    static constexpr float kMaxLookAheadMs = 10.0f;
+
     Limiter() = default;
 
     void prepare(core::SampleRate sampleRate, std::size_t maxBlockFrames, std::size_t numChannels);

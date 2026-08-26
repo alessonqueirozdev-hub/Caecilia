@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -19,8 +16,9 @@
  * and colours its direct sound. This object turns a pipe's mono voice bus into a
  * stereo pair using equal-power panning, a distance attenuation, and a short
  * position-dependent pre-delay that seeds the early-reflection field ahead of the
- * shared reverb tail. One instance placements one source, so it may be owned per
- * voice and reconfigured on note-on.
+ * shared reverb tail. One instance places one source, so it may be owned per
+ * voice and reconfigured on note-on -- though no voice owns one yet: the engine's
+ * additive path renders straight into the shared stereo bus.
  */
 
 namespace caecilia::dsp
