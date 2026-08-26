@@ -120,6 +120,14 @@ public:
      */
     [[nodiscard]] std::uint64_t stopBits() const noexcept;
 
+    /// The drawn couplers, as a mask keyed by the organ's coupler index.
+    ///
+    /// A separate mask from the stops rather than more bits in the same one: a
+    /// coupler is not a stop, it is drawn from its own jamb, and the registration
+    /// mask's width is the audio thread's compare -- it means one specific thing
+    /// and should keep meaning it.
+    [[nodiscard]] std::uint32_t couplerBits() const noexcept;
+
     /**
      * @brief Drive the stop parameters from a bit mask, notifying the host.
      * @param bits Bit N engages @c stop_N.
@@ -130,6 +138,9 @@ public:
      * lane. MESSAGE THREAD ONLY: setValueNotifyingHost is not real-time safe.
      */
     void writeStopBits(std::uint64_t bits);
+
+    /// @copydoc writeStopBits but for the coupler jamb.
+    void writeCouplerBits(std::uint32_t bits);
 
     // --- persistence --------------------------------------------------------
 
@@ -198,6 +209,10 @@ private:
 
     /// Cached raw-parameter pointers for lock-free audio-thread reads.
     std::array<std::atomic<float>*, ParameterLayout::kMaxStopParameters> stopParams_{};
+    std::array<std::atomic<float>*, ParameterLayout::kMaxCouplerParameters>
+        couplerParams_{};
+    std::array<juce::RangedAudioParameter*, ParameterLayout::kMaxCouplerParameters>
+        couplerParamObjects_{};
 
     /// Cached parameter objects for the message thread's writes. Resolving them by
     /// string on every console click would be a map lookup per stop.

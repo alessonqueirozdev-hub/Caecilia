@@ -118,6 +118,20 @@ void CaeciliaAudioProcessor::publishEngagedRanks()
                                        wind::rankWindFlow(v.footage), v.chest };
     }
 
+    // The drawn couplers travel WITH the ranks: a key's expansion needs both, and
+    // publishing them separately would let the two disagree for a block -- a chord
+    // sounding through a coupler whose source ranks had just been retired.
+    for (std::size_t i = 0; i < organ_.couplers().size()
+                            && table.couplerCount < table.couplers.size(); ++i)
+    {
+        if ((couplers_ & (std::uint32_t{1} << i)) == 0)
+            continue;
+        const model::Coupler& c = organ_.couplers()[i];
+        table.couplers[table.couplerCount++] = core::engine::EngagedCoupler{
+            c.from(), c.to(),
+            static_cast<std::int16_t>(c.octaveShiftSemitones()) };
+    }
+
     table.epoch = ++registrationEpoch_;
     engine_.setEngagedRanks(table);
 }
@@ -146,6 +160,8 @@ CaeciliaAudioProcessor::CaeciliaAudioProcessor()
     // them -- so the only way the two can disagree is create() adding or missing one,
     // which is what this catches.
     jassert(getParameters().size() == static_cast<int>(ParameterLayout::kParameterCount));
+
+    couplers_ = parameters_.couplerBits();
 
     // The factory pistons, resolved against THIS organ. Built once: a general is a
     // stored registration, and rebuilding one behind the organist's back is the
@@ -183,6 +199,37 @@ void CaeciliaAudioProcessor::republishTuning(int choice, float a4Hz)
         static_cast<double>(a4Hz)));
 }
 
+void CaeciliaAudioProcessor::toggleCoupler(std::size_t index)
+{
+    if (index >= ParameterLayout::kMaxCouplerParameters)
+        return;
+    applyCouplers(couplers_ ^ (std::uint32_t{ 1 } << index),
+                  RegistrationOrigin::Console);
+}
+
+void CaeciliaAudioProcessor::applyCouplers(std::uint32_t next, RegistrationOrigin origin)
+{
+    // Idempotence first, exactly as applyRegistration: a console click writes the
+    // parameters, the audio thread's per-block diff sees them move and calls back
+    // with the same set, and that second pass stops here.
+    if (next == couplers_)
+        return;
+
+    couplers_ = next;
+
+    if (origin != RegistrationOrigin::HostParameters)
+        parameters_.writeCouplerBits(couplers_);
+
+    if (getSampleRate() <= 0.0)
+        return; // not prepared yet; prepareToPlay publishes from couplers_
+
+    // Drawing a coupler under a held chord is the same gesture as drawing a stop,
+    // and the engine reconciles it the same way -- the keys already down start
+    // sounding the borrowed ranks, and the ranks that were already sounding are not
+    // touched.
+    publishEngagedRanks();
+}
+
 void CaeciliaAudioProcessor::setUiTremulant(bool on)
 {
     // Through the PARAMETER, exactly as the master EQ's enable goes. The console
@@ -215,6 +262,10 @@ void CaeciliaAudioProcessor::handleAsyncUpdate()
         std::memcpy(&a4, &bits, sizeof(a4));
         republishTuning(choice, a4);
     }
+
+    if (pendingCouplersValid_.exchange(false, std::memory_order_relaxed))
+        applyCouplers(pendingCouplers_.load(std::memory_order_relaxed),
+                      RegistrationOrigin::HostParameters);
 
     // The piston goes last. It is an explicit gesture, and any parameter diff it
     // arrived alongside describes the registration it means to replace.
@@ -851,6 +902,17 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     {
         pendingHostRegistration_.store(hostBits, std::memory_order_relaxed);
         pendingHostRegistrationValid_.store(true, std::memory_order_relaxed);
+        triggerAsyncUpdate();
+    }
+
+    // The coupler jamb, diffed the same way and for the same reason: publishing a
+    // rank table allocates nothing but is not something the audio thread should be
+    // deciding to do.
+    if (const std::uint32_t hostCouplers = parameters_.couplerBits();
+        hostCouplers != couplers_)
+    {
+        pendingCouplers_.store(hostCouplers, std::memory_order_relaxed);
+        pendingCouplersValid_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
 

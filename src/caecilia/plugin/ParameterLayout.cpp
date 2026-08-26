@@ -30,6 +30,11 @@ std::unique_ptr<juce::AudioParameterFloat> makeFloat(const char*  id,
 
 } // namespace
 
+std::string ParameterLayout::couplerParamId(std::size_t index)
+{
+    return std::string{core::params::couplerParamId(index).c_str()};
+}
+
 std::string ParameterLayout::stopParamId(std::size_t index)
 {
     // The formatting is core's, and constexpr, so the ID set can be enumerated at
@@ -167,6 +172,27 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParameterLayout::create(
 
         layout.add(std::make_unique<juce::AudioParameterBool>(
             juce::ParameterID{id, kStateVersion}, name, drawnByDefault[i]));
+    }
+
+    // --- couplers, AFTER the stop pool -------------------------------------
+    //
+    // Appended rather than inserted, so no stop ordinal moves and automation
+    // written against this instrument keeps working. Safe to append here where it
+    // was not safe for the EQ, because the stop pool's size is architectural now --
+    // it is the width of the registration mask -- and cannot be resized again.
+    //
+    // Named from the organ, so a host shows "Récit/Grand-Orgue" rather than
+    // "Coupler 0", and off by default: an organ opens uncoupled.
+    for (std::size_t i = 0; i < kMaxCouplerParameters; ++i)
+    {
+        const std::string id = couplerParamId(i);
+
+        const juce::String name = i < organ.couplers().size()
+            ? juce::String(organ.couplers()[i].name())
+            : juce::String("Coupler ") + juce::String(static_cast<int>(i)) + " (unused)";
+
+        layout.add(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{id, kStateVersion}, name, false));
     }
 
     return layout;

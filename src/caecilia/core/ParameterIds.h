@@ -39,6 +39,17 @@ namespace caecilia::core::params
 /// host displays, stores automation for, and can never make audible.
 inline constexpr std::size_t kMaxStopParameters = 64;
 
+/// Boolean coupler parameters.
+///
+/// Appended AFTER the stop pool, not inserted before it. The pool's size is
+/// architectural — it is the width of the registration mask the audio thread
+/// compares — so it cannot move again, and anything after it is therefore safe
+/// from the ordinal shift that resizing the pool from 256 to 64 caused the EQ.
+///
+/// Sixteen because an organ with more couplers than that has more manuals than
+/// this one has divisions.
+inline constexpr std::size_t kMaxCouplerParameters = 16;
+
 // --- global parameter IDs ---------------------------------------------------
 
 inline constexpr const char* kMasterGainDb     = "master_gain_db";
@@ -81,8 +92,9 @@ inline constexpr std::array<const char*, 17> kGlobalIds{
     kEqOn, kEqWarmthDb, kEqBoxinessDb, kEqBodyDb, kEqPresenceDb, kEqAirDb
 };
 
-/// Total parameters the host sees: 17 globals + 64 stops.
-inline constexpr std::size_t kParameterCount = kGlobalIds.size() + kMaxStopParameters;
+/// Total parameters the host sees: 17 globals + 64 stops + 16 couplers.
+inline constexpr std::size_t kParameterCount =
+    kGlobalIds.size() + kMaxStopParameters + kMaxCouplerParameters;
 
 // --- stop-pool IDs ----------------------------------------------------------
 
@@ -127,6 +139,38 @@ struct StopParamId
     out.text[6] = static_cast<char>('0' + (n / 10) % 10);
     out.text[7] = static_cast<char>('0' + n % 10);
     out.text[8] = '\0';
+    return out;
+}
+
+/// One coupler parameter's ID, e.g. @c "coupler_03". Two digits: sixteen slots.
+struct CouplerParamId
+{
+    std::array<char, 12> text{}; ///< "coupler_15" and a NUL.
+
+    [[nodiscard]] constexpr const char*      c_str() const noexcept { return text.data(); }
+    [[nodiscard]] constexpr std::string_view view()  const noexcept
+    {
+        return std::string_view(text.data(), 10);
+    }
+};
+
+/// @copydoc stopParamId
+[[nodiscard]] constexpr CouplerParamId couplerParamId(std::size_t index) noexcept
+{
+    const std::size_t n = index % 100;
+
+    CouplerParamId out{};
+    out.text[0] = 'c';
+    out.text[1] = 'o';
+    out.text[2] = 'u';
+    out.text[3] = 'p';
+    out.text[4] = 'l';
+    out.text[5] = 'e';
+    out.text[6] = 'r';
+    out.text[7] = '_';
+    out.text[8] = static_cast<char>('0' + (n / 10) % 10);
+    out.text[9] = static_cast<char>('0' + n % 10);
+    out.text[10] = '\0';
     return out;
 }
 

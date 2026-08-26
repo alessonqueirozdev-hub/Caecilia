@@ -56,6 +56,9 @@ struct ParameterLayout
     /// @copydoc caecilia::core::params::kMaxStopParameters
     static constexpr std::size_t kMaxStopParameters = core::params::kMaxStopParameters;
 
+    /// @copydoc caecilia::core::params::kMaxCouplerParameters
+    static constexpr std::size_t kMaxCouplerParameters = core::params::kMaxCouplerParameters;
+
     // --- global parameter IDs (stable strings) ------------------------------
     //
     // ALIASES, not copies. The strings themselves live in core/ParameterIds.h,
@@ -102,6 +105,9 @@ struct ParameterLayout
      *         cached @c juce::RangedAudioParameter pointers instead.
      */
     [[nodiscard]] static std::string stopParamId(std::size_t index);
+
+    /// @copydoc stopParamId but for the coupler pool, e.g. @c "coupler_03".
+    [[nodiscard]] static std::string couplerParamId(std::size_t index);
 
     /// Total parameters the host sees. Asserted against the layout the factory
     /// actually builds — see @ref create — so growing one without the other fails

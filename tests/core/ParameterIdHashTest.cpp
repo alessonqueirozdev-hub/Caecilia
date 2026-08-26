@@ -14,7 +14,7 @@
 //
 //   * the SET changing — a parameter added, removed, or the pool resized;
 //   * a SPELLING changing while the count does not. Swap two IDs and the set is
-//     still 81 entries; every session that automated either one is still broken.
+//     still 97 entries; every session that automated either one is still broken.
 //
 // So the count is asserted, and the IDs at the edges of the set are pinned to a
 // number.
@@ -32,22 +32,27 @@
 
 namespace params = caecilia::core::params;
 
-TEST_CASE("The published parameter set is exactly 81 IDs", "[core][params]")
+TEST_CASE("The published parameter set is exactly 97 IDs", "[core][params]")
 {
-    // 17 globals + 64 stops. The pool was 256 and is 64 because that is the width
-    // of the registration mask the audio thread compares; the EQ's six sit inside
-    // the globals rather than after the pool, so resizing the pool never moves them.
+    // 17 globals + 64 stops + 16 couplers. The pool was 256 and is 64 because that
+    // is the width of the registration mask the audio thread compares; the EQ's six
+    // sit inside the globals rather than after the pool, so resizing the pool never
+    // moves them -- and the couplers sit AFTER it, which is safe for the opposite
+    // reason: the pool's size is architectural now and cannot be resized again.
     STATIC_REQUIRE(params::kGlobalIds.size() == 17u);
     STATIC_REQUIRE(params::kMaxStopParameters == 64u);
-    STATIC_REQUIRE(params::kParameterCount == 81u);
+    STATIC_REQUIRE(params::kMaxCouplerParameters == 16u);
+    STATIC_REQUIRE(params::kParameterCount == 97u);
 
     std::vector<std::string> ids;
     for (const char* id : params::kGlobalIds)
         ids.emplace_back(id);
     for (std::size_t i = 0; i < params::kMaxStopParameters; ++i)
         ids.emplace_back(params::stopParamId(i).c_str());
+    for (std::size_t i = 0; i < params::kMaxCouplerParameters; ++i)
+        ids.emplace_back(params::couplerParamId(i).c_str());
 
-    REQUIRE(ids.size() == 81u);
+    REQUIRE(ids.size() == 97u);
 
     // Every ID distinct as a STRING...
     const std::set<std::string> unique(ids.begin(), ids.end());
@@ -78,6 +83,10 @@ TEST_CASE("The IDs at the edges of the set are what they have always been",
     // longer exists: the pool shrank from 256 to 64.
     STATIC_REQUIRE(params::parameterIdHash(params::stopParamId(0).view())  == 0x663A2073u);
     STATIC_REQUIRE(params::parameterIdHash(params::stopParamId(63).view()) == 0x663A2130u);
+
+    // The coupler pool, appended after the stops.
+    STATIC_REQUIRE(params::parameterIdHash(params::couplerParamId(0).view())  == 0x1EC634ADu);
+    STATIC_REQUIRE(params::parameterIdHash(params::couplerParamId(15).view()) == 0x1EC634D1u);
 }
 
 TEST_CASE("Stop IDs are formatted exactly as snprintf produced them",
@@ -100,6 +109,14 @@ TEST_CASE("Stop IDs are formatted exactly as snprintf produced them",
     // is past the pool and past any plausible organ.
     CHECK(std::string(params::stopParamId(999).c_str()) == "stop_999");
     CHECK(std::string(params::stopParamId(1000).c_str()) == "stop_000");
+
+    for (std::size_t i = 0; i < params::kMaxCouplerParameters; ++i)
+    {
+        char expected[16];
+        std::snprintf(expected, sizeof(expected), "coupler_%02zu", i);
+        INFO("coupler slot " << i);
+        CHECK(std::string(params::couplerParamId(i).c_str()) == std::string(expected));
+    }
 }
 
 TEST_CASE("Every ID is well formed for a host", "[core][params]")
@@ -112,6 +129,8 @@ TEST_CASE("Every ID is well formed for a host", "[core][params]")
         ids.emplace_back(id);
     for (std::size_t i = 0; i < params::kMaxStopParameters; ++i)
         ids.emplace_back(params::stopParamId(i).c_str());
+    for (std::size_t i = 0; i < params::kMaxCouplerParameters; ++i)
+        ids.emplace_back(params::couplerParamId(i).c_str());
 
     for (const std::string& id : ids)
     {

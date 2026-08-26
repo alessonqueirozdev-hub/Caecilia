@@ -172,6 +172,12 @@ public:
         return p != nullptr && p->load(std::memory_order_relaxed) >= 0.5f;
     }
 
+    /// @return The drawn couplers, as a mask keyed by the organ's coupler index.
+    [[nodiscard]] std::uint32_t drawnCouplers() const noexcept { return couplers_; }
+
+    /// Draw / retire one coupler. Message thread.
+    void toggleCoupler(std::size_t index);
+
     /// Draw / retire a stop. Message thread, and it costs a table publication: the
     /// rank voicings already exist, so drawing a stop only changes WHICH of them the
     /// engine is holding. Voices already sounding are not touched at all.
@@ -322,6 +328,14 @@ private:
     /// thread's cached view of them, and applyRegistration is the only writer.
     std::uint64_t           registration_ = 0;
 
+    /// THE couplers. One mask, keyed by the organ's coupler index, and the audio
+    /// thread's cached view of the host parameters that own them.
+    std::uint32_t           couplers_ = 0;
+
+    /// A coupler change the audio thread noticed, waiting for the message thread.
+    std::atomic<std::uint32_t> pendingCouplers_{ 0 };
+    std::atomic<bool>          pendingCouplersValid_{ false };
+
     // --- synthesis instance owned by the plugin (pre-allocated, bound in) ---
     // The concrete voices live here (the engine's pool only borrows pointers),
     // so they outlive the engine. Every voice is seeded with the same composite
@@ -444,6 +458,10 @@ private:
     /// already engaged returns immediately, which is what makes the round trip
     /// through the parameters terminate instead of oscillating.
     void applyRegistration(std::uint64_t next, RegistrationOrigin origin);
+
+    /// Draw / retire couplers and republish. Message thread; same single-writer
+    /// discipline as @ref applyRegistration, and idempotent for the same reason.
+    void applyCouplers(std::uint32_t next, RegistrationOrigin origin);
 
     /// Fill the first few generals from the organ, using the shared selector
     /// grammar. Construction only.

@@ -34,6 +34,37 @@ void CaeciliaParameterMirror::cacheParameterPointers()
         stopParams_[i]       = apvts_.getRawParameterValue(id.c_str());
         stopParamObjects_[i] = apvts_.getParameter(id);
     }
+
+    for (std::size_t i = 0; i < ParameterLayout::kMaxCouplerParameters; ++i)
+    {
+        const std::string id    = ParameterLayout::couplerParamId(i);
+        couplerParams_[i]       = apvts_.getRawParameterValue(id.c_str());
+        couplerParamObjects_[i] = apvts_.getParameter(id);
+    }
+}
+
+std::uint32_t CaeciliaParameterMirror::couplerBits() const noexcept
+{
+    std::uint32_t bits = 0;
+    for (std::size_t i = 0; i < ParameterLayout::kMaxCouplerParameters; ++i)
+        if (couplerParams_[i] != nullptr
+            && couplerParams_[i]->load(std::memory_order_relaxed) >= 0.5f)
+            bits |= (std::uint32_t{1} << i);
+    return bits;
+}
+
+void CaeciliaParameterMirror::writeCouplerBits(std::uint32_t bits)
+{
+    for (std::size_t i = 0; i < ParameterLayout::kMaxCouplerParameters; ++i)
+    {
+        juce::RangedAudioParameter* p = couplerParamObjects_[i];
+        if (p == nullptr)
+            continue;
+
+        const bool want = (bits & (std::uint32_t{1} << i)) != 0;
+        if ((p->getValue() >= 0.5f) != want)
+            p->setValueNotifyingHost(want ? 1.0f : 0.0f);
+    }
 }
 
 std::uint64_t CaeciliaParameterMirror::stopBits() const noexcept
