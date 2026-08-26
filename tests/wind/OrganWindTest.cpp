@@ -65,7 +65,11 @@ struct Rig
 
     Rig(const model::Organ& organ, bool bindWind)
     {
-        eng.prepare(kSr, kBlock, 2, 1);
+        // The organ's real chest count. Preparing for one put every rank's demand
+        // on the single chest that existed, which is a different instrument from
+        // the one being tested.
+        eng.prepare(kSr, kBlock, 2,
+                    std::max<std::size_t>(organ.windchests().size(), 1));
 
         if (bindWind)
         {
@@ -105,7 +109,7 @@ struct Rig
             if (t.count >= t.ranks.size())
                 break;
             t.ranks[t.count++] = engine::EngagedRank{ &v, v.stop, v.division,
-                                                      flowOf(v) };
+                                                      flowOf(v), v.chest };
         }
         t.epoch = 1;
         eng.setEngagedRanks(t);
@@ -623,4 +627,78 @@ TEST_CASE("A rank's wind draw is its length in eight-foot units",
 
     // A rank with no declared length still draws wind rather than none.
     CHECK(wind::rankWindFlow(core::Footage{ 0, 1 }) == 1.0f);
+}
+
+
+TEST_CASE("Each chest keeps the pressure it was voiced at", "[wind][organ][regression]")
+{
+    // Organ builders wind different divisions at different pressures on purpose,
+    // and this organ says so: 980 Pa on the Pédale, 812 on the Grand-Orgue, 735 on
+    // the Récit. Those numbers are a voicing decision, not a detail.
+    //
+    // A chest used to take the RESERVOIR's pascals directly, so the moment any wind
+    // was drawn all three converged on the same figure -- measured at 967 / 967 /
+    // 967 -- and every division was suddenly winded alike. A chest sits behind a
+    // regulator that holds it at ITS pressure and passes the trunk's movement
+    // through as a fraction, which is what it does now.
+    const model::Organ organ = model::buildCaeciliaDemoOrgan();
+    REQUIRE(organ.windchests().size() >= 3);
+
+    wind::WindModel model;
+    model.prepare(kSr, kBlock);
+    model.configure(wind::configFromOrgan(organ));
+    model.reset();
+
+    const auto pressures = [&model, &organ]()
+    {
+        std::vector<double> out;
+        for (std::size_t c = 0; c < organ.windchests().size(); ++c)
+            out.push_back(model.pressureAt(
+                core::WindchestId{ static_cast<std::uint16_t>(c) }, 0));
+        return out;
+    };
+
+    // At rest, each chest is at its own nominal.
+    const std::vector<double> resting = pressures();
+    for (std::size_t c = 0; c < resting.size(); ++c)
+    {
+        INFO(organ.windchests()[c].name);
+        CHECK(resting[c]
+              == Catch::Approx(organ.windchests()[c].nominalPressurePa).margin(0.5));
+    }
+
+    // A heavy load on ONE chest only.
+    constexpr std::size_t kLoaded = 1;
+    for (int b = 0; b < 400; ++b)
+    {
+        model.registerDemand(core::WindchestId{ kLoaded }, 50.0f);
+        model.step(kBlock);
+    }
+    const std::vector<double> loaded = pressures();
+
+    for (std::size_t c = 0; c < loaded.size(); ++c)
+    {
+        const double sagPercent = 100.0 * (resting[c] - loaded[c]) / resting[c];
+        INFO(organ.windchests()[c].name << ": " << resting[c] << " -> " << loaded[c]
+             << " Pa (" << sagPercent << "%)");
+
+        // Every chest feels it -- one blower, one reservoir, and that shared
+        // reservoir is the whole reason a heavy pedal chord makes the Récit flinch.
+        CHECK(sagPercent > 0.2);
+
+        // And none of them is dragged to another's pressure. The chest that drew
+        // the wind takes its own trunk drop on top, so it sags furthest.
+        CHECK(loaded[c] < resting[c]);
+    }
+
+    // The ordering survives: the Pédale is still the highest-pressure chest and the
+    // Récit still the lowest, which is what "voiced at" means.
+    for (std::size_t c = 1; c < loaded.size(); ++c)
+        CHECK(loaded[c] < loaded[c - 1]);
+
+    // The loaded chest sags further than its neighbours, in proportion.
+    const double sagLoaded = 100.0 * (resting[kLoaded] - loaded[kLoaded]) / resting[kLoaded];
+    const double sagOther  = 100.0 * (resting[0] - loaded[0]) / resting[0];
+    INFO("loaded chest sags " << sagLoaded << "%, an unloaded one " << sagOther << "%");
+    CHECK(sagLoaded > sagOther);
 }

@@ -26,16 +26,23 @@ void Windchest::registerDemand(float flow) noexcept
         demandAccum_ += flow;
 }
 
-void Windchest::updateBlock(float bellowsStartPa, float bellowsEndPa, std::size_t numFrames) noexcept
+void Windchest::updateBlock(float bellowsSagStart, float bellowsSagEnd,
+                            std::size_t numFrames) noexcept
 {
-    // Local trunk drop: the chest sits at a slightly lower pressure than its
-    // bellows, by an amount proportional to the flow it is drawing.
+    // Local trunk drop: the chest sits a little below what its regulator delivers,
+    // by an amount proportional to the flow it is drawing.
     const float localDrop = config_.trunkConductance > 0.0f
                                 ? demandAccum_ / config_.trunkConductance
                                 : 0.0f;
 
-    startPa_ = bellowsStartPa - localDrop;
-    endPa_   = bellowsEndPa - localDrop;
+    // The chest's OWN nominal, scaled by how far the shared reservoir has sagged.
+    // Proportional and not absolute: a regulator holds this chest at its voiced
+    // pressure and passes the trunk's movement through as a fraction, which is why
+    // a heavy pedal chord makes the Récit flinch without dragging it down to the
+    // Pédale's wind.
+    const float nominal = config_.nominalPressurePa;
+    startPa_ = nominal * bellowsSagStart - localDrop;
+    endPa_   = nominal * bellowsSagEnd   - localDrop;
     frames_  = numFrames == 0 ? 1 : numFrames;
 
     // TODO(phase3): expose weak pipe-to-pipe frequency pulling on a shared chest

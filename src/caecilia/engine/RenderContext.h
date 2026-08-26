@@ -90,6 +90,22 @@ struct RenderContext
     const ITuning*     tuning = nullptr; ///< Per-pipe frequency table (read-only).
     DeadlineBudget*    budget = nullptr; ///< CPU governor for stealing/demotion.
 
+    /// Windchest per POOL SLOT, indexed by @c VoiceBatchView::slot.
+    ///
+    /// Recorded when a voice starts, so routing a voice to its bus is an index
+    /// rather than a search through the organ's rank bindings once per voice per
+    /// block.
+    const std::uint16_t* chestForSlot = nullptr;
+    std::size_t          slotCount    = 0;
+
+    /// @return The chest a pool slot's voice belongs to, or chest 0 if unknown.
+    [[nodiscard]] WindchestId chestOfSlot(std::size_t slot) const noexcept
+    {
+        return (chestForSlot != nullptr && slot < slotCount)
+                 ? WindchestId{ chestForSlot[slot] }
+                 : WindchestId{};
+    }
+
     AudioBlock* chestBuses    = nullptr; ///< [numChestBuses] pre-zeroed per-chest buses.
     std::size_t numChestBuses = 0;       ///< Number of windchest accumulation buses.
 

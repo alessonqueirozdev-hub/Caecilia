@@ -55,7 +55,23 @@ public:
      * Applies the local trunk drop from this chest's pending demand and stores
      * the resulting start/end endpoints. RT-safe.
      */
-    void updateBlock(float bellowsStartPa, float bellowsEndPa, std::size_t numFrames) noexcept;
+    /**
+     * @brief Latch this block's pressure trajectory from the feeding reservoir.
+     * @param bellowsSagStart Reservoir pressure at the first frame, as a FRACTION
+     *                        of its own nominal (1.0 = fully wound).
+     * @param bellowsSagEnd   The same at the last frame.
+     * @param numFrames       Frames the trajectory spans.
+     *
+     * A fraction rather than pascals, because a chest does not sit at the trunk's
+     * pressure -- it sits at its OWN, behind a regulator, and follows the trunk
+     * proportionally. Organ builders wind different divisions at different
+     * pressures on purpose (this organ: 980 Pa on the Pédale, 812 on the
+     * Grand-Orgue, 735 on the Récit), and taking the reservoir's pascals directly
+     * threw all of that away the moment any wind was drawn -- every chest
+     * converged on the same number, whatever it was voiced at.
+     */
+    void updateBlock(float bellowsSagStart, float bellowsSagEnd,
+                     std::size_t numFrames) noexcept;
 
     /**
      * @brief Sagged chest pressure at a sample offset, EXCLUDING tremulant.

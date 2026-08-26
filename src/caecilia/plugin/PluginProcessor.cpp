@@ -115,7 +115,7 @@ void CaeciliaAudioProcessor::publishEngagedRanks()
         // accordingly; the note's own half of the figure is applied by the engine.
         table.ranks[table.count++] =
             core::engine::EngagedRank{ &v, v.stop, v.division,
-                                       wind::rankWindFlow(v.footage) };
+                                       wind::rankWindFlow(v.footage), v.chest };
     }
 
     table.epoch = ++registrationEpoch_;

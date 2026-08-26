@@ -35,13 +35,14 @@ struct VoiceBatchView
         return i < count ? voices[indices[i]] : nullptr;
     }
 
-    /// @return The pipe backing the i-th voice (for pipe→chest routing).
+    /// @return The pipe backing the i-th voice.
     [[nodiscard]] PipeId pipe(std::size_t i) const noexcept
     {
         return (i < count && pipes != nullptr) ? pipes[indices[i]] : PipeId{};
     }
 
-    /// @return The slot index of the i-th voice.
+    /// @return The POOL SLOT of the i-th voice, which is how per-slot engine state
+    ///         -- its windchest, its wind draw -- is indexed.
     [[nodiscard]] std::uint16_t slot(std::size_t i) const noexcept
     {
         return i < count ? indices[i] : 0;

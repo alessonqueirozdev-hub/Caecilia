@@ -327,22 +327,32 @@ void AudioEngine::stepWind(std::size_t numFrames) noexcept
     // retired along with its rank -- and every one of those paths would have to
     // remember to give the wind back.
     //
-    // Registered on chest 0 alone, which sounds wrong and mostly is not: every
-    // chest is fed by ONE reservoir, so the sag that matters -- the one a heavy
-    // pedal chord puts into the Récit -- comes from the shared bellows and reaches
-    // every chest regardless of which one booked the demand. What chest 0
-    // additionally takes is its own trunk drop, and with the default conductances
-    // (feed 4, trunk 50) that is about seven percent of the total.
+    // Booked PER CHEST. The shared reservoir spreads the bulk of the sag across
+    // every chest whichever one draws it, but the local trunk drop is a chest's own
+    // -- so a heavy pedal chord should sag the Pédale's own wind further than the
+    // Récit's, and booking everything on chest 0 gave that drop to whichever chest
+    // happened to be first.
+    std::array<float, kMaxWindchests> perChest{};
     const VoicePoolView live = pool_.view();
-    float demand = 0.0f;
     for (std::size_t i = 0; i < live.activeCount; ++i)
     {
         const std::size_t slot = live.activeIndices[i];
-        if (slot < slotFlow_.size())
-            demand += slotFlow_[slot];
+        if (slot >= slotFlow_.size())
+            continue;
+        // A rank naming a chest this engine was not prepared for books on chest 0,
+        // which is the fallback everything else already uses for an unbound rank.
+        // Dropping it instead loses the load silently: the instrument would sound,
+        // draw no wind, and never sag -- which is exactly what happened here, in a
+        // rig prepared for one chest playing ranks that name three.
+        const std::size_t named = slotChest_[slot];
+        const std::size_t chest = named < numWindchests_ ? named : 0;
+        perChest[chest] += slotFlow_[slot];
     }
 
-    wind_->registerDemand(WindchestId{ 0 }, demand);
+    for (std::size_t c = 0; c < numWindchests_ && c < perChest.size(); ++c)
+        if (perChest[c] > 0.0f)
+            wind_->registerDemand(WindchestId{ static_cast<std::uint16_t>(c) },
+                                  perChest[c]);
 
     wind_->step(numFrames);
 }
@@ -372,6 +382,8 @@ RenderContext AudioEngine::makeContext(std::size_t numFrames) noexcept
     ctx.nyquist          = sampleRate_ * 0.5;
     ctx.wind             = wind_;
     ctx.tuning           = tuning_;
+    ctx.chestForSlot     = slotChest_.data();
+    ctx.slotCount        = slotChest_.size();
     ctx.chestBuses       = busBlocks_.data();
     ctx.numChestBuses    = numWindchests_;
 
@@ -511,6 +523,7 @@ bool AudioEngine::startRankVoice(const EngagedRank& rank, MidiNote note,
             (60.0f - static_cast<float>(note)) * (1.0f / 12.0f);
         slotFlow_[handle.index] =
             rank.windFlow * std::exp2(octavesBelowMiddleC) * wind::kFlowPerVoice;
+        slotChest_[handle.index] = rank.chest.value;
     }
 
     v->adoptRank(rank.voicing);

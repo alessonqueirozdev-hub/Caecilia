@@ -85,12 +85,22 @@ void WindModel::step(std::size_t numFrames) noexcept
     // 4. Latch each chest's per-frame sag trajectory, then clear its demand.
     for (auto& c : chests_)
     {
+        // How far the shared reservoir has sagged, as a fraction of its own
+        // nominal. The chest turns that into ITS pressure, so each division keeps
+        // the wind it was voiced at while still feeling what the others draw.
         const std::uint16_t bi = c.bellowsIndex();
-        const float startPa = bi < bellows_.size() ? bellows_[bi].pressureStartPa()
-                                                    : c.nominalPressurePa();
-        const float endPa   = bi < bellows_.size() ? bellows_[bi].pressureEndPa()
-                                                    : c.nominalPressurePa();
-        c.updateBlock(startPa, endPa, numFrames);
+        float sagStart = 1.0f;
+        float sagEnd   = 1.0f;
+        if (bi < bellows_.size())
+        {
+            const float bn = bellows_[bi].nominalPressurePa();
+            if (bn > 0.0f)
+            {
+                sagStart = bellows_[bi].pressureStartPa() / bn;
+                sagEnd   = bellows_[bi].pressureEndPa()   / bn;
+            }
+        }
+        c.updateBlock(sagStart, sagEnd, numFrames);
         c.resetDemand();
     }
 }

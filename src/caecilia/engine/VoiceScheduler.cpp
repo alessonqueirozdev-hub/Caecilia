@@ -69,11 +69,12 @@ std::size_t VoiceScheduler::renderBatch(const VoiceBatchView& batch, RenderConte
         const auto ramp = ctx.expressionFor(core::DivisionId{ batch.pipe(i).divisionId });
         voice->setExpression(ramp.start, ramp.inc);
 
-        // Route the voice to its windchest accumulation bus. Wind supply owns the
-        // pipe→chest mapping; fall back to bus 0 when no wind snapshot is bound.
-        AudioBlock* bus = nullptr;
-        if (ctx.wind != nullptr)
-            bus = ctx.busFor(ctx.wind->chestForPipe(batch.pipe(i)));
+        // Route the voice to its windchest accumulation bus, by INDEX. The engine
+        // recorded the chest when the voice started; asking IWindSupply::chestForPipe
+        // instead was a linear scan over the organ's rank bindings, per voice, per
+        // block, to answer a question that had already been settled -- and it was
+        // asked with the stop id in a field matched against rank ids.
+        AudioBlock* bus = ctx.busFor(ctx.chestOfSlot(batch.slot(i)));
         if (bus == nullptr)
             bus = ctx.numChestBuses > 0 ? &ctx.chestBuses[0] : nullptr;
         if (bus == nullptr)

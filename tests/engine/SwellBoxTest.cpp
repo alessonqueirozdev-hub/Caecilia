@@ -152,7 +152,8 @@ struct Rig
             if (v.division.value != chosen.value || t.count >= t.ranks.size())
                 continue;
             t.ranks[t.count++] = engine::EngagedRank{ &v, v.stop, v.division,
-                                                      wind::rankWindFlow(v.footage) };
+                                                      wind::rankWindFlow(v.footage),
+                                                      v.chest };
         }
         t.epoch = 1;
         eng.setEngagedRanks(t);

@@ -42,6 +42,18 @@ struct EngagedRank
     /// {voicing, stop, division} and simply gets the default. 1.0 means "an 8' rank,
     /// or unknown", which is the right answer there.
     float          windFlow = 1.0f;
+
+    /// The windchest that feeds this rank: which bus it accumulates into, whose
+    /// wind it draws, and whose swell shutter closes over it.
+    ///
+    /// Carried HERE rather than asked of IWindSupply::chestForPipe per voice per
+    /// block. That query is a linear scan over the organ's rank bindings, run to
+    /// answer a question settled at note-on -- and it was being asked with the STOP
+    /// id in a field it matches against RANK ids, which is correct on this organ
+    /// only because every stop owns exactly one rank.
+    ///
+    /// Chest 0 by default, which is the same fallback an unbound rank always had.
+    WindchestId    chest{};
 };
 
 /**

@@ -356,6 +356,12 @@ private:
     /// on every one of them. Summing the live slots once a block cannot drift.
     std::array<float, kMaxVoices>  slotFlow_{};
 
+    /// The windchest each pool slot's voice belongs to, recorded when it starts.
+    ///
+    /// Beside slotFlow_ and for the same reason: the answer is fixed for the life
+    /// of the voice, so it is written once rather than searched for every block.
+    std::array<std::uint16_t, kMaxVoices> slotChest_{};
+
     /// The keys physically down, so a registration change knows what to reconcile.
     ///
     /// Not derivable from the pool: a voice in its release tail is still active but
