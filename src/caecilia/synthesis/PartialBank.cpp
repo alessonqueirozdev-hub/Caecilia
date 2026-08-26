@@ -439,8 +439,8 @@ void PartialBank::setEnvelopeTimes(float attackSeconds, float releaseSeconds) no
     releaseSeconds_ = releaseSeconds > 0.0f ? releaseSeconds : 0.0005f;
 
     const double sr = sampleRate_ > kMinSampleRate ? sampleRate_ : 48000.0;
-    attackStep_  = static_cast<float>(1.0 / (attackSeconds_  * sr));
-    releaseStep_ = static_cast<float>(1.0 / (releaseSeconds_ * sr));
+    attackStep_  = static_cast<float>(1.0 / (static_cast<double>(attackSeconds_)  * sr));
+    releaseStep_ = static_cast<float>(1.0 / (static_cast<double>(releaseSeconds_) * sr));
 }
 
 void PartialBank::setLiveliness(float instabilityCents,
@@ -555,7 +555,10 @@ void PartialBank::recomputeBlockCoefficients(std::size_t frames) noexcept
         // replace one per partial per SAMPLE — with a 512-sample buffer that is a
         // ~250x reduction in transcendental work, and it is what makes a full
         // registration affordable at all.
-        const float w = static_cast<float>(kTwoPi * freq / sr);
+        // The cast is explicit and kTwoPi stays a float: promoting the CONSTANT to a
+        // double 2*pi would be more accurate and would move every partial's
+        // rotation, which the fingerprint would report as a regression it is not.
+        const float w = static_cast<float>(static_cast<double>(kTwoPi) * freq / sr);
         p.cosInc = std::cos(w);
         p.sinInc = std::sin(w);
 

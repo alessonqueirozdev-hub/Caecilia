@@ -31,8 +31,8 @@ public:
         const double sr = sampleRate > 1.0 ? sampleRate : 48000.0;
         const float a = attackSeconds  > 0.0f ? attackSeconds  : 0.0005f;
         const float r = releaseSeconds > 0.0f ? releaseSeconds : 0.0005f;
-        attackStep_  = static_cast<float>(1.0 / (a * sr));
-        releaseStep_ = static_cast<float>(1.0 / (r * sr));
+        attackStep_  = static_cast<float>(1.0 / (static_cast<double>(a) * sr));
+        releaseStep_ = static_cast<float>(1.0 / (static_cast<double>(r) * sr));
     }
 
     /// Begin the attack from the current gain (retrigger-safe). RT-safe.
@@ -50,7 +50,7 @@ public:
     {
         const double sr = sampleRate > 1.0 ? sampleRate : 48000.0;
         const float r = releaseSeconds > 0.0f ? releaseSeconds : 0.0005f;
-        releaseStep_ = static_cast<float>(1.0 / (r * sr));
+        releaseStep_ = static_cast<float>(1.0 / (static_cast<double>(r) * sr));
     }
 
     /// Advance one sample and return the current gain in [0, 1]. RT-safe.

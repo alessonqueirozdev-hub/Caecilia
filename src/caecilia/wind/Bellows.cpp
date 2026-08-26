@@ -49,7 +49,8 @@ void Bellows::integrate(double dtSeconds) noexcept
     // First-order relaxation toward equilibrium. Exact exponential update keeps
     // the step unconditionally stable regardless of block size.
     const double rate = config_.compliance > 0.0f
-                            ? static_cast<double>(config_.feedConductance) / config_.compliance
+                            ? static_cast<double>(config_.feedConductance)
+                                  / static_cast<double>(config_.compliance)
                             : 0.0;
     const float alpha = static_cast<float>(1.0 - std::exp(-rate * dtSeconds));
 
