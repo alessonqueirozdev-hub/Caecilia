@@ -39,6 +39,8 @@
 #include "caecilia/synthesis/AdditiveVoice.h"
 #include "caecilia/synthesis/RankVoicing.h"
 
+#include "caecilia/core/IWindSupply.h"
+
 #include "common/CliArgs.h"
 #include "common/DenormalGuard.h"
 
@@ -57,6 +59,45 @@ namespace synth = caecilia::synth;
 
 namespace
 {
+/// A reservoir pinned at one deviation, so `--wind` can measure the instrument
+/// under load rather than at rest.
+///
+/// It is the loaded case that costs: the wind's brightness axis is a spectral
+/// tilt, and applying it is an exp2 per partial per block that a reservoir sitting
+/// at its nominal pressure does not pay for. "How much does the organ cost while
+/// the wind is giving way" is therefore a different question from the one the rest
+/// of this tool answers, and it is the one that decides whether the CPU governor
+/// has anything to do.
+class PinnedWind final : public core::IWindSupply
+{
+public:
+    explicit PinnedWind(float deviation) noexcept : dev_(deviation) {}
+
+    [[nodiscard]] float nominalPressurePa(core::WindchestId) const noexcept override
+    {
+        return 800.0f;
+    }
+    [[nodiscard]] float pressureAt(core::WindchestId, std::size_t) const noexcept override
+    {
+        return 800.0f * (1.0f + dev_);
+    }
+    [[nodiscard]] float pressureDeviation(core::WindchestId, std::size_t) const noexcept override
+    {
+        return dev_;
+    }
+    [[nodiscard]] core::WindchestId chestForPipe(core::PipeId) const noexcept override
+    {
+        return core::WindchestId{};
+    }
+    void registerDemand(core::WindchestId, float) noexcept override {}
+    void step(std::size_t) noexcept override {}
+    void setChestTremulantEnabled(core::WindchestId, bool) noexcept override {}
+    void setChestTremulantShape(core::WindchestId, float, float) noexcept override {}
+
+private:
+    float dev_ = 0.0f;
+};
+
 model::RegistrationRank rank(core::TonalFamily fam, double feet, bool compound = false)
 {
     return model::RegistrationRank{ fam, model::footageFromFeet(feet), compound };
@@ -127,11 +168,18 @@ int main(int argc, char** argv)
     // machine.
     const bool   ab         = args.has("ab");
 
+    // Bind a reservoir at this normalised deviation (0 = nominal, -0.10 = ten
+    // percent down, which is about what the demo organ's own chord test measures
+    // under a heavy registration).
+    const auto   windDev    = static_cast<float>(args.number("wind").value_or(0.0));
+
     std::printf("caecilia-bench  %.0f Hz, block %zu, %.1f s x %d runs (min reported)%s, %s\n\n",
                 sampleRate, blockSize, seconds, repeats,
                 caecilia::tools::DenormalGuard::available() ? ", FTZ/DAZ on"
                                                             : ", NO FTZ on this arch",
                 perRank ? "one voice per (rank, note)" : "one composite voice per note");
+    if (windDev != 0.0f)
+        std::printf("wind pinned %.1f%% off nominal\n", 100.0 * windDev);
     if (ab)
     {
         std::printf("%-24s %8s %8s %10s %10s %10s %10s\n",
@@ -158,9 +206,13 @@ int main(int argc, char** argv)
                 std::span<const model::RegistrationRank>(s.ranks));
         const std::size_t partials = composite.partials.size();
 
+        const PinnedWind wind(windDev);
+
         synth::VoiceContext ctx;
         ctx.family  = core::TonalFamily::Principal;
         ctx.footage = core::footage::kEight;
+        if (windDev != 0.0f)
+            ctx.wind = &wind;
 
         std::vector<std::unique_ptr<synth::AdditiveVoice>> voices;
         std::vector<synth::RankVoicing>                    voicings;
