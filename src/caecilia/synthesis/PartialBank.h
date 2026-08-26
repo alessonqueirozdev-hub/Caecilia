@@ -228,7 +228,26 @@ public:
     ///         the pool to pick the least audible voice to steal. RT-safe.
     [[nodiscard]] float levelEstimate() const noexcept
     {
-        return stage_ == Stage::Idle ? 0.0f : envGain_ * masterGain_;
+        // Every gain the render applies, in the same order renderAdd applies them
+        // -- because this number's whole job is to answer "how much would be lost
+        // if this voice stopped", and a factor left out of it is a factor the
+        // answer is wrong by.
+        //
+        // The expression term is what makes this worth stating: it used to be
+        // missing, and a pipe behind a shut swell box is thirteen decibels down
+        // and the first thing an organist would give up. Without it the box was
+        // invisible to both the pool's victim choice and the CPU governor's.
+        //
+        // Two deliberate omissions. The envelope's smoothstep shaping is not
+        // duplicated here: it is monotonic in envGain_, so it cannot change the
+        // ORDER this is used to establish, and it is within two decibels of the
+        // raw value at every point. And exprGain_ is where the last block's ramp
+        // left it rather than where this block's will end, because the scheduler
+        // sets the ramp while rendering and this is read before the render -- one
+        // block of lag on a shoe that takes a second to travel.
+        return stage_ == Stage::Idle
+                 ? 0.0f
+                 : envGain_ * masterGain_ * velocityGain_ * exprGain_;
     }
 
     /// @return Number of partials currently seeded.
