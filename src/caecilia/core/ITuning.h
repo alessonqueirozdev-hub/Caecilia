@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -28,9 +25,12 @@ enum class TemperamentId : std::uint8_t
  *        honouring the exact-rational Footage of the sounding rank.
  *
  * The concrete tuning model precomputes a per-pipe frequency table OFF the
- * audio thread (in prepare() and on temperament-change commands delivered over
- * the ring), so the accessors below are cheap table lookups and never mutate
- * live engine state.
+ * audio thread (in prepare()), so the accessors below are cheap table lookups
+ * and never mutate live engine state.
+ *
+ * @todo A temperament change does not reach this table at runtime: the engine
+ *       drains EngineCommandType::SetTemperament and drops it, so the tuning
+ *       stays exactly as prepare() built it. See AudioEngine::drainCommands().
  *
  * Real-time contract: all query methods are @c noexcept, allocation-free and
  * lock-free.

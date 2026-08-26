@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -51,15 +48,28 @@ struct DivisionId
 };
 
 /**
- * @brief Stable identity of a single physical pipe: (rank, note).
+ * @brief Stable identity of a single physical pipe: (division, rank, note).
  *
  * PipeId is the deterministic seed for the PerPipeVoicer, so a given pipe
  * always receives the same hand-voicing variance across runs and sessions.
  */
 struct PipeId
 {
-    std::uint16_t rankId   = 0; ///< Owning rank (mirrors RankId::value).
-    std::uint8_t  midiNote = 0; ///< Pipe's nominal MIDI note.
+    std::uint16_t rankId     = 0; ///< Owning rank (mirrors RankId::value).
+    std::uint8_t  midiNote   = 0; ///< Pipe's nominal MIDI note.
+
+    /// Owning division (mirrors DivisionId::value, truncated to 8 bits).
+    ///
+    /// Without this the SAME key on two manuals produced the same PipeId, and the
+    /// consequences ran deep: a note-off on one manual released the note on every
+    /// other one, a physical keyboard could only ever reach one division, couplers
+    /// had nothing to address, and two voices sounding the "same" pipe were seeded
+    /// identically -- so they were phase-coherent and summed at +6 dB instead of
+    /// +3, which is the very hotspot the per-voice decorrelation exists to avoid.
+    ///
+    /// It costs nothing: the struct already had this byte as padding.
+    std::uint8_t  divisionId = 0;
+
     friend constexpr bool operator==(PipeId, PipeId) noexcept = default;
 };
 
@@ -112,7 +122,8 @@ enum class EngineKind : std::uint8_t
     Modal      ///< Beating reed + modal resonator (reeds / percussion).
 };
 
-/// The quality tier a voice currently runs at; may be demoted under CPU load.
+/// The quality tier a voice runs at. Demotion under CPU load is the design
+/// intent but is not implemented; see VoiceScheduler::renderBatch().
 enum class VoiceTier : std::uint8_t
 {
     Modal,     ///< Cheapest partial/modal approximation.

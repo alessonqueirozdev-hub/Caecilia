@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -61,6 +58,48 @@ public:
     virtual void noteOff() noexcept = 0;
 
     /**
+     * @brief Stop immediately, with no release tail, and report inactive.
+     *
+     * This is what a host means by reset, and @ref noteOff is the wrong tool for
+     * it: a release keeps the voice sounding for as much as a third of a second
+     * after the host has been told the instrument is silent. That fails an Audio
+     * Unit validation pass outright, and it makes an offline render depend on what
+     * was played before it.
+     *
+     * RT-safe, @c noexcept: it is reachable from the audio thread.
+     */
+    virtual void silence() noexcept = 0;
+
+    /**
+     * @brief Set this block's swell-shoe gain, as a per-sample ramp.
+     * @param startGain    Gain at the first frame of the block.
+     * @param incPerSample Added to it each frame.
+     *
+     * A ramp rather than a level because a shoe is dragged, not stepped: a
+     * per-block gain jump under a sustained chord is a zipper, and a sustained
+     * chord is what an organ mostly plays.
+     *
+     * Called by the scheduler immediately before @ref renderAdd, so a voice may
+     * simply store the pair. RT-safe, @c noexcept.
+     */
+    virtual void setExpression(float startGain, float incPerSample) noexcept = 0;
+
+    /**
+     * @brief Become the rank described by @p voicing before the next note-on.
+     * @param voicing Opaque handle from @c engine::EngagedRank::voicing. The
+     *        engine carries it without knowing what it is; the voice knows.
+     *
+     * One voice per (rank, note) means a slot from the free list has no idea which
+     * rank it is about to sound. This is where it finds out.
+     *
+     * MUST NOT ALLOCATE. Storage is reserved at @ref prepare; a Tutti chord is
+     * twenty-six of these inside one audio callback. RT-safe, @c noexcept.
+     *
+     * A voice that does not implement per-rank voicing may ignore it.
+     */
+    virtual void adoptRank(const void* voicing) noexcept = 0;
+
+    /**
      * @brief Render this voice's contribution and ADD it into @p block.
      * @param block Destination bus (a per-windchest accumulation buffer).
      *
@@ -84,9 +123,24 @@ public:
 
     /**
      * @brief Relative CPU cost estimate (arbitrary units) used by the deadline
-     *        budget to decide stealing / tier demotion. RT-safe.
+     *        budget to decide tier demotion. RT-safe.
      */
     [[nodiscard]] virtual float cpuCostEstimate() const noexcept = 0;
+
+    /**
+     * @brief How audible this voice is right now, as a linear level in [0, 1].
+     *
+     * The pool steals the LEAST audible voice when it runs out. It used to rank
+     * candidates by @ref cpuCostEstimate as a stand-in for audibility, which is
+     * no proxy at all when every voice carries the same composite spectrum and
+     * therefore reports the same cost: the comparison never fired and the victim
+     * was simply whichever slot had the lowest index — potentially a sustained
+     * 16' pedal note under a passage.
+     *
+     * The default is a conservative 1.0 ("assume audible"), so a voice type that
+     * has not implemented this is never preferentially sacrificed. RT-safe.
+     */
+    [[nodiscard]] virtual float levelEstimate() const noexcept { return 1.0f; }
 };
 
 } // namespace caecilia::core
