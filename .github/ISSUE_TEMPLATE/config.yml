@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/alessonqueirozdev-hub/Caecilia/blob/main/CONTRIBUTING.md
+    about: Build instructions, the real-time rules, commit convention and PR flow.
+  - name: Architecture overview
+    url: https://github.com/alessonqueirozdev-hub/Caecilia/blob/main/docs/ARCHITECTURE.md
+    about: Layering, the audio-thread seam, and how the subsystems fit together.
+  - name: Security advisory
+    url: https://github.com/alessonqueirozdev-hub/Caecilia/security/advisories/new
+    about: Report a security-relevant issue privately, not as a public issue.

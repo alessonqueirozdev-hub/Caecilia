@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
+name: Bug report
+description: Something behaves incorrectly — wrong sound, crash, dropout, stuck note.
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Audio bugs are enormously easier to fix with a
+        short WAV, a spectrogram screenshot, or an exact reproduction sequence —
+        please attach whatever you have.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Be specific about the registration, the notes played, and the order of
+        events — most engine bugs here depend on all three.
+      placeholder: |
+        1. Draw Montre 8' and Fourniture IV on the Grand-Orgue
+        2. Hold a five-note chord
+        3. Toggle the Fourniture off while the chord is still held
+        4. The chord goes silent and does not come back
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which build
+      options:
+        - VST3 in a DAW
+        - Standalone
+        - Headless tools (render_demo, chain_check, ...)
+        - Unit tests
+        - Built from source, other
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: Host / DAW and version
+      placeholder: "REAPER 7.16, Cubase 13.0.30, Ableton Live 12.0.5, n/a"
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 26200, macOS 14.5 (Apple Silicon), Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: input
+    id: audio-config
+    attributes:
+      label: Sample rate and buffer size
+      description: |
+        Several known issues are sensitive to both — please don't skip this.
+      placeholder: "48000 Hz, 512 samples"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Caecilia version or commit
+      placeholder: "v0.1.0, or the short SHA you built"
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Audio, logs, or anything else
+      description: Drag files in here. A 5-second WAV of the problem is ideal.

@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
+name: Feature or improvement
+description: Propose a capability, a DSP improvement, or a change in musical behaviour.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening: much of the tree (wind model, historical temperaments,
+        semantic registration, the physical voice tier, the control API) is
+        already written and unit-tested but **not yet wired into the plugin**.
+        If your idea is one of those, say so — "wire up X" is a very different
+        piece of work from "design X", and it is usually a much better first
+        contribution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: |
+        Start from the musical or technical need, not the implementation. What
+        can't you do today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: |
+        For anything touching the organ model, please reference real practice —
+        how an actual instrument does it. That's the standard the project aims at.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Synthesis / voicing
+        - DSP (reverb, filters, master chain)
+        - Engine / polyphony / real-time
+        - MIDI and routing
+        - Organ model (stops, ranks, couplers, temperament)
+        - Registration and presets
+        - Plugin / host integration
+        - Console UI
+        - Build, CI, tooling
+        - Documentation
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: rt
+    attributes:
+      label: Real-time impact
+      options:
+        - label: This would add work to the audio thread (`process` / `render` / command handlers)
+        - label: This changes something the host sees (parameters, latency, state format)
+        - label: I've read the real-time rules in CONTRIBUTING.md
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

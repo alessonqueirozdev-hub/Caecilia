@@ -1,12 +1,13 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia
 
-**A proprietary hybrid pipe-organ virtual instrument (VST3 / AU / Standalone).**
+**An open-source hybrid pipe-organ virtual instrument (VST3 / AU / Standalone).**
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 > Status: **playable alpha (v0.1).** The VST3 / AU / Standalone plugin builds
 > green on Windows (MSVC), macOS and Linux and **makes sound**: a 3-division,
@@ -78,6 +79,13 @@ modes are Skins over **one model and one live-state feed**, so live feedback,
 MIDI-learn, zoom/pan, theming, and accessibility are built once. Animated
 reservoir gauges make the wind physics **visible**, sagging under polyphony.
 
+*Where this stands:* only `StateMirror` was built. The console that ships is a
+single embedded web page (`docs/mockups/console.html`) in a
+`WebBrowserComponent`; the layout model and the two skins were written, never
+instantiated, and removed (see [`src/caecilia/ui/README.md`](src/caecilia/ui/README.md)).
+Its reservoir gauges are animated in JavaScript from the live voice count,
+because the engine does not step the wind model yet.
+
 ### 4. Semantic registration + control API
 
 Stops carry an **exact-rational** `Footage` plus a rich taxonomy
@@ -97,25 +105,26 @@ with zero API drift.
 ```
 Caecilia/
 ├─ CMakeLists.txt            Top-level build (core lib + optional JUCE plugin + tests)
-├─ LICENSE                   Proprietary, All Rights Reserved
+├─ LICENSE                   Apache License 2.0
+├─ NOTICE                    Attribution + build-dependency licences
 ├─ THIRD_PARTY_NOTICES.md    JUCE / Catch2 — their own separate licenses
 ├─ CONTRIBUTING.md           Conventional Commits, branch/PR flow, formatting
 ├─ docs/
 │  └─ ARCHITECTURE.md        Master architecture: layering, voice/wind/registration, data flow
 ├─ src/caecilia/
 │  ├─ core/                  Pure, JUCE-free contract: enums, Footage, IDs, IVoice, IWindSupply, ...
-│  ├─ engine/               (planned) RT scheduler + voice pool + AudioEngine seam
-│  ├─ synthesis/            (planned) layered voices, sample/additive/waveguide/modal engines
-│  ├─ wind/                 (planned) reservoir ODE, WindState, tremulant
-│  ├─ model/                (planned) OrganSpec, per-pipe spatial data, sample descriptors
-│  ├─ dsp/                  (planned) FDN + convolution reverb, sinc interpolator, filters
-│  ├─ tuning/              (planned) historical temperaments, stretch, detune
-│  ├─ midi/                 (planned) core-native MIDI routing + MIDI-learn
-│  ├─ registration/         (planned) Selector algebra, rules engine, undo/redo, port()
-│  ├─ control/              (planned) OSC + JSON-RPC over one command sink
-│  ├─ plugin/               (planned, JUCE) VST3/AU/Standalone AudioProcessor
-│  └─ ui/                   (planned, JUCE) dual-mode console, skins, wind gauges
-└─ tests/                    (planned) headless Catch2 unit tests linking caecilia_core
+│  ├─ engine/                RT scheduler, voice pool, command ring, meters
+│  ├─ synthesis/             additive voice + partial bank (the other engines are unused)
+│  ├─ wind/                  reservoir ODE, WindState, tremulant (built, not yet wired)
+│  ├─ model/                 Organ/Stop/Rank, the demo organ, registration composites
+│  ├─ dsp/                   FDN reverb, master EQ, limiter, sinc interpolator, filters
+│  ├─ tuning/                historical temperaments, stretch, detune
+│  ├─ midi/                  core-native MIDI routing + MIDI-learn (not yet wired)
+│  ├─ registration/          Selector algebra, rules engine, undo/redo (not yet wired)
+│  ├─ control/               OSC + JSON-RPC over one command sink (not yet wired)
+│  ├─ plugin/                (JUCE) VST3/AU/Standalone AudioProcessor + bridges
+│  └─ ui/                    (JUCE) StateMirror; the console is a WebView page
+└─ tests/                    headless Catch2 unit tests linking caecilia_core
 ```
 
 ### Strict two-tier layering
@@ -124,9 +133,12 @@ Caecilia/
   **static library** holding *all* DSP / engine / synth / wind / model / tuning
   / midi / registration / control logic. It links only the C++ standard library
   and is fully unit-testable headless.
-- Only the **`plugin`** and **`ui`** modules may include JUCE. They mutate engine
-  state **only** through SPSC command rings and read truth **only** through
-  lock-free snapshots. A no-JUCE lint guards the core target.
+- Only the **`plugin`** and **`ui`** modules may include JUCE. Note events and
+  automatable parameters reach the engine **only** through the SPSC command ring,
+  and truth comes back **only** through lock-free snapshots. The console's own
+  edits are the standing exception: registration, reverb space and master EQ are
+  applied on the message thread under the processor's callback lock. A no-JUCE
+  lint guards the core target.
 
 ---
 
@@ -161,14 +173,63 @@ ctest --test-dir build --output-on-failure
 
 ## License
 
-**PROPRIETARY / CLOSED-SOURCE. All Rights Reserved.**
-Copyright (c) 2026 Alesson Queiroz.
+Caecilia is licensed under the **Apache License, Version 2.0**.
+See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-Caecilia is proprietary and confidential; no permission is granted to use, copy,
-modify, distribute, sublicense, or sell any part except by the copyright owner.
-See [LICENSE](LICENSE).
+    SPDX-License-Identifier: Apache-2.0
+    Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
-JUCE is a **third-party dependency under its own separate license**, documented
-in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and never conflated with
-Caecilia's license. All Caecilia DSP is implemented independently from public
-literature and contains **no GPL code**.
+Apache-2.0 was chosen over MIT/BSD for its **explicit patent grant** — audio DSP
+is a field where third-party patents exist, and contributors and users both
+benefit from the clarity.
+
+### JUCE: Caecilia qualifies for the free route
+
+[JUCE](https://juce.com/get-juce/) is dual-licensed: **AGPLv3 (free)** for open-source
+projects that ship under the same free terms, or a **paid commercial licence** for
+closed-source products. Caecilia is open source, so it takes the free route — no JUCE
+licence needs to be bought, by us or by you.
+
+Concretely:
+
+| What | Licence |
+|------|---------|
+| Caecilia's source code | **Apache-2.0** |
+| `caecilia_core` built alone (`-DCAECILIA_CORE_ONLY=ON`, no JUCE) | **Apache-2.0** |
+| A compiled VST3 / AU / Standalone binary (links JUCE) | **AGPLv3** |
+
+Apache-2.0 is one-way compatible with AGPLv3, which is exactly why this works: our
+code stays permissive, and the combined binary — ours plus JUCE — is distributed
+under AGPLv3, as JUCE's free licence requires. In practice that means shipping the
+binary alongside its source, which we do anyway.
+
+You only need to buy a commercial JUCE licence if you want to ship a **closed-source**
+product built on Caecilia. Building it for yourself, modifying it, forking it, and
+redistributing it as open source are all free.
+
+**Microsoft WebView2** (Windows only, used by the embedded console) ships under
+Microsoft's own SDK terms.
+
+Full details in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+### Provenance of the DSP
+
+Every DSP algorithm here is written from public literature and standard
+mathematics — RBJ biquad cookbook, Jot-style unitary FDN, Dattorro input
+diffusion, Kaiser-windowed sinc interpolation. **No GPL DSP source (GrandOrgue,
+Aeolus, or otherwise) was referenced or copied.** If you believe any part
+infringes, please open an issue and it will be addressed.
+
+---
+
+## Contributing
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for the
+commit convention, branch flow, the strict core/JUCE layering rule, and the
+real-time-safety constraints that apply to any code on an audio path.
+
+Everyone participating is expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+By contributing, you agree that your contributions are licensed under
+Apache-2.0, per section 5 of the licence.
