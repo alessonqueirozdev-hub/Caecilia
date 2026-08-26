@@ -202,6 +202,15 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                     proc.setUiReverb(static_cast<int>(args[0]), static_cast<float>(static_cast<double>(args[1])));
                 complete(juce::var());
             })
+        // --- Couplers -----------------------------------------------------------
+        .withNativeFunction("caeciliaToggleCoupler",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (! args.isEmpty())
+                    proc.toggleCoupler(static_cast<std::size_t>(static_cast<int>(args[0])));
+                complete(juce::var());
+            })
+
         // --- Combination memory (general pistons) -------------------------------
         // The processor owns these now. The page used to keep CAPTURED/GENERALS in
         // JavaScript, which made a piston unreachable by a MIDI program change and
@@ -356,6 +365,21 @@ void CaeciliaEditor::pushOrganSpec()
         divisions.add(juce::var(o));
     }
 
+    // The couplers this instrument declares. The index is also the host-parameter
+    // slot, exactly as a stop's id is, so the console can draw one by number.
+    juce::Array<juce::var> couplers;
+    for (std::size_t i = 0; i < organ.couplers().size(); ++i)
+    {
+        const model::Coupler& c = organ.couplers()[i];
+        auto* o = new juce::DynamicObject();
+        o->setProperty("idx",   static_cast<int>(i));
+        o->setProperty("name",  juce::String(c.name()));
+        o->setProperty("from",  static_cast<int>(c.from().value));
+        o->setProperty("to",    static_cast<int>(c.to().value));
+        o->setProperty("shift", static_cast<int>(c.octaveShiftSemitones()));
+        couplers.add(juce::var(o));
+    }
+
     juce::Array<juce::var> stops;
     for (const model::Stop& s : organ.stops())
     {
@@ -375,6 +399,7 @@ void CaeciliaEditor::pushOrganSpec()
     auto* spec = new juce::DynamicObject();
     spec->setProperty("divisions", divisions);
     spec->setProperty("stops",     stops);
+    spec->setProperty("couplers",  couplers);
     spec->setProperty("playDiv",   static_cast<int>(processor_.playDivision().value));
     web_.emitEventIfBrowserIsVisible("caeciliaOrgan", juce::var(spec));
 }
@@ -449,6 +474,10 @@ void CaeciliaEditor::timerCallback()
     const std::uint64_t drawn = processor_.drawnStops();
     obj->setProperty("regLo", static_cast<int>(static_cast<std::uint32_t>(drawn & 0xFFFFFFFFu)));
     obj->setProperty("regHi", static_cast<int>(static_cast<std::uint32_t>(drawn >> 32)));
+
+    // The drawn couplers. Sixteen slots fit a JS number exactly, so unlike the
+    // registration this needs no splitting into halves.
+    obj->setProperty("couplers", static_cast<int>(processor_.drawnCouplers()));
 
     // Which pistons hold something, so the jamb can show an empty one as empty.
     // Only the eight the console draws: sending 128 bits per frame to light eight

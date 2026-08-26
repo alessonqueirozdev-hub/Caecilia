@@ -525,6 +525,14 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   .piston.wide { width: auto; height: 34px; border-radius: 17px; padding: 0 13px; font-size: 11px; letter-spacing: .5px; }
   .piston.arm { box-shadow: 0 0 0 3px rgba(229,96,63,.6), 0 0 16px rgba(229,96,63,.45); color: var(--fam-Reed); }
   .piston.latched { background: linear-gradient(180deg,#f6dd9f,#d9ad57); color:#1a1206; }
+  /* A coupler is a tablet, not a piston: it LATCHES, so it is wider, it carries
+     text rather than a number, and it stays down until it is drawn again. */
+  .comb .coup { display: flex; align-items: center; gap: 6px; }
+  #couplers { display: flex; gap: 6px; }
+  .piston.coupler {
+    width: auto; min-width: 46px; height: 26px; border-radius: 5px; padding: 0 8px;
+    font: 700 10px var(--font-mono); letter-spacing: .5px;
+  }
   #app[data-theme="flat"] .piston.latched { background: linear-gradient(180deg,#cfe0fb,#7ea3e0); color:#0c1016; }
   .piston .sub { position:absolute; bottom:-14px; font:600 8px var(--font-mono); color:var(--ink-faint); letter-spacing:.5px; white-space:nowrap; }
   .comb .grp.gen { padding-bottom: 14px; }
@@ -676,6 +684,11 @@ of inline SVG data-URI textures. Open directly in any modern browser.
           </div>
           <div class="divider"></div>
           <div class="grp gen" id="generals"></div>
+          <div class="divider"></div>
+          <div class="grp coup" aria-label="Couplers">
+            <span class="cap" data-i18n="couplers">Coup</span>
+            <span id="couplers"></span>
+          </div>
           <div class="divider"></div>
           <div class="grp">
             <button class="piston wide" id="p-set"  title="Arm capture, then press a general to store" data-i18n="setPiston" data-i18n-title="setTip">SET</button>
@@ -913,6 +926,47 @@ function divisionEl(d) {
   wrap.append(head, stops);
   return wrap;
 }
+/* ---- Couplers -------------------------------------------------------------
+ * Drawn from the instrument, like the jambs. Each tablet carries the index the
+ * plugin gave it, which is also its host-parameter slot, so a click here, an
+ * automation move in the host and a saved session all name the same coupler.
+ *
+ * The console had none at all until now, which meant opening the plugin showed an
+ * organ whose manuals could not be joined -- and coupling is how an organist
+ * builds sound across them.
+ */
+let CAE_COUPLERS = [];
+
+/// "Récit/Grand-Orgue" -> "R/GO". A tablet is engraved short; the full name is
+/// the tooltip.
+function couplerLabel(name) {
+  return String(name || "")
+    .split("/")
+    .map(side => side.split(/[-\s]+/).filter(Boolean)
+                     .map(w => w[0] ? w[0].toUpperCase() : "").join(""))
+    .join("/");
+}
+
+function renderCouplers() {
+  const host = document.getElementById("couplers");
+  if (!host) return;
+  host.innerHTML = "";
+  CAE_COUPLERS.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "piston coupler";
+    b.textContent = couplerLabel(c.name);
+    b.title = c.name + (c.shift ? ` (${c.shift > 0 ? "+" : ""}${c.shift} semitones)` : "");
+    b.dataset.idx = String(c.idx);
+    b.addEventListener("click", () => {
+      // The plugin owns the state. The tablet lights from the state frame, not
+      // from the click, so the console can never show a coupler the instrument is
+      // not actually using.
+      caeInvoke("caeciliaToggleCoupler", [c.idx]);
+    });
+    host.append(b);
+  });
+}
+
 // Jambs: left = Pédale + Positif · right = Grand-Orgue + Récit
 function renderJambs() {
   const L = $("#jamb-left"), R = $("#jamb-right");
@@ -1222,6 +1276,10 @@ if (CAE_BRIDGE) caeInvoke("caeciliaReady", []);
 if (CAE_BRIDGE) {
   window.__JUCE__.backend.addEventListener("caeciliaOrgan", (spec) => {
     try { buildConsoleFromOrgan(spec); } catch (e) {}
+    try {
+      CAE_COUPLERS = (spec && spec.couplers) || [];
+      renderCouplers();
+    } catch (e) {}
   });
   window.__JUCE__.backend.addEventListener("caeciliaRegistration", (r) => {
     try { caeAdoptRegistration((r && r.stops) || []); } catch (e) {}
@@ -1240,6 +1298,13 @@ if (CAE_BRIDGE) {
           && st.genFired < genHost.children.length) {
         const b = genHost.children[st.genFired];
         b.classList.add("flash"); setTimeout(() => b.classList.remove("flash"), 260);
+      }
+
+      // The drawn couplers, straight from the instrument.
+      if (typeof st.couplers === "number") {
+        const host = document.getElementById("couplers");
+        if (host) for (const b of host.children)
+          b.classList.toggle("latched", (st.couplers & (1 << (+b.dataset.idx))) !== 0);
       }
 
       // Which pistons hold a registration, so an empty one looks empty.
