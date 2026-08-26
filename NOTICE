@@ -1,0 +1,36 @@
+Caecilia — a hybrid pipe-organ virtual instrument
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not
+use this file except in compliance with the License. You may obtain a copy of
+the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations under
+the License.
+
+--------------------------------------------------------------------------
+
+Build-time dependencies carry their own, separate terms.
+
+Caecilia's own source code is Apache-2.0. The libraries it is built against are
+licensed independently:
+
+  * JUCE (https://juce.com) — dual-licensed: AGPLv3 (free, for open-source
+    projects) or a paid commercial licence (for closed-source products).
+    Caecilia is open source and uses the free AGPLv3 route, so a compiled
+    plugin binary is distributed under the AGPLv3 while Caecilia's own source
+    remains Apache-2.0. Required only by the `plugin` and `ui` modules; the
+    pure `caecilia_core` static library never links JUCE and is unaffected.
+
+  * Catch2 (https://github.com/catchorg/Catch2) — Boost Software License 1.0.
+    Test-only.
+
+  * Microsoft WebView2 (Windows) — Microsoft's own SDK terms. Used by the
+    embedded console.
+
+See THIRD_PARTY_NOTICES.md for the full picture.

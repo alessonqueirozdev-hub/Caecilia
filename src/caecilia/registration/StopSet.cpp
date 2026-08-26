@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/registration/StopSet.h"
 
@@ -11,6 +8,32 @@
 
 namespace caecilia::registration
 {
+
+std::uint64_t StopSet::toMask() const noexcept
+{
+    std::uint64_t mask = 0;
+    for (const core::StopId id : ids_)
+        if (id.value < kMaskCapacity)
+            mask |= (std::uint64_t{1} << id.value);
+    return mask;
+}
+
+StopSet StopSet::fromMask(std::uint64_t mask)
+{
+    StopSet out;
+    // Ascending bit order gives ascending ids, so the invariant the whole class
+    // rests on holds without a sort.
+    for (std::size_t bit = 0; bit < kMaskCapacity; ++bit)
+        if ((mask & (std::uint64_t{1} << bit)) != 0)
+            out.ids_.push_back(core::StopId{ static_cast<std::uint16_t>(bit) });
+    return out;
+}
+
+bool StopSet::fitsInMask() const noexcept
+{
+    // Sorted ascending, so only the last id can be out of range.
+    return ids_.empty() || ids_.back().value < kMaskCapacity;
+}
 
 StopSet::StopSet(std::span<const core::StopId> ids)
     : ids_(ids.begin(), ids.end())

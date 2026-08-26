@@ -1,17 +1,15 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/dsp/Kernels.h"
 
 // ---------------------------------------------------------------------------
 // Portable scalar REFERENCE implementations.
 //
-// TODO(phase3): add SSE/AVX2 (x86-64) and NEON (Apple Silicon) backends behind
-// a runtime dispatch, each bit/ULP-compared to these references in CI. The
-// signatures above are the stable seam every backend must satisfy.
+// These four are not on the critical path -- the instrument's cost is the partial
+// oscillator, which has its backends in KernelsPartial.cpp and KernelsAvx2.cpp.
+// Measure before vectorising these too: the bus mixer moves a few hundred floats
+// per block where the oscillator runs hundreds of banks.
 // ---------------------------------------------------------------------------
 
 namespace caecilia::dsp::kernels

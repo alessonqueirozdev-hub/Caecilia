@@ -1,11 +1,8 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 //
-// Resampler / Kaiser-windowed-sinc accuracy tests. The proprietary sample layer
+// Resampler / Kaiser-windowed-sinc accuracy tests. The sample layer
 // reads material at a continuously-variable fractional rate, so the
 // reconstruction kernel must: preserve DC (unity gain), reproduce samples exactly
 // at integer positions, interpolate a ramp exactly in Linear mode, and reconstruct

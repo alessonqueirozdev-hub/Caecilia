@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Alesson Queiroz. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 // JUCE-free validation harness for FdnReverb: proves the tail is STABLE (decays
 // to silence, no NaN/Inf, energy never grows) and that the bass-bloom shelf gives
 // low frequencies a LONGER RT60 than the mids (late/early band energy ratio).

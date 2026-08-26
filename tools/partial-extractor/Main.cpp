@@ -1,13 +1,10 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 // caecilia-partial-extractor
 //
 // Offline CLI: FFT a steady pipe sample into an additive PartialBank (the
-// off-line half of the proprietary SpectralModel). Host-side tool; console and
+// off-line half of the SpectralModel). Host-side tool; console and
 // file I/O and heap use are all fine here.
 
 #include "caecilia/core/EngineTypes.h"

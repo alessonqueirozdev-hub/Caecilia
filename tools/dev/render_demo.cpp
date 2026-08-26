@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 // ===========================================================================
 // Caecilia demo render / verification harness.
@@ -12,8 +9,10 @@
 //   2. draws a full grand-plenum registration plus flute/solo colour and turns
 //      it into a bound AdditiveVoice pool (model::buildDemoRegistrationVoices),
 //   3. wires a real signal chain into a core::engine::AudioEngine — a WindModel
-//      (setWindSupply), an equal-tempered TuningModel (setTuning) and a Cathedral
-//      FdnReverb (setMasterReverb),
+//      (setWindSupply; inert, because nothing steps it: AudioEngine::stepWind() is
+//      an empty stub and this harness never calls WindModel::step either), an
+//      equal-tempered TuningModel (setTuning) and a Cathedral FdnReverb
+//      (setMasterReverb),
 //   4. plays a short 4-chord I-IV-V-I progression across the manuals + pedal by
 //      pushing NoteOn/NoteOff EngineCommands with sample-accurate timing,
 //   5. renders ~8 s to a normalised (~-3 dBFS) stereo WAV, and

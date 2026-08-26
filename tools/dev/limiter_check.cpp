@@ -1,7 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; see LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 // Validates the master limiter + master EQ:
 //  (A) a hot Tutti-like signal comes out at/below the ceiling, no NaN, click-free,
