@@ -44,10 +44,14 @@ struct PartialTrack
     float phase            = 0.0f;
     float windSensitivity  = 0.0f; ///< How strongly this partial tracks wind-pressure deviation.
     float onsetSeconds     = 0.0f; ///< Delay before this partial speaks (staggered chiff emergence).
-    /// Extra HF development gained as wind pressure rises.
+    /// How strongly THIS partial follows the wind's brightness axis, on top of
+    /// its tonal family's curve.
     ///
-    /// @todo Authored by the @c model module but consumed by nothing: the bank
-    ///       applies only the pitch and level axes of the wind response.
+    /// The family coefficient (@c wind::WindResponseCurve::brightnessPerDeviation)
+    /// says how much a Reed or a Flute dulls as the wind gives way; this says how
+    /// much more, or less, one partial of it does. Exactly the role
+    /// @ref windSensitivity plays on the pitch axis, and applied the same way, as
+    /// @c (1 + track).
     float brightnessTrack  = 0.0f;
 
     /// Stable identity of this partial, independent of where it lands in a

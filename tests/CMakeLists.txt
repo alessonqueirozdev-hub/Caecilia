@@ -45,6 +45,7 @@ add_executable(caecilia_tests
     dsp/DspMathTest.cpp
     synthesis/PartialBankTest.cpp
     synthesis/MixtureBreakTest.cpp
+    synthesis/WindBrightnessTest.cpp
     synthesis/RankVoiceTest.cpp
     dsp/ResamplerTest.cpp
     tuning/TemperamentTest.cpp

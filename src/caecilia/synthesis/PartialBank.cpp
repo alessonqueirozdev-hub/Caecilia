@@ -64,6 +64,20 @@ namespace
     /// value 5.64 octaves above 120 Hz, i.e. at the top of the compass.
     constexpr float kBloomOctaveSpan = 5.64f;
 
+    /// Decibels of spectral tilt per unit of the wind's brightness coefficient.
+    ///
+    /// Six, because that is the unit the whole model is already written in: a
+    /// spectral recipe's roll-off of 1.0 means -6 dB per octave of harmonic, so a
+    /// brightness coefficient of 1.0 meaning "one more unit of roll-off" makes the
+    /// two scales the same scale.
+    ///
+    /// What it comes to, against the demo organ's measured sag of a few percent
+    /// under a chord: a Reed (coefficient 1.20) losing ten percent of its wind
+    /// drops its sixteenth harmonic 2.9 dB while its fundamental does not move at
+    /// all. That is what a plenum losing its wind sounds like -- duller, not merely
+    /// flatter and quieter, which is all it did before.
+    constexpr float kWindTiltDbPerOctave = 6.0f;
+
     /// Linear interpolation between a bass anchor and a treble anchor, keyed on a
     /// normalised note height in [0, 1].
     [[nodiscard]] inline float lerp(float lo, float hi, float t) noexcept
@@ -244,6 +258,12 @@ void PartialBank::seedFrom(const SpectralModel& model, float /*phaseAlignSeconds
         const int h = static_cast<int>(p.ratioToF0 / base + 0.5f);
         p.harmonicIndex  = h < 1 ? 1 : h;
         p.logHarmonic    = std::log2(static_cast<float>(p.harmonicIndex));
+
+        // The wind's brightness axis moves a partial in proportion to how far up
+        // the rank's own harmonic series it sits -- a fundamental does not dull,
+        // its sixteenth harmonic dulls four octaves' worth -- scaled by whatever
+        // extra tracking the spectrum asked for.
+        p.windBrightExp  = p.logHarmonic * (1.0f + t.brightnessTrack);
         p.noteLevelScale = 1.0f;
         p.formantGain    = 1.0f;
     }
@@ -324,9 +344,33 @@ void PartialBank::trigger(core::PipeId pipe, core::Velocity velocity, double fre
     // that was thousands of transcendentals inside a single audio callback.
     const float logF0Over120  = logF0 - 6.9069f;            // log2(120) = 6.9069
 
+    // The wind's ATTACK axis, the fourth coefficient and the other one nothing
+    // read. A pipe on slack wind speaks more slowly: its jet takes longer to set
+    // the air column going. Read once at note-on rather than per block, because
+    // speech is settled in the first few milliseconds and re-timing it under a
+    // sustained note would be a wobble, not a speech.
+    //
+    // It has to reach the ENVELOPE and not only the per-partial blooms. Measured
+    // on an A3: the blooms are 16 ms of a 33 ms speech and the envelope attack is
+    // the rest, so stretching the blooms alone moved the speech 2.1% against a
+    // coefficient asking for 12%.
+    float speechStretch = 1.0f;
+    if (wind_ != nullptr)
+    {
+        const float dev = wind_->pressureDeviation(chest_, 0);
+        // Sag (negative deviation) lengthens the attack; surplus shortens it.
+        // Clamped hard: this multiplies a time, and a runaway reservoir reading
+        // must not be able to stall a pipe or make it click.
+        speechStretch = 1.0f - windCurve_.attack(dev);
+        speechStretch = speechStretch < 0.5f ? 0.5f
+                      : (speechStretch > 2.0f ? 2.0f : speechStretch);
+    }
+
     // Speech timing from the family profile, interpolated by pitch: a big bass pipe
-    // fills slowly and collapses slowly, a small treble pipe speaks at once.
-    setEnvelopeTimes(lerp(speech_.attackAtC2Sec,  speech_.attackAtC7Sec,  noteHeight),
+    // fills slowly and collapses slowly, a small treble pipe speaks at once. The
+    // RELEASE is left alone -- the coefficient is named for the attack, and a pipe
+    // whose wind is failing does not take longer to stop.
+    setEnvelopeTimes(speechStretch * lerp(speech_.attackAtC2Sec,  speech_.attackAtC7Sec,  noteHeight),
                      lerp(speech_.releaseAtC2Sec, speech_.releaseAtC7Sec, noteHeight));
 
     // Chest placement: consecutive semitones alternate sides of the case, exactly as
@@ -341,7 +385,7 @@ void PartialBank::trigger(core::PipeId pipe, core::Velocity velocity, double fre
     const float notePan  = side * stereoSpread_ * 0.35f * (0.6f + 0.4f * noteHeight);
     dsp::equalPowerPan(notePan, panL_, panR_);
 
-    const float bloomSpan = maxBloomSeconds_ - 0.008f;
+    const float bloomSpan = (maxBloomSeconds_ - 0.008f) * speechStretch;
 
     // One break for the whole stop, worked out once. Every rank moves together by
     // the same number of series steps, which is what keeps them distinct and keeps
@@ -419,7 +463,7 @@ void PartialBank::trigger(core::PipeId pipe, core::Velocity velocity, double fre
         // whole treble -- exactly where mixtures break.
         const float oct  = (logF0Over120 + p.logSounding) * (1.0f / kBloomOctaveSpan);
         const float frac = oct < 0.0f ? 0.0f : (oct > 1.0f ? 1.0f : oct);
-        p.bloomSeconds   = 0.008f + bloomSpan * frac;
+        p.bloomSeconds   = 0.008f * speechStretch + bloomSpan * frac;
 
         // Per-note treble tilt (Aeolus _h_lev): the higher the NOTE, the more its
         // upper harmonics are voiced down — real pipes shed brightness up the
@@ -615,6 +659,19 @@ void PartialBank::recomputeBlockCoefficients(std::size_t frames) noexcept
         std::exp2(static_cast<double>(windCurve_.pitchCents(deviation)) / 1200.0);
     const float levelLin = dbToLinear(windCurve_.levelDb(deviation));
 
+    // The brightness axis: extra spectral tilt, in dB per octave of harmonic.
+    //
+    // Guarded rather than always applied, because a reservoir sitting at its
+    // nominal pressure has nothing to say and this costs an exp2 per partial per
+    // block. How much: measured with `caecilia-bench --perrank --wind -0.10`, a
+    // 32-note tutti of 832 voices runs at 0.41 of a core either way -- the
+    // difference is under the noise floor of a desktop, because one exp2 sits
+    // beside the cos and sin this loop already takes per partial per block, and all
+    // three are dwarfed by the per-sample render. The guard stays anyway: it costs
+    // one compare, and at rest it is right every block.
+    const float windTiltDb  = kWindTiltDbPerOctave * windCurve_.brightness(deviation);
+    const bool  windTilting = windTiltDb > 0.001f || windTiltDb < -0.001f;
+
     // Attack pitch glide (bank-level): a labial pipe starts a touch flat and
     // "pulls" up to pitch as it speaks. Applied to every partial equally so the
     // whole tone glides in — a strong cue that this is a wind instrument, not a
@@ -709,6 +766,9 @@ void PartialBank::recomputeBlockCoefficients(std::size_t frames) noexcept
 
         p.blockGain = p.amplitude * aaGain * hfGain * bloomGain * levelLin
                     * p.noteLevelScale * p.formantGain;
+
+        if (windTilting)
+            p.blockGain *= dbToLinear(windTiltDb * p.windBrightExp);
     }
 }
 

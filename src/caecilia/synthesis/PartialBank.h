@@ -83,6 +83,11 @@ struct Partial
     // --- Per-note voicing baked at note-on (off the hot loop) ----------------
     int   harmonicIndex   = 1;     ///< Nearest integer harmonic number (>=1).
     float logHarmonic     = 0.0f;  ///< log2(harmonicIndex), precomputed off the hot path.
+    /// How far this partial moves on the wind's BRIGHTNESS axis, in octaves of
+    /// harmonic weighted by its own tracking. Precomputed at seed time because it
+    /// is a property of the spectrum and the alternative is a log2 and a multiply
+    /// per partial per block.
+    float windBrightExp   = 0.0f;
     float noteLevelScale  = 1.0f;  ///< Per-note treble tilt (upper partials voiced down on high notes).
     float formantGain     = 1.0f;  ///< Fixed-formant boost at this partial's absolute Hz (reeds).
 };
