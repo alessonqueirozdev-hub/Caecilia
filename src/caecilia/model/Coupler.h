@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -34,13 +31,16 @@ enum class CouplerKind : std::uint8_t
  * @brief A coupler: routes keypresses from a source division to a destination
  *        division, optionally transposed by whole octaves.
  *
- * Couplers are FIRST-CLASS in registration resolution: pressing a key on the
- * destination manual sounds the source division's engaged stops (shifted by
- * @c octaveShift). A unison coupler has @c octaveShift == 0; a super-octave is
- * +12, a sub-octave is -12. Intra-manual octave couplers set @c from == @c to.
+ * A coupler DESCRIBES the intent that pressing a key on the destination manual
+ * also sounds the source division's engaged stops (shifted by @c octaveShift).
+ * A unison coupler has @c octaveShift == 0; a super-octave is +12, a sub-octave
+ * is -12. Intra-manual octave couplers set @c from == @c to.
  *
- * This type is pure spec (immutable); the actual key expansion is applied by the
- * registration engine before the model's pipe-activation mapping is queried.
+ * @todo Nothing applies a coupler yet. This type is pure spec (immutable) and
+ * @ref mapNote is the only behaviour it has; @c RegistrationState can hold
+ * engaged couplers, but @c RegistrationState::engagedCouplers() has no readers,
+ * so no key expansion ever reaches @c Organ::collectPipesForKey and a drawn
+ * coupler is silent.
  * Aliased as @c CouplerSpec.
  */
 class Coupler

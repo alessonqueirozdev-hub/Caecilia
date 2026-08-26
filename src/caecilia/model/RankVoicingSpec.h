@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -10,17 +7,21 @@ namespace caecilia::model
 {
 
 /**
- * @brief Rank-level voicing character + the per-pipe scatter amounts that the
- *        synthesis @c PerPipeVoicer expands into deterministic hand-voicing
- *        variance keyed to each @c PipeId.
+ * @brief Rank-level voicing character + the per-pipe scatter amounts meant for
+ *        the synthesis @c PerPipeVoicer to expand into deterministic
+ *        hand-voicing variance keyed to each @c PipeId.
  *
  * This is the *source data* for voicing; it deliberately does NOT compute a
  * concrete per-pipe @c VoicingProfile (that belongs to the synthesis module,
  * which seeds a PRNG from the stable @c PipeId plus these curves). Keeping the
- * spec here means the same authored numbers drive audio, tooltips and the UI.
+ * spec here means one set of authored numbers can drive audio, tooltips and UI.
+ *
+ * @todo Nothing consumes this yet: @c Rank::voicing() has no callers and there
+ * is no conversion to @c synth::VoicingParams, so @c buildCaeciliaDemoOrgan
+ * authors these values per tonal family and the render path then ignores them.
  *
  * All amounts are normalised character controls unless a unit is named; a rank
- * with all-zero scatter sounds "cloned", which the scatter fields exist to
+ * with all-zero scatter would sound "cloned", which the scatter fields exist to
  * avoid so mixtures shimmer.
  */
 struct RankVoicingSpec

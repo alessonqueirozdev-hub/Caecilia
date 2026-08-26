@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -29,9 +26,14 @@ enum class DivisionKind : std::uint8_t
  *        (Great, Swell, Pedal, ...), together with its expression + wind.
  *
  * A division owns the list of @c StopId it presents on its jamb, a note compass,
- * whether it is @c enclosed in a swell box (so an expression pedal applies) and
- * whether it carries its own tremulant. It is pure spec; aliased as
+ * whether it is @c enclosed in a swell box (where an expression pedal would
+ * apply) and whether it carries its own tremulant. It is pure spec; aliased as
  * @c DivisionSpec.
+ *
+ * @todo Outside this module only the compass is read (the plugin uses it to
+ * bound each mapped MIDI channel). @ref isEnclosed, @ref hasTremulant, @ref stops
+ * and @ref windchests have no callers: there is no swell box and no per-division
+ * tremulant on the render path.
  */
 class Division
 {
@@ -92,9 +94,13 @@ using DivisionSpec = Division;
  * @brief The physical keyboard binding for a manual division.
  *
  * A @c Division is the *tonal* grouping; a @c Manual is the *console* keyboard
- * that plays it, carrying the MIDI channel and stacking order the midi router
- * needs. Splitting them lets a floating division be played from more than one
- * manual via couplers without duplicating its stops.
+ * that plays it, carrying the MIDI channel and stacking order a router would
+ * need. Splitting them is what would let a floating division be played from more
+ * than one manual via couplers without duplicating its stops.
+ *
+ * @todo Nothing reads @c Manual: @c Organ::manuals() has no callers, and the
+ * plugin derives its channel -> division map from @c Organ::divisions() order
+ * rather than from @c midiChannel. Couplers are not applied either.
  */
 struct Manual
 {

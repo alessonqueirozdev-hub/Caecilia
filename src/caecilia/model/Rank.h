@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -96,6 +93,29 @@ public:
      * nominal frequency. Allocates; call off the audio thread.
      */
     void generatePipes(double referenceA4Hz = 440.0);
+
+    /**
+     * @brief Record which division owns this rank, and stamp it onto every pipe.
+     * @param division The owning division.
+     *
+     * A rank cannot know its division when its pipes are generated: a Stop is
+     * what ties the two together, and the loader builds every rank before it
+     * builds any stop. So @ref generatePipes leaves @c PipeId::divisionId at 0
+     * and this runs afterwards, once the stop list exists.
+     *
+     * Without it every pipe the MODEL produces claims to belong to division 0,
+     * while the pipes the MIDI path produces carry their real division -- so the
+     * two describe the same physical pipe with different identities, and
+     * anything matching on PipeId (voice lookup, coupler activation, per-pipe
+     * voicing) silently disagrees with itself.
+     *
+     * Off-thread only; call after the stops are compiled and before couplers.
+     */
+    void stampDivision(core::DivisionId division) noexcept;
+
+    /// @return The division that owns this rank, or a default id before
+    ///         @ref stampDivision has run.
+    [[nodiscard]] core::DivisionId division() const noexcept { return division_; }
     /// @}
 
 private:
@@ -110,6 +130,7 @@ private:
     RankVoicingSpec     voicing_{};
     SampleSetDescriptor sampleSet_{};
     PipeSpatial         baseSpatial_{};
+    core::DivisionId    division_{};  ///< Set by stampDivision(), not at construction.
     std::vector<Pipe>   pipes_;
 };
 

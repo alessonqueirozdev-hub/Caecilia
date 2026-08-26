@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # `caecilia::model` — the instrument definition
@@ -52,12 +51,12 @@ loader, so `caecilia_core` never touches the filesystem.
 | `Stop` | Drawstop semantic identity: `TonalFamily` + `Footage` + `PitchClass` + `ChorusRole` + its `DivisionId` + the `RankId` it controls | `StopSpec` |
 | `Division` | Stops under one keyboard section; enclosure + tremulant + compass | `DivisionSpec` |
 | `Manual` | Physical keyboard binding (MIDI channel, stacking order) for a manual division | — |
-| `Coupler` | Routes keys between divisions with an octave shift; first-class in registration | `CouplerSpec` |
+| `Coupler` | Describes a key route between divisions with an octave shift. **Not applied anywhere yet** | `CouplerSpec` |
 | `Windchest` | Wind-supply grouping; nominal pressure + tremulant flag | `WindchestSpec` |
 | `Organ` | The compiled, immutable instrument; id-indexed arrays + activation mapping | `OrganSpec` |
-| `PipeSpatial` | Per-pipe placement feeding dsp early reflections | — |
-| `RankVoicingSpec` | Voicing character + per-pipe scatter amounts (source for `synthesis::PerPipeVoicer`) | — |
-| `SampleSetDescriptor` | Caecilia's **own** proprietary sample-format descriptor (never a GPL'd GO/HW set) | — |
+| `PipeSpatial` | Per-pipe placement authored for dsp early reflections; **not read by dsp yet** | — |
+| `RankVoicingSpec` | Voicing character + per-pipe scatter amounts (intended source for `synthesis::PerPipeVoicer`; **no consumer yet**) | — |
+| `SampleSetDescriptor` | Caecilia's **own** sample-format descriptor (never a GPL'd GO/HW set) | — |
 | `OrganDefinition` | Mutable document mirror | — |
 | `OrganLoader` | Parse / compile / load / serialize | — |
 
@@ -76,8 +75,10 @@ definition of each, no parallel hierarchy.
   of pipes a key sounds given the engaged stops, written into a **caller-owned
   buffer** (allocation-free, `noexcept`) so it can run on/near the audio thread.
 
-Couplers are **pre-expanded by the registration engine** into the `engaged` set
-before this is queried; `model` resolves only the direct division.
+`model` resolves only the direct division, so a coupler would have to be expanded
+into the `engaged` set before this is queried. **Nothing does that today** —
+`RegistrationState` can hold engaged couplers, but `engagedCouplers()` has no
+readers, so a drawn coupler is inert.
 
 ---
 
@@ -157,7 +158,14 @@ diagnostic, not a silent default. `Footage` is stored as an exact
 ## Status
 
 Scaffold (roadmap `v0`). `compile()`, structural validation, the pipe-activation
-mapping and the semantic taxonomy are real. The concrete JSON/YAML reader/writer
-(`parse` / `serialize`) is stubbed — it reports "not yet implemented" — pending
-the proprietary document reader; `compile()` already works on hand-built
-`OrganDefinition`s so the rest of the engine can be developed against real specs.
+mapping and the semantic taxonomy are implemented and unit-tested. The concrete
+JSON/YAML reader/writer is stubbed, and the two stubs fail differently: `parse`
+reports "not yet implemented" as a diagnostic, while `serialize` silently returns
+an empty string. `compile()` works on hand-built `OrganDefinition`s, which is how
+every organ in the tree is actually produced today (see `buildCaeciliaDemoOrgan`).
+
+Compiled but **not read by anything outside this module**: couplers, `Manual`,
+`Division::isEnclosed` / `hasTremulant`, `PipeSpatial`, `RankVoicingSpec` and
+`SampleSetDescriptor`. The pipe-activation mapping itself (`pipeForKey`,
+`collectPipesForKey`) is exercised only by the model tests — the plugin sounds a
+registration as one composite spectrum and never resolves a pipe.

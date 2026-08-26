@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/model/OrganLoader.h"
 
@@ -60,7 +57,7 @@ ParseResult OrganLoader::parse(std::string_view content,
     (void) content;
     (void) format;
 
-    // TODO(phase model): implement the proprietary JSON/YAML reader that fills an
+    // TODO(phase model): implement the JSON/YAML reader that fills an
     // OrganDefinition from `content`. Until then the loader compiles hand-built
     // definitions and reports parsing as unimplemented so callers fail loudly.
     result.diagnostics.error("Organ-file parsing is not yet implemented.",
@@ -193,6 +190,20 @@ CompileResult OrganLoader::compile(const OrganDefinition& definition)
         stops.push_back(std::move(s));
     }
 
+    // --- Stamp each rank with the division that draws it -------------------
+    // Ranks are compiled before stops, so generatePipes() could not know the
+    // division; the stop list is the only place that link exists. Run it here,
+    // once every stop is resolved and before the couplers, so that everything
+    // reading a pipe out of the model (Organ::collectPipesForKey, the
+    // PerPipeVoicer seed, coupler activation) sees the owning division.
+    // A unit rank shared by stops in two divisions takes the last stop's.
+    for (const Stop& s : stops)
+    {
+        const std::size_t rankIdx = s.rank().value;
+        if (rankIdx < ranks.size())
+            ranks[rankIdx].stampDivision(s.division());
+    }
+
     // --- Couplers: id == index; resolve from/to ----------------------------
     std::vector<Coupler> couplers;
     couplers.reserve(definition.couplers.size());
@@ -248,7 +259,7 @@ std::string OrganLoader::serialize(const OrganDefinition& definition, OrganFileF
 {
     (void) definition;
     (void) format;
-    // TODO(phase model): implement the proprietary JSON/YAML writer (round-trips
+    // TODO(phase model): implement the JSON/YAML writer (round-trips
     // an OrganDefinition back to editable document text).
     return {};
 }

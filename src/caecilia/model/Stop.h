@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -18,8 +15,10 @@ namespace caecilia::model
  * @brief A drawstop: the first-class carrier of semantic registration metadata.
  *
  * A Stop is the single source of the "pillar-5" semantic identity ("Great
- * Principal 8'") that feeds the tooltip, the screen-reader label, the MIDI-learn
- * target and the OSC address. It couples a rich taxonomy —
+ * Principal 8'") intended to feed the tooltip, the screen-reader label, the
+ * MIDI-learn target and the OSC address. None of those read it yet: the only
+ * caller of @ref displayName is @c RegistrationIntent::captureFrom, and the
+ * shipping console builds its own stop list. It couples a rich taxonomy —
  * @c TonalFamily + exact @c Footage + @c PitchClass + @c ChorusRole — to the
  * @c DivisionId it lives in and the @c RankId it controls.
  *

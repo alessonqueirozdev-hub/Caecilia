@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -19,8 +16,9 @@ namespace caecilia::model
  * A Pipe carries frequency and voicing — the two things the brief asks of it:
  * - **Frequency**: a nominal sounding frequency (equal-temperament A440,
  *   scaled by the owning rank's exact @c Footage) computed at load time as a
- *   sensible default; the authoritative, temperament-aware frequency is read
- *   at render time from @ref frequencyUnder using the engine's @c ITuning.
+ *   sensible default. @ref frequencyUnder is the temperament-aware accessor,
+ *   but nothing calls it: the render path asks @c ITuning itself (see
+ *   @c synth::soundingFrequencyHz) and never reads a @c Pipe at all today.
  * - **Voicing**: the stable @c PipeId that seeds the synthesis @c PerPipeVoicer,
  *   plus optional per-pipe *overrides* imported from a real-instrument voicing
  *   measurement (all zero => derive everything deterministically from the seed).

@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -16,11 +13,15 @@ namespace caecilia::model
 
 /**
  * @brief Descriptor for a rank's recorded material, in Caecilia's OWN
- *        proprietary sample/voicing-memory format.
+ *        sample/voicing-memory format.
  *
- * This is a pure description handed to the shell's off-thread streaming loader;
+ * This is a pure description meant for the shell's off-thread streaming loader;
  * it holds no audio. The @c resourceToken is an opaque identifier the shell
- * resolves to a stream (the pure core never touches the OS or the filesystem).
+ * would resolve to a stream (the pure core never touches the OS or filesystem).
+ *
+ * @todo No such loader exists. Nothing outside this module reads a descriptor or
+ * @c Rank::hasSamples(), so naming a sample set changes nothing about what
+ * sounds.
  *
  * Caecilia never reads a GPL'd GrandOrgue / Hauptwerk sample set: this format,
  * the offline analysis data and the @c SpectralModel it produces are owned IP.

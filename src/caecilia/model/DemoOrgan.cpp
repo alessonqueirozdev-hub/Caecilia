@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/model/DemoOrgan.h"
 
@@ -43,6 +40,31 @@ namespace
         return (8.0f * static_cast<float>(f.den)) / static_cast<float>(f.num);
     }
 
+    /// How a rank's harmonic development scales with the size of its pipes.
+    ///
+    /// Organ builders do not voice a 2' rank like a 16' one. Small pipes develop
+    /// fewer usable upper partials — partly the scaling law (a halving ratio
+    /// wider than 1:2 makes short pipes relatively broader and duller), partly
+    /// plain practicality: the tenth harmonic of a 1' rank is inaudible and only
+    /// adds hiss. The recipes used to ignore the footage they were handed, so the
+    /// whole 26-stop instrument was five timbres transposed, and the chorus never
+    /// cohered the way a real one does.
+    ///
+    /// @return  .first  = harmonic count multiplier, .second = extra roll-off.
+    [[nodiscard]] std::pair<float, float> scalingForFootage(core::Footage f) noexcept
+    {
+        // Octaves above 8' unison: 16' -> -1, 8' -> 0, 4' -> +1, 2' -> +2, 1' -> +3.
+        const double feet = f.feet();
+        const float octavesUp = feet > 0.0
+            ? static_cast<float>(std::log2(8.0 / feet))
+            : 0.0f;
+        const float clamped = clampf(octavesUp, -2.0f, 3.0f);
+        // Each octave up sheds ~18% of the harmonic count and steepens the
+        // roll-off by ~6%.
+        return { clampf(1.0f - 0.18f * clamped, 0.30f, 1.45f),
+                 clampf(1.0f + 0.06f * clamped, 0.85f, 1.30f) };
+    }
+
     /// Append one partial to a model.
     void appendPartial(synth::SpectralModel& model,
                        float ratio,
@@ -50,7 +72,8 @@ namespace
                        float windSensitivity,
                        float onsetSeconds,
                        float brightnessTrack,
-                       float phase = 0.0f)
+                       float phase = 0.0f,
+                       bool  breaksBack = false)
     {
         synth::PartialTrack t;
         t.ratioToF0       = ratio;
@@ -59,6 +82,7 @@ namespace
         t.windSensitivity = windSensitivity;
         t.onsetSeconds    = onsetSeconds;
         t.brightnessTrack = brightnessTrack;
+        t.breaksBack      = breaksBack;
         model.partials.push_back(t);
     }
 } // namespace
@@ -67,7 +91,7 @@ namespace
 // Spectral recipes.
 // ---------------------------------------------------------------------------
 
-synth::SpectralModel makeSpectralPrincipal(core::Footage /*footage*/,
+synth::SpectralModel makeSpectralPrincipal(core::Footage footage,
                                            float         brightness,
                                            std::size_t   numHarmonics)
 {
@@ -75,9 +99,13 @@ synth::SpectralModel makeSpectralPrincipal(core::Footage /*footage*/,
     model.fundamentalHz = kNominalFundamentalHz;
 
     // Brighter voices roll off more slowly. rolloff ~1.0 => -6 dB/octave.
-    const float rolloff = clampf(1.35f - 0.35f * clampf(brightness, 0.0f, 2.0f), 0.55f, 1.6f);
+    const auto  scale   = scalingForFootage(footage);
+    const float rolloff = clampf(1.35f - 0.35f * clampf(brightness, 0.0f, 2.0f), 0.55f, 1.6f)
+                        * scale.second;
 
-    const std::size_t harmonics = numHarmonics < 1 ? 1 : numHarmonics;
+    const auto scaled = static_cast<std::size_t>(
+        static_cast<float>(numHarmonics) * scale.first + 0.5f);
+    const std::size_t harmonics = scaled < 1 ? 1 : scaled;
     for (std::size_t n = 1; n <= harmonics; ++n)
     {
         const float fn      = static_cast<float>(n);
@@ -90,12 +118,16 @@ synth::SpectralModel makeSpectralPrincipal(core::Footage /*footage*/,
     return model;
 }
 
-synth::SpectralModel makeSpectralFlute(core::Footage /*footage*/,
+synth::SpectralModel makeSpectralFlute(core::Footage footage,
                                        float         brightness,
                                        bool          stopped)
 {
     synth::SpectralModel model;
     model.fundamentalHz = kNominalFundamentalHz;
+
+    // Small flutes are purer still: the scaling roll-off takes their already weak
+    // upper partials further down.
+    const float extraRolloffDb = -6.0f * (scalingForFootage(footage).second - 1.0f) * 10.0f;
 
     // Strong, pure fundamental — the body of a flute/bourdon.
     appendPartial(model, 1.0f, 0.0f, 0.20f, 0.0f, 0.01f);
@@ -107,29 +139,32 @@ synth::SpectralModel makeSpectralFlute(core::Footage /*footage*/,
         for (int idx = 0; idx < 4; ++idx)
         {
             const float n     = static_cast<float>(odd[idx]);
-            const float ampDb = -16.0f - 6.0f * static_cast<float>(idx) + 3.0f * (brightness - 1.0f);
+            const float ampDb = -16.0f - 6.0f * static_cast<float>(idx)
+                              + 3.0f * (brightness - 1.0f) + extraRolloffDb;
             appendPartial(model, n, ampDb, 0.18f, 0.002f * static_cast<float>(idx), 0.02f);
         }
     }
     else
     {
         // Open flute: a touch of the low even harmonics too, still gentle.
-        appendPartial(model, 2.0f, -14.0f + 3.0f * (brightness - 1.0f), 0.18f, 0.001f, 0.02f);
-        appendPartial(model, 3.0f, -22.0f, 0.18f, 0.002f, 0.02f);
-        appendPartial(model, 4.0f, -30.0f, 0.18f, 0.003f, 0.02f);
+        appendPartial(model, 2.0f, -14.0f + 3.0f * (brightness - 1.0f) + extraRolloffDb, 0.18f, 0.001f, 0.02f);
+        appendPartial(model, 3.0f, -22.0f + extraRolloffDb, 0.18f, 0.002f, 0.02f);
+        appendPartial(model, 4.0f, -30.0f + extraRolloffDb, 0.18f, 0.003f, 0.02f);
     }
     return model;
 }
 
-synth::SpectralModel makeSpectralString(core::Footage /*footage*/,
+synth::SpectralModel makeSpectralString(core::Footage footage,
                                         float         detuneCents,
                                         float         brightness)
 {
     synth::SpectralModel model;
     model.fundamentalHz = kNominalFundamentalHz;
 
-    constexpr std::size_t kHarmonics = 16;
-    const float rolloff  = clampf(0.70f - 0.10f * (brightness - 1.0f), 0.40f, 1.0f); // slow => bright uppers
+    const auto scale = scalingForFootage(footage);
+    const auto kHarmonics = static_cast<std::size_t>(16.0f * scale.first + 0.5f);
+    const float rolloff  = clampf(0.70f - 0.10f * (brightness - 1.0f), 0.40f, 1.0f)
+                         * scale.second; // slow => bright uppers
     const float detune   = std::pow(2.0f, detuneCents / 1200.0f);
     const bool  celeste  = std::fabs(detuneCents) > 1.0e-3f;
 
@@ -150,15 +185,17 @@ synth::SpectralModel makeSpectralString(core::Footage /*footage*/,
     return model;
 }
 
-synth::SpectralModel makeSpectralReed(core::Footage /*footage*/,
+synth::SpectralModel makeSpectralReed(core::Footage footage,
                                       float         formantCenterHz,
                                       float         brightness)
 {
     synth::SpectralModel model;
     model.fundamentalHz = kNominalFundamentalHz;
 
-    constexpr std::size_t kHarmonics = 16;
-    const float rolloff = clampf(0.90f - 0.10f * (brightness - 1.0f), 0.50f, 1.2f);
+    const auto scale = scalingForFootage(footage);
+    const auto kHarmonics = static_cast<std::size_t>(16.0f * scale.first + 0.5f);
+    const float rolloff = clampf(0.90f - 0.10f * (brightness - 1.0f), 0.50f, 1.2f)
+                        * scale.second;
 
     for (std::size_t n = 1; n <= kHarmonics; ++n)
     {
@@ -205,9 +242,11 @@ synth::SpectralModel makeSpectralMixture(std::span<const core::Footage> ranks,
         if (ratio <= 0.0f)
             continue;
         const float ampDb = -4.0f - 3.0f * static_cast<float>(idx) + brightBoost;
-        appendPartial(model, ratio, ampDb, 0.45f, 0.001f * static_cast<float>(idx), 0.05f);
+        appendPartial(model, ratio, ampDb, 0.45f, 0.001f * static_cast<float>(idx), 0.05f,
+                      /*phase*/ 0.0f, /*breaksBack*/ true);
         // The octave above each rank pitch adds the characteristic mixture shimmer.
-        appendPartial(model, ratio * 2.0f, ampDb - 10.0f, 0.50f, 0.002f * static_cast<float>(idx), 0.06f);
+        appendPartial(model, ratio * 2.0f, ampDb - 10.0f, 0.50f, 0.002f * static_cast<float>(idx), 0.06f,
+                      /*phase*/ 0.0f, /*breaksBack*/ true);
         ++idx;
     }
     return model;
@@ -227,9 +266,9 @@ synth::SpectralModel makeSpectralMutation(core::Footage footage,
     appendPartial(model, 1.0f, -20.0f, 0.25f, 0.0f, 0.01f);
     if (ratio > 0.0f)
     {
-        appendPartial(model, ratio,        0.0f + brightBoost, 0.30f, 0.002f, 0.02f);
-        appendPartial(model, ratio * 2.0f, -14.0f,             0.30f, 0.004f, 0.03f);
-        appendPartial(model, ratio * 3.0f, -22.0f,             0.35f, 0.006f, 0.04f);
+        appendPartial(model, ratio,        0.0f + brightBoost, 0.30f, 0.002f, 0.02f, 0.0f, true);
+        appendPartial(model, ratio * 2.0f, -14.0f,             0.30f, 0.004f, 0.03f, 0.0f, true);
+        appendPartial(model, ratio * 3.0f, -22.0f,             0.35f, 0.006f, 0.04f, 0.0f, true);
     }
     return model;
 }
@@ -298,94 +337,142 @@ float compositeRankGainDb(const Stop& stop) noexcept
     return base - 3.3f * static_cast<float>(stop.footage().octaveClassFrom8());
 }
 
-/// Loudest a seeded voice is ever normalised to. A full TUTTI caps here; the
-/// soft-clip downstream keeps even this from saturating. Matches the level users
-/// are already comfortable with, so the plenum/tutti loudness is unchanged.
-constexpr double kMaxCompositeEnergy = 0.40;
-/// Quietest a seeded voice is normalised to — a single soft flute/string for
-/// psalmody or plainchant accompaniment. Lowered from 0.22 to 0.06: the old floor
-/// pinned every 1-3-stop registration to one identical energy and squeezed the
-/// whole soft-to-tutti span into ~5 dB (the "compression always on" flatness).
-/// At 0.06 a single soft stop is genuinely soft and the plenum genuinely loud —
-/// ~16 dB of registral dynamics restored (a real organ spans far more).
-constexpr double kMinCompositeEnergy = 0.06;
+/// Fixed calibration from composite spectral energy to voice amplitude.
+///
+/// This replaces a per-registration ENERGY NORMALISATION — an automatic gain
+/// control that scaled every registration to a target RMS. That target was
+/// clamped to [0.06, 0.40], so the entire span from one soft flute to full
+/// Tutti was squeezed into ~13 dB, and past about thirteen stops' worth of
+/// weight the ceiling meant drawing MORE stops changed the timbre without
+/// changing the loudness at all. On a real instrument the registration IS the
+/// dynamic: there is no touch sensitivity and no swell beyond the shades, so
+/// flattening it removes the organ's principal expressive resource.
+///
+/// The value is chosen so a single Principal 8' lands exactly where it did
+/// under the old AGC; everything else now grows and shrinks around it. Headroom
+/// comes from the per-voice base gain plus the master limiter — which is only
+/// now doing its job, since it used to read from an undersized look-ahead ring
+/// and could not hold the ceiling at all.
+constexpr double kRegistrationCalibration = 0.0879; // 0.11 / energy(Principal 8')
 
-/// Per-rank loudness weight: how much a drawn rank adds to the overall level.
-/// Foundations pull the tone up; soft flutes/strings barely raise it; reeds and
-/// mixtures are louder. This is what makes a Bourdon-only registration soft and a
-/// full plenum loud, instead of every registration being the same volume.
-[[nodiscard]] double rankLoudnessWeight(core::TonalFamily family,
-                                        core::Footage     footage,
-                                        bool              unisonReferenced) noexcept
+/// Scale every partial by a fixed factor expressed in the spectrum's dB domain.
+/// Unlike the old normaliser this does NOT depend on the registration, so
+/// stacking ranks genuinely accumulates energy. Off-thread.
+void scaleComposite(synth::SpectralModel& c, double factor) noexcept
 {
-    double base;
-    if (unisonReferenced)                 base = 0.85;   // mixtures / mutations
-    else switch (family)
-    {
-        case core::TonalFamily::Principal: base = 1.00; break;
-        case core::TonalFamily::Flute:     base = 0.65; break;  // soft, dark
-        case core::TonalFamily::String:    base = 0.55; break;  // softest
-        case core::TonalFamily::Reed:      base = 1.35; break;  // loud
-        case core::TonalFamily::Mixture:   base = 1.10; break;
-        default:                           base = 0.80; break;
-    }
-    // Footage tilt: 16' adds gravity, higher pitches contribute a little less.
-    const double feet = footage.feet();
-    double ftFactor = 1.0;
-    if      (feet >= 16.0) ftFactor = 1.10;
-    else if (feet >= 8.0)  ftFactor = 1.00;
-    else if (feet >= 4.0)  ftFactor = 0.85;
-    else if (feet >= 2.0)  ftFactor = 0.70;
-    else                   ftFactor = 0.55;
-    return base * ftFactor;
-}
-
-/// Map a summed registration weight to a target RMS energy (soft -> loud), so
-/// dynamics track the registration instead of being flattened to one level.
-[[nodiscard]] double loudnessTargetForWeight(double weight) noexcept
-{
-    const double t = 0.11 * std::sqrt(weight > 0.0 ? weight : 0.0);
-    return t < kMinCompositeEnergy ? kMinCompositeEnergy
-         : (t > kMaxCompositeEnergy ? kMaxCompositeEnergy : t);
-}
-
-/// Scale every partial so sqrt(sum(amp^2)) == targetEnergy. Off-thread.
-void normalizeComposite(synth::SpectralModel& c, double targetEnergy) noexcept
-{
-    double energy = 0.0;
-    for (const synth::PartialTrack& p : c.partials)
-    {
-        const double a = std::pow(10.0, static_cast<double>(p.ampDb) / 20.0);
-        energy += a * a;
-    }
-    if (energy <= 1.0e-9)
+    if (factor <= 0.0)
         return;
-    const float scaleDb = 20.0f * std::log10(static_cast<float>(targetEnergy / std::sqrt(energy)));
+    const float dB = 20.0f * std::log10(static_cast<float>(factor));
     for (synth::PartialTrack& p : c.partials)
-        p.ampDb += scaleDb;
+        p.ampDb += dB;
 }
 
-/// Break the sterile phase-coherence of a pure additive stack: give each partial a
-/// deterministic pseudo-random start phase and a few cents of detune. Real pipes
-/// are never perfectly harmonic or in phase — this alone pulls the tone away from
-/// the "electronic organ" sound. Deterministic (index-hashed) so it is stable.
-void humanizeComposite(synth::SpectralModel& c) noexcept
+/// Carry the fixed-Hz formant envelope of the first FORMANTED rank into the
+/// composite.
+///
+/// Both composite builders used to drop it on the floor: they copied partial
+/// tracks one by one and never touched `steadyFormants`, so a drawn Trompette
+/// lost the 450 Hz / snarl / 2.6 kHz resonances that ARE its character and came
+/// out as a generic bright harmonic stack. The envelope is a property of the
+/// resonator, not of any one partial, so the composite takes it from the first
+/// rank that has one.
+void adoptFormants(synth::SpectralModel& composite, const synth::SpectralModel& recipe) noexcept
+{
+    if (composite.steadyFormants.peakCount == 0 && recipe.steadyFormants.peakCount > 0)
+        composite.steadyFormants = recipe.steadyFormants;
+}
+
+/// Deterministic per-rank tuning offset, in cents.
+///
+/// Real ranks are tuned as units and sit a couple of cents apart from each
+/// other; the pipes WITHIN a rank are near-harmonic. The previous humanisation
+/// inverted that: it scattered every partial independently, including each
+/// rank's own fundamental, so the instrument's pitch shifted by up to 3.5 cents
+/// and — because the scatter was keyed on the partial's index in the composite
+/// vector — the shift CHANGED depending on the order in which stops were drawn.
+///
+/// Keying the offset on (family, footage) instead makes it stable: the same rank
+/// always sits in the same place, drawing stops in any order gives the same
+/// tuning, and the beating between ranks is deliberate rather than accidental.
+[[nodiscard]] float rankDetuneCents(core::TonalFamily family, core::Footage footage) noexcept
 {
     std::uint32_t h = 0x9E3779B9u;
-    std::size_t i = 0;
-    for (synth::PartialTrack& p : c.partials)
-    {
-        h ^= static_cast<std::uint32_t>(i * 2654435761u);
-        h = (h << 13) | (h >> 19);
-        h *= 0x85EBCA6Bu;
-        const float r1 = static_cast<float>(h & 0xFFFFu) / 65535.0f;         // 0..1
-        const float r2 = static_cast<float>((h >> 16) & 0xFFFFu) / 65535.0f; // 0..1
-        p.phase = r1 * 6.2831853f;                                            // random start phase
-        const float cents = (r2 - 0.5f) * 7.0f;                               // +/- 3.5 cents
-        p.ratioToF0 *= std::pow(2.0f, cents / 1200.0f);
-        ++i;
-    }
+    h ^= static_cast<std::uint32_t>(family) * 2654435761u;
+    h ^= static_cast<std::uint32_t>(footage.num) * 40503u;
+    h ^= static_cast<std::uint32_t>(footage.den) * 2246822519u;
+    h ^= h >> 16; h *= 0x7FEB352Du; h ^= h >> 15;
+    const float unit = static_cast<float>(h & 0xFFFFu) / 65535.0f; // 0..1
+    return (unit - 0.5f) * 4.0f;                                   // +/- 2 cents
 }
+
+/// Apply a rank's tuning offset and a deterministic start phase to its partials.
+///
+/// The whole rank shifts together (so it stays internally harmonic), the
+/// fundamental included; a much smaller residual scatter is added to the UPPER
+/// partials only, standing in for the slight inharmonicity of a real pipe.
+///
+/// @param rankSalt Distinguishes ranks that are otherwise the same recipe.
+///
+/// That last parameter is not decoration. This organ has FOUR Reed 8' ranks and
+/// three Flute 8'; keyed on (family, footage) alone they received identical seeds,
+/// therefore identical start phases and identical detune, therefore summed
+/// COHERENTLY -- four ranks at four times amplitude where four separate ranks of
+/// pipes give twice. Measured at 5.9 dB on a full Tutti.
+///
+/// It is the tutti hotspot the per-VOICE decorrelation was written to fix. That
+/// one addressed two voices sounding the same PITCH and could not address two
+/// RANKS being the same recipe, because the salt was per voice and the seed it
+/// salted was already the same.
+void voiceRank(synth::SpectralModel& c, std::size_t firstPartial,
+               core::TonalFamily family, core::Footage footage,
+               std::uint32_t rankSalt) noexcept
+{
+    const float rankRatio = std::pow(2.0f,
+        (rankDetuneCents(family, footage)
+         // A rank's own place in the tuning, so two Trompettes on different
+         // manuals sit a hair apart the way two real ranks do.
+         + (static_cast<float>((rankSalt * 2654435761u) >> 20 & 0x3FFu) / 1023.0f - 0.5f) * 3.0f)
+        / 1200.0f);
+
+    std::uint32_t h = 0x85EBCA6Bu
+                    ^ (static_cast<std::uint32_t>(family) * 2654435761u)
+                    ^ (static_cast<std::uint32_t>(footage.num) * 2246822519u)
+                    ^ (rankSalt * 0x9E3779B9u);
+    for (std::size_t i = firstPartial; i < c.partials.size(); ++i)
+    {
+        synth::PartialTrack& p = c.partials[i];
+        h ^= h << 13; h ^= h >> 17; h ^= h << 5;
+
+        p.phase = static_cast<float>(h & 0xFFFFu) / 65535.0f * 6.2831853f;
+
+        // Identity = (rank, position within the rank). Stable no matter where this
+        // partial ends up in the composite vector.
+        p.seed = h | 1u;
+
+        float ratio = rankRatio;
+        if (i > firstPartial) // leave the rank's own fundamental exactly in tune
+        {
+            const float residual = (static_cast<float>((h >> 16) & 0xFFFFu) / 65535.0f - 0.5f);
+            ratio *= std::pow(2.0f, residual / 1200.0f); // +/- 0.5 cent
+        }
+        p.ratioToF0 *= ratio;
+    }
+
+    // Where this rank's own fundamental sits, so the treble tilt can tell a rank's
+    // fundamental from a fourth harmonic.
+    //
+    // Read off the FOOTAGE, not off the spectrum. The lowest partial present is not
+    // the rank's fundamental: a Nazard 2 2/3' carries a weak trace at the unison
+    // (measured ratios 1.0, 3.0, 6.0, 9.0 — it speaks at 3, not at 1), and a
+    // compound stop has one fundamental per member. Both make a scan for the
+    // minimum answer 1.0 and change nothing, which is exactly what the first
+    // attempt at this did.
+    const double feet = footage.feet();
+    const float  base = feet > 0.0 ? static_cast<float>(8.0 / feet) : 1.0f;
+    for (std::size_t i = firstPartial; i < c.partials.size(); ++i)
+        c.partials[i].rankBaseRatio = base;
+}
+
 } // namespace
 
 synth::SpectralModel buildRegistrationCompositeSpectrum(
@@ -395,10 +482,11 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
     if (engagedStops.empty())
         return composite;
 
-    // Gentle global trim so stacking more ranks never clips the master bus.
-    const float stackTrimDb = -5.0f * std::log10(static_cast<float>(engagedStops.size()));
-
-    double loudnessWeight = 0.0;
+    // NOTE: there is deliberately no "stack trim" here any more. It used to scale
+    // every rank by -5*log10(n), which was silently cancelled by the energy
+    // normaliser that followed and therefore did nothing at all. Now that the
+    // normaliser is gone, drawing more stops must genuinely add energy — that is
+    // what registration dynamics ARE — and headroom is the limiter's job.
     for (const core::StopId sid : engagedStops)
     {
         const Stop* stop = organ.stop(sid);
@@ -410,12 +498,13 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
         const bool unisonReferenced = stop->family() == core::TonalFamily::Mixture
                                    || stop->isCompound()
                                    || stop->footage().isMutation();
-        loudnessWeight += rankLoudnessWeight(stop->family(), stop->footage(), unisonReferenced);
         const double feet = stop->footage().feet();
         const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
-        const float  gainDb = compositeRankGainDb(*stop) + stackTrimDb;
+        const float  gainDb = compositeRankGainDb(*stop);
 
+        const std::size_t rankFirst = composite.partials.size();
         const synth::SpectralModel recipe = spectralModelForStop(*stop);
+        adoptFormants(composite, recipe);
         for (const synth::PartialTrack& p : recipe.partials)
         {
             synth::PartialTrack t = p;
@@ -423,12 +512,244 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
             t.ampDb     = p.ampDb + gainDb;
             composite.partials.push_back(t);
         }
+        voiceRank(composite, rankFirst, stop->family(), stop->footage(),
+                  static_cast<std::uint32_t>(sid.value) + 1u);
     }
 
-    humanizeComposite(composite);
-    normalizeComposite(composite, loudnessTargetForWeight(loudnessWeight));
+    scaleComposite(composite, kRegistrationCalibration);
     composite.fundamentalHz = 0.0f; // set per note by the voice at noteOn
     return composite;
+}
+
+synth::SpeechProfile speechProfileFor(core::TonalFamily family, core::Footage footage) noexcept
+{
+    // The struct's own defaults are a Principal: 55 ms at C2 down to 10 ms at C7,
+    // releasing in 300/110. Every other family is expressed as a multiple of that,
+    // because what matters musically is the RATIO between families on the same
+    // registration, not any one absolute figure.
+    synth::SpeechProfile p{};
+    float attack = 1.0f;
+    float release = 1.0f;
+
+    switch (family)
+    {
+        case core::TonalFamily::Reed:
+            // A tongue beats against the shallot as soon as there is wind. Reeds
+            // are the promptest thing on the instrument and their attack is a
+            // large part of why a Trompette cuts through a plenum.
+            attack = 0.45f; release = 0.75f;
+            break;
+        case core::TonalFamily::Flute:
+            // Wide scale, often stopped: a substantial volume of air to fill
+            // before the column speaks, and it collapses slowly too.
+            attack = 1.35f; release = 1.25f;
+            break;
+        case core::TonalFamily::String:
+            // Narrow scale. The hardest rank on the organ to get speaking
+            // cleanly -- which is why real string ranks carry a beard or a roller.
+            attack = 1.90f; release = 1.15f;
+            break;
+        case core::TonalFamily::Mixture:
+            // Small pipes, tiny air columns: essentially instantaneous, and the
+            // crown of a plenum is expected to arrive with the chorus rather than
+            // after it.
+            attack = 0.55f; release = 0.70f;
+            break;
+        case core::TonalFamily::Hybrid:
+        case core::TonalFamily::Principal:
+        case core::TonalFamily::Percussion:
+        case core::TonalFamily::Undefined:
+        default:
+            break;
+    }
+
+    // Pipe LENGTH dominates within a family as well as across the compass: a 16'
+    // Bourdon fills far more slowly than a 2' of the same construction. The
+    // per-note interpolation already handles where on the keyboard a note sits;
+    // this handles where the whole rank sits.
+    const double feet = footage.feet();
+    if (feet > 0.0)
+    {
+        const float lengthScale = static_cast<float>(std::pow(feet / 8.0, 0.25));
+        attack  *= lengthScale;
+        release *= lengthScale;
+    }
+
+    p.attackAtC2Sec  *= attack;
+    p.attackAtC7Sec  *= attack;
+    p.releaseAtC2Sec *= release;
+    p.releaseAtC7Sec *= release;
+    return p;
+}
+
+RankVoicing buildRankVoicing(const Organ& organ, core::StopId stop)
+{
+    RankVoicing v;
+    const Stop* s = organ.stop(stop);
+    if (s == nullptr)
+        return v;
+
+    v.stop     = s->id();
+    v.division = s->division();
+    v.family   = s->family();
+    v.footage  = s->footage();
+    v.speech   = speechProfileFor(s->family(), s->footage());
+
+    // The chest that feeds this rank, which is what the voice reads its wind
+    // pressure from. It lives on the RANK, not on the stop -- and leaving it at its
+    // default put every rank of the instrument on chest 0: the Récit's tremulant
+    // would have reached nothing, and no division would have sagged under its own
+    // load. Caught by "The tremulant reaches the pipes".
+    if (const Rank* rank = organ.rank(s->rank()))
+        v.chest = rank->windchest();
+
+    // Exactly what buildRegistrationCompositeSpectrum does for one rank, in the
+    // same order and with the same numbers. Not "equivalent": the same code path,
+    // so the two cannot drift and the agreement test is structural.
+    const bool unisonReferenced = s->family() == core::TonalFamily::Mixture
+                               || s->isCompound()
+                               || s->footage().isMutation();
+    const double feet = s->footage().feet();
+    const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
+    const float  gainDb = compositeRankGainDb(*s);
+
+    const synth::SpectralModel recipe = spectralModelForStop(*s);
+    adoptFormants(v.spectrum, recipe);
+    for (const synth::PartialTrack& p : recipe.partials)
+    {
+        synth::PartialTrack t = p;
+        t.ratioToF0 = static_cast<float>(static_cast<double>(p.ratioToF0) * fold);
+        t.ampDb     = p.ampDb + gainDb;
+        v.spectrum.partials.push_back(t);
+    }
+    // The same salt the composite uses for this stop, so the two agree partial
+    // for partial -- which is what PerRankDynamicsTest asserts.
+    voiceRank(v.spectrum, 0, s->family(), s->footage(),
+              static_cast<std::uint32_t>(stop.value) + 1u);
+
+    // The same fixed calibration. It is registration-INDEPENDENT by design -- that
+    // is what makes drawing more stops genuinely louder -- and it is exactly why
+    // applying it per rank here gives the same result as applying it once to the
+    // sum over there.
+    scaleComposite(v.spectrum, kRegistrationCalibration);
+    v.spectrum.fundamentalHz = 0.0f; // set per note by the voice at noteOn
+    return v;
+}
+
+core::DivisionId primaryManual(const Organ& organ) noexcept
+{
+    // Count stops per MANUAL division. A pedal division is never the answer: it
+    // is played with the feet, its compass is thirty notes, and routing a
+    // controller's manual keyboard there is silently wrong rather than merely
+    // odd.
+    const Division*  best      = nullptr;
+    std::size_t      bestCount = 0;
+
+    for (const Division& d : organ.divisions())
+    {
+        if (d.kind() == DivisionKind::Pedal)
+            continue;
+        // Strictly greater, so a tie keeps the earlier division and the answer
+        // does not depend on compile order.
+        if (best == nullptr || d.stopCount() > bestCount)
+        {
+            best      = &d;
+            bestCount = d.stopCount();
+        }
+    }
+
+    if (best != nullptr)
+        return best->id();
+
+    // No manuals at all. Something is odd about this instrument, but answering
+    // with a division that exists beats answering with one that does not.
+    return organ.divisions().empty() ? core::DivisionId{} : organ.divisions().front().id();
+}
+
+std::vector<core::StopId> defaultOpeningRegistration(const Organ& organ, core::DivisionId manual)
+{
+    std::vector<core::StopId> drawn;
+
+    // A classic opening plenum: the whole principal chorus, its mixtures, and an
+    // 8' flute underneath for body.
+    for (const Stop& s : organ.stops())
+    {
+        if (s.division() != manual)
+            continue;
+        const bool principalChorus = s.family() == core::TonalFamily::Principal
+                                  || s.family() == core::TonalFamily::Mixture;
+        const bool fluteFoundation = s.family() == core::TonalFamily::Flute
+                                  && s.footage() == core::footage::kEight;
+        if (principalChorus || fluteFoundation)
+            drawn.push_back(s.id());
+    }
+
+    // An instrument that comes up silent reads as broken, so never return nothing
+    // while there is an 8' stop anywhere on it.
+    if (drawn.empty())
+        for (const Stop& s : organ.stops())
+            if (s.footage() == core::footage::kEight)
+            {
+                drawn.push_back(s.id());
+                break;
+            }
+
+    std::sort(drawn.begin(), drawn.end(),
+              [](core::StopId a, core::StopId b) { return a.value < b.value; });
+    return drawn;
+}
+
+std::vector<core::StopId> defaultOpeningRegistration(const Organ& organ)
+{
+    return defaultOpeningRegistration(organ, primaryManual(organ));
+}
+
+std::vector<core::StopId> resolveRanksToStops(const Organ&                      organ,
+                                              std::span<const RegistrationRank> ranks)
+{
+    const auto& stops = organ.stops();
+    std::vector<bool> claimed(stops.size(), false);
+    std::vector<core::StopId> out;
+    out.reserve(ranks.size());
+
+    for (const RegistrationRank& r : ranks)
+    {
+        // Lowest unclaimed match wins. Deterministic, and claiming means two
+        // identical ranks land on two different stops instead of doubling one.
+        const Stop* pick = nullptr;
+        std::size_t pickIndex = 0;
+
+        for (std::size_t i = 0; i < stops.size(); ++i)
+        {
+            if (claimed[i])
+                continue;
+            const Stop& s = stops[i];
+            if (s.family() != r.family || s.footage() != r.footage
+                || s.isCompound() != r.compound)
+                continue;
+            if (pick == nullptr || s.id().value < pick->id().value)
+            {
+                pick      = &s;
+                pickIndex = i;
+            }
+        }
+
+        // No match resolves to nothing. Substituting the nearest stop would make a
+        // registration that does not exist on this instrument sound like one that
+        // does, which is worse than a rank that simply fails to speak.
+        if (pick != nullptr)
+        {
+            claimed[pickIndex] = true;
+            out.push_back(pick->id());
+        }
+    }
+
+    std::sort(out.begin(), out.end(),
+              [](core::StopId a, core::StopId b) { return a.value < b.value; });
+    out.erase(std::unique(out.begin(), out.end(),
+                          [](core::StopId a, core::StopId b) { return a.value == b.value; }),
+              out.end());
+    return out;
 }
 
 core::Footage footageFromFeet(double feet) noexcept
@@ -491,15 +812,32 @@ synth::SpectralModel buildCompositeFromRegistration(std::span<const Registration
     if (ranks.empty())
         return composite;
 
-    const float stackTrimDb = -5.0f * std::log10(static_cast<float>(ranks.size()));
-
-    double loudnessWeight = 0.0;
+    // See buildRegistrationCompositeSpectrum: no stack trim, no energy normaliser.
+    //
+    // This builder is handed a LIST of ranks with no stop ids, so a rank's salt has
+    // to come from the rank itself. Two identical ranks must not sum in phase --
+    // four Reed 8' ranks summing coherently is a 6 dB hotspot -- but the salt must
+    // ALSO not depend on the order they arrive in, or the same registration would
+    // sound different depending on which drawstop was pulled first.
+    //
+    // Both at once: how many identical ranks came before this one. For a set of
+    // ranks that is the same whatever order they are listed in, because the second
+    // Trompette 8' is always the second Trompette 8'.
+    const auto duplicateIndex = [&ranks](std::size_t upTo, const RegistrationRank& r)
+    {
+        std::uint32_t n = 0;
+        for (std::size_t i = 0; i < upTo; ++i)
+            if (ranks[i].family == r.family && ranks[i].footage == r.footage
+                && ranks[i].compound == r.compound)
+                ++n;
+        return n;
+    };
+    std::size_t rankIndex = 0;
     for (const RegistrationRank& r : ranks)
     {
         const bool unisonReferenced = r.compound
                                    || r.family == core::TonalFamily::Mixture
                                    || r.footage.isMutation();
-        loudnessWeight += rankLoudnessWeight(r.family, r.footage, unisonReferenced);
         const double feet = r.footage.feet();
         const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
 
@@ -516,9 +854,11 @@ synth::SpectralModel buildCompositeFromRegistration(std::span<const Registration
         }
         const float octDark = unisonReferenced
                             ? 0.0f : -3.3f * static_cast<float>(r.footage.octaveClassFrom8());
-        const float gainDb = base + octDark + stackTrimDb;
+        const float gainDb = base + octDark;
 
+        const std::size_t rankFirst = composite.partials.size();
         const synth::SpectralModel recipe = recipeForRank(r.family, r.footage, r.compound);
+        adoptFormants(composite, recipe);
         for (const synth::PartialTrack& p : recipe.partials)
         {
             synth::PartialTrack t = p;
@@ -526,10 +866,11 @@ synth::SpectralModel buildCompositeFromRegistration(std::span<const Registration
             t.ampDb     = p.ampDb + gainDb;
             composite.partials.push_back(t);
         }
+        voiceRank(composite, rankFirst, r.family, r.footage,
+                  duplicateIndex(rankIndex++, r) + 1u);
     }
 
-    humanizeComposite(composite);
-    normalizeComposite(composite, loudnessTargetForWeight(loudnessWeight));
+    scaleComposite(composite, kRegistrationCalibration);
     composite.fundamentalHz = 0.0f;
     return composite;
 }
@@ -588,11 +929,20 @@ namespace
             return w.id;
         }
 
-        Division& addDivision(std::string name, DivisionKind kind, core::MidiNote low, core::MidiNote high,
-                              bool enclosed, bool tremulant, core::WindchestId chest)
+        /// @return The new division's id.
+        ///
+        /// Deliberately an ID, not a reference. Returning `divisions.back()` was
+        /// only safe because the caller happened to reserve() exactly the number
+        /// of divisions it then added; adding one more would have reallocated the
+        /// vector and left every previously handed-out reference dangling, with
+        /// no diagnostic. An id cannot dangle.
+        core::DivisionId addDivision(std::string name, DivisionKind kind,
+                                     core::MidiNote low, core::MidiNote high,
+                                     bool enclosed, bool tremulant, core::WindchestId chest)
         {
             Division d;
-            d.setId(core::DivisionId{ static_cast<std::uint16_t>(divisions.size()) });
+            const auto id = core::DivisionId{ static_cast<std::uint16_t>(divisions.size()) };
+            d.setId(id);
             d.setName(std::move(name));
             d.setKind(kind);
             d.setCompass(low, high);
@@ -600,11 +950,17 @@ namespace
             d.setHasTremulant(tremulant);
             d.addWindchest(chest);
             divisions.push_back(std::move(d));
-            return divisions.back();
+            return id;
+        }
+
+        /// Look a division up by id. Always valid; never a stale reference.
+        [[nodiscard]] Division& division(core::DivisionId id)
+        {
+            return divisions[id.value];
         }
 
         // Create one rank + one stop; wire the stop into its division. Returns StopId.
-        core::StopId addStop(Division&           division,
+        core::StopId addStop(core::DivisionId    divisionId,
                              std::string         name,
                              core::TonalFamily   family,
                              core::Footage       footage,
@@ -640,14 +996,30 @@ namespace
             stop.setFootage(footage);
             stop.setPitchClass(pitchClass);
             stop.setRole(role);
-            stop.setDivision(division.id());
+            stop.setDivision(divisionId);
             stop.setRank(rankId);
             if (!mixture.empty())
                 stop.setMixtureComposition(std::move(mixture));
             stops.push_back(std::move(stop));
 
-            division.addStop(stopId);
+            division(divisionId).addStop(stopId);
             return stopId;
+        }
+
+        /// Second pass: teach every rank the division of the stop that draws it.
+        ///
+        /// addStop() happens to know the division and could stamp inline, but
+        /// OrganLoader::compile cannot -- it builds every rank before any stop.
+        /// Running the same finished-stop-list pass here keeps one rule in one
+        /// shape, so a hand-built organ and a loaded one stamp PipeIds alike.
+        void stampDivisions() noexcept
+        {
+            for (const Stop& s : stops)
+            {
+                const std::size_t rankIdx = s.rank().value;
+                if (rankIdx < ranks.size())
+                    ranks[rankIdx].stampDivision(s.division());
+            }
         }
     };
 } // namespace
@@ -660,9 +1032,8 @@ Organ buildCaeciliaDemoOrgan()
     namespace ft = core::footage;
 
     Builder b;
-    // Reserve so the Division& references handed to addStop stay valid across the
-    // three addDivision() calls (a vector re-alloc would dangle them), and so the
-    // rank/stop vectors do not churn while assembling.
+    // Reserve to avoid churn while assembling. Correctness no longer depends on
+    // it: divisions are addressed by id, so a reallocation cannot dangle anything.
     b.windchests.reserve(3);
     b.divisions.reserve(3);
     b.ranks.reserve(26);
@@ -674,9 +1045,9 @@ Organ buildCaeciliaDemoOrgan()
     const core::WindchestId chestRecit  = b.addWindchest("Récit chest",       735.0f, true);
 
     // --- Divisions ---------------------------------------------------------
-    Division& pedal = b.addDivision("Pédale",      DivisionKind::Pedal,  36, 67, false, false, chestPedal);
-    Division& go     = b.addDivision("Grand-Orgue", DivisionKind::Manual, 36, 96, false, false, chestGO);
-    Division& recit  = b.addDivision("Récit",       DivisionKind::Manual, 36, 96, true,  true,  chestRecit);
+    const core::DivisionId pedal = b.addDivision("Pédale",      DivisionKind::Pedal,  36, 67, false, false, chestPedal);
+    const core::DivisionId go     = b.addDivision("Grand-Orgue", DivisionKind::Manual, 36, 96, false, false, chestGO);
+    const core::DivisionId recit  = b.addDivision("Récit",       DivisionKind::Manual, 36, 96, true,  true,  chestRecit);
 
     // === Pédale (6 stops) ==================================================
     b.addStop(pedal, "Contrebasse 16",  TonalFamily::Principal, ft::kSixteen, PitchClass::Sub,    ChorusRole::Foundation, chestPedal, 36, 67);
@@ -712,11 +1083,17 @@ Organ buildCaeciliaDemoOrgan()
     b.addStop(recit, "Trompette 8",     TonalFamily::Reed,      ft::kEight, PitchClass::Unison,   ChorusRole::Foundation,   chestRecit, 36, 96);
     b.addStop(recit, "Clairon 4",       TonalFamily::Reed,      ft::kFour,  PitchClass::Octave,   ChorusRole::Chorus,       chestRecit, 36, 96);
 
+    // Now that every stop exists, tell each rank which division owns it and stamp
+    // that onto its pipes. Order matters: ranks -> stops -> stamp -> couplers.
+    // A rank cannot know its division before the stops are built, and a coupler
+    // resolved before the stamp would carry PipeIds that all claim division 0.
+    b.stampDivisions();
+
     // --- Manuals (console keyboards) ---------------------------------------
     std::vector<Manual> manuals;
-    manuals.push_back(Manual{ go.id(),    0, 0, 36, 96 });    // lower manual: Grand-Orgue
-    manuals.push_back(Manual{ recit.id(), 1, 1, 36, 96 });    // upper manual: Récit
-    manuals.push_back(Manual{ pedal.id(), 2, 2, 36, 67 });    // pedalboard
+    manuals.push_back(Manual{ go,    0, 0, 36, 96 });    // lower manual: Grand-Orgue
+    manuals.push_back(Manual{ recit, 1, 1, 36, 96 });    // upper manual: Récit
+    manuals.push_back(Manual{ pedal, 2, 2, 36, 67 });    // pedalboard
 
     // --- Couplers ----------------------------------------------------------
     std::vector<Coupler> couplers;
@@ -731,9 +1108,9 @@ Organ buildCaeciliaDemoOrgan()
         c.setKind(CouplerKind::InterManual);
         couplers.push_back(std::move(c));
     };
-    addCoupler("Récit/Grand-Orgue", recit.id(), go.id(),    0);
-    addCoupler("Grand-Orgue/Pédale", go.id(),    pedal.id(), 0);
-    addCoupler("Récit/Pédale",       recit.id(), pedal.id(), 0);
+    addCoupler("Récit/Grand-Orgue", recit, go,    0);
+    addCoupler("Grand-Orgue/Pédale", go,    pedal, 0);
+    addCoupler("Récit/Pédale",       recit, pedal, 0);
 
     // --- Assemble the immutable organ --------------------------------------
     Organ organ;

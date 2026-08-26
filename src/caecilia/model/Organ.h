@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -72,9 +69,11 @@ public:
      *         unknown or the note is outside the rank compass. RT-safe.
      *
      * Note: for a compound (mixture) stop this returns the pipe of the stop's
-     * primary rank only; the additional ranks are expanded by the synthesis
-     * layer from @c Stop::mixtureComposition. // TODO(phase model): expand mixture
-     * ranks here once compound ranks are modelled as separate Rank entries.
+     * primary rank only. The additional ranks are never materialised as Pipes;
+     * they exist only as partial ratios in the spectral recipe built from
+     * @c Stop::mixtureComposition (see @c model::makeSpectralMixture).
+     * // TODO(phase model): expand mixture ranks here once compound ranks are
+     * modelled as separate Rank entries.
      */
     [[nodiscard]] const Pipe* pipeForKey(core::StopId stopId, core::MidiNote note) const noexcept;
 

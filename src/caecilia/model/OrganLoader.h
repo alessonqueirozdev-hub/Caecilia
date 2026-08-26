@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -71,7 +68,7 @@ public:
      * @return The parsed definition plus any diagnostics.
      *
      * Not real-time safe (allocates, parses). // TODO(phase model): implement the
-     * proprietary JSON/YAML reader; the scaffold reports "not yet implemented".
+     * JSON/YAML reader; the scaffold reports "not yet implemented".
      */
     [[nodiscard]] static ParseResult parse(std::string_view content,
                                            OrganFileFormat format = OrganFileFormat::Auto,
@@ -98,10 +95,10 @@ public:
 
     /**
      * @brief Serialise a definition back to document text (round-trip / export).
-     * @return The document text, or an empty string if serialisation is
-     *         unimplemented for @p format.
+     * @return Always an empty string today: no writer exists for any format, and
+     *         unlike @ref parse this reports no diagnostic at all.
      *
-     * Not real-time safe. // TODO(phase model): implement the proprietary writer.
+     * Not real-time safe. // TODO(phase model): implement the writer.
      */
     [[nodiscard]] static std::string serialize(const OrganDefinition& definition,
                                                OrganFileFormat format = OrganFileFormat::Json);

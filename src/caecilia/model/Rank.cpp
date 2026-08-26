@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/model/Rank.h"
 
@@ -65,6 +62,18 @@ void Rank::generatePipes(double referenceA4Hz)
         if (note == highNote_)
             break; // avoid MidiNote (uint8) overflow when highNote_ == 127
     }
+}
+
+void Rank::stampDivision(core::DivisionId division) noexcept
+{
+    division_ = division;
+
+    // DivisionId is 16-bit; PipeId::divisionId is the 8-bit byte the id already
+    // carried as padding. The MIDI path narrows it the same way (see
+    // CommandBridge::pushNote), so both routes agree for the first 256 divisions.
+    const auto packed = static_cast<std::uint8_t>(division.value);
+    for (Pipe& pipe : pipes_)
+        pipe.id.divisionId = packed;
 }
 
 } // namespace caecilia::model

@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -21,8 +18,10 @@ namespace caecilia::model
  *
  * The @c nominalPressurePa is the target pressure (organ builders quote wind in
  * millimetres of water column; ~83 mm ≈ 812 Pa is a common house pressure). All
- * ranks fed by the same chest share sag and — if @c hasTremulant — the same
- * tremulant modulation, which is why the chest, not the rank, owns those flags.
+ * ranks fed by the same chest share sag, which is why the chest, not the rank,
+ * owns the pressure. @c hasTremulant has no reader anywhere: nothing turns it
+ * into a @c wind::WindchestConfig tremulant binding, so the flag is inert and a
+ * chest's tremulant never modulates anything.
  *
  * This is immutable spec data compiled from the organ definition; it is aliased
  * as @c WindchestSpec for modules (registration, wind) that speak in "spec"
