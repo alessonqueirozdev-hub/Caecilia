@@ -33,6 +33,13 @@ namespace caecilia::core
  * the reader always owns one, and the third is the handoff point. Neither side
  * ever touches the other's slot, and neither side ever waits.
  *
+ * Three slots are necessary and not sufficient. Both exchanges are acq_rel, and
+ * both halves of both matter: each side has to RELEASE the slot it is giving up
+ * as well as ACQUIRE the one it is taking, or the other side's next write to a
+ * slot races the reads that side has just finished doing. Getting only the
+ * obvious half right is a race the hardware hides on x86 and ThreadSanitizer does
+ * not.
+ *
  * @tparam T Trivially copyable snapshot type.
  */
 template <class T>
@@ -52,10 +59,19 @@ public:
     void write(const T& value) noexcept
     {
         buffers_[writeIndex_] = value;
-        // Hand our slot over and take whatever the reader is not using. Release
-        // ordering publishes the copy above to whoever picks the slot up.
+
+        // Hand our slot over and take whatever the reader is not using.
+        //
+        // acq_rel, and BOTH halves are load-bearing. The release publishes the copy
+        // above to whoever picks the slot up -- that half is obvious. The acquire is
+        // the half that was missing: the slot this exchange RETURNS is one the
+        // reader finished with, and without acquiring the reader's release of it,
+        // the reader's loads from that slot and the store on the line above -- next
+        // block, same slot -- have no happens-before edge between them. That is a
+        // data race by the memory model however benign it looks on x86, and
+        // ThreadSanitizer reported it as one.
         const std::uint32_t previous =
-            handoff_.exchange(writeIndex_ | kFreshBit, std::memory_order_release);
+            handoff_.exchange(writeIndex_ | kFreshBit, std::memory_order_acq_rel);
         writeIndex_ = previous & kIndexMask;
     }
 
@@ -85,8 +101,12 @@ public:
     {
         if ((handoff_.load(std::memory_order_relaxed) & kFreshBit) != 0u)
         {
+            // acq_rel for the mirror-image reason. The acquire pairs with the
+            // writer's release, so the value in the slot we are taking is visible.
+            // The release says we are done with the slot we are giving BACK, which
+            // is what the writer's acquire needs something to pair with.
             const std::uint32_t previous =
-                handoff_.exchange(readIndex_, std::memory_order_acquire);
+                handoff_.exchange(readIndex_, std::memory_order_acq_rel);
             readIndex_ = previous & kIndexMask;
         }
         return buffers_[readIndex_];
