@@ -15,6 +15,7 @@
 # ---------------------------------------------------------------------------
 
 target_sources(caecilia_core PRIVATE
+    CpuGovernor.cpp
     VoiceScheduler.cpp
     AudioEngine.cpp)
 
@@ -25,6 +26,7 @@ set(CAECILIA_ENGINE_PUBLIC_HEADERS
     VoiceHandle.h
     SpscRing.h
     DeadlineBudget.h
+    CpuGovernor.h
     StealPolicy.h
     EngineCommand.h
     MeterSnapshot.h

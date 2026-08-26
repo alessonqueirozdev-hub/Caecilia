@@ -51,6 +51,21 @@ struct MeterSnapshot
     std::uint16_t divisionCount = 0;                        ///< Valid entries in @ref divisions.
     std::array<MeterFrame, kMaxMeteredDivisions> divisions{}; ///< Per-division meters.
 
+    // --- CPU governor -------------------------------------------------------
+    //
+    // What the engine is costing and what it is giving up for it. On a meter this
+    // is not vanity: the load is the only thing that tells an organist whether the
+    // next stop they draw will be the one that starts dropping pipes.
+
+    float cpuLoad     = 0.0f; ///< Engine time / block period, smoothed. 1 = xrun.
+    float cpuPeakLoad = 0.0f; ///< Decaying peak of the same. An xrun is ONE block.
+    float budgetUnits = 0.0f; ///< The governor's current allowance, in cost units.
+    float demandUnits = 0.0f; ///< What the active set asked for, in the same units.
+
+    /// Voices the governor gave up this block. Zero whenever demand fits, which
+    /// is every block on a machine that is coping.
+    std::uint32_t voicesShed = 0;
+
     float windPressurePa = 0.0f;    ///< Representative chest pressure (Pa).
     float windSagNorm    = 0.0f;    ///< Normalised sag (0 = nominal, negative = drooping).
     float tremulantPhase = 0.0f;    ///< Tremulant phase in [0, 1) for gauge

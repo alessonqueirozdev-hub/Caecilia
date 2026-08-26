@@ -86,6 +86,14 @@ struct RenderContext
                                                         : ExpressionRamp{};
     }
 
+    /// Linear level below which a voice is given up this block; 0 = keep all.
+    ///
+    /// Decided ONCE PER BLOCK by VoiceScheduler::planBlock, because the budget is
+    /// a per-block allowance and a threshold recomputed per slice would shed a
+    /// different set in each of them. Every slice of a block carries the same
+    /// value.
+    float         shedBelowLevel = 0.0f;
+
     const IWindSupply* wind   = nullptr; ///< Per-block wind snapshot (read-only).
     const ITuning*     tuning = nullptr; ///< Per-pipe frequency table (read-only).
     DeadlineBudget*    budget = nullptr; ///< CPU governor for stealing/demotion.

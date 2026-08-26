@@ -11,6 +11,7 @@
 #include "caecilia/core/IWindSupply.h"
 #include "caecilia/core/TripleBuffer.h"
 #include "caecilia/dsp/OnePole.h"
+#include "caecilia/engine/CpuGovernor.h"
 #include "caecilia/engine/DeadlineBudget.h"
 #include "caecilia/engine/EngagedRankTable.h"
 #include "caecilia/engine/EngineCommand.h"
@@ -141,8 +142,49 @@ public:
     /// Choose how the pool steals under polyphony / budget pressure.
     void setStealPolicy(StealPolicy policy) noexcept { scheduler_.setStealPolicy(policy); }
 
-    /// Set the per-block CPU budget in abstract cost units (see DeadlineBudget).
-    void setBlockBudget(float budgetUnits) noexcept { blockBudgetUnits_ = budgetUnits; }
+    /**
+     * @brief Pin the per-block CPU budget to a fixed number of cost units and
+     *        turn the governor off.
+     *
+     * A fixed budget and a measured one are alternatives, not layers: whichever
+     * was set last wins. Pinning is what a test wants (deterministic shedding at
+     * a known load) and what a user who would rather take the xrun than lose a
+     * pipe wants; measuring is what a plugin wants.
+     */
+    void setBlockBudget(float budgetUnits) noexcept
+    {
+        governor_.setEnabled(false);
+        blockBudgetUnits_ = budgetUnits;
+    }
+
+    /**
+     * @brief Let the engine set its own budget from how long its blocks take.
+     * @param config Tuning constants; the defaults suit a plugin.
+     *
+     * Off-thread. Overrides any @ref setBlockBudget. See @ref CpuGovernor for the
+     * control law and for why a fixed number cannot be right on two machines.
+     */
+    void enableCpuGovernor(const CpuGovernor::Config& config) noexcept
+    {
+        governor_.configure(config);
+        governor_.reset();
+        governor_.setEnabled(true);
+        blockBudgetUnits_ = governor_.budgetUnits();
+    }
+
+    /**
+     * @brief Tell the engine whether the wall clock means anything right now.
+     *
+     * Cheap enough to call every block, which is what this needs: a host can
+     * bounce a project offline and go straight back to live playback. While
+     * non-realtime the governor keeps metering and stops acting, so an offline
+     * render produces exactly the audio the organist heard live rather than a mix
+     * thinned by a stopwatch that was measuring the wrong thing.
+     */
+    void setRealtime(bool realtime) noexcept { realtime_ = realtime; }
+
+    /// @return The CPU governor, for meters and for tests.
+    [[nodiscard]] const CpuGovernor& cpuGovernor() const noexcept { return governor_; }
 
     // --- audio thread (real-time safe, noexcept) ----------------------------
 
@@ -318,6 +360,16 @@ private:
     VoicePool<kMaxVoices>                          pool_{};
     VoiceScheduler                                 scheduler_{};
     DeadlineBudget                                 budget_{};
+    CpuGovernor                                    governor_{};
+
+    /// Is the wall clock a deadline right now? False during an offline bounce.
+    bool  realtime_ = true;
+
+    /// This block's verdict from VoiceScheduler::planBlock, held here because it
+    /// is decided once for the block and every slice's RenderContext carries it.
+    float         blockShedLevel_   = 0.0f;
+    float         blockDemandUnits_ = 0.0f;
+    std::uint32_t blockShedCount_   = 0;
     SpscRing<EngineCommand, kCommandQueueCapacity> commandRing_{};
 
     std::uint64_t framePos_ = 0; ///< Absolute frame counter across blocks.

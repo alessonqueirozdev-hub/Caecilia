@@ -6,6 +6,7 @@
 #include "caecilia/wind/OrganWind.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace caecilia::core::engine
@@ -48,9 +49,22 @@ void AudioEngine::prepare(SampleRate  sampleRate,
     numWindchests_  = std::clamp<std::size_t>(numWindchests, 1, kMaxWindchests);
 
     // A generous default so a full pool of nominal-cost voices renders unless the
-    // host explicitly tightens the budget via setBlockBudget().
+    // budget is pinned (setBlockBudget) or measured (enableCpuGovernor).
+    //
+    // Generous to the point of unreachable, which is why the governor exists: an
+    // AdditiveVoice costs 0.5 + 0.02 per partial, so even 1024 voices of thirty
+    // partials demand about 1130 units against a default of 1024 -- and a real
+    // tutti fills nothing like the whole pool. Left to itself the budget could
+    // not fire, and the scheduler's promise that a tutti thins rather than xruns
+    // was decorative.
     if (blockBudgetUnits_ <= 0.0f)
         blockBudgetUnits_ = static_cast<float>(kMaxVoices);
+
+    // A new sample rate or block size is a new deadline, and a verdict reached
+    // about the old one says nothing about this one.
+    governor_.reset();
+    if (governor_.isEnabled())
+        blockBudgetUnits_ = governor_.budgetUnits();
 
     scheduler_.prepare(kMaxVoices, maxBlockFrames_);
 
@@ -135,6 +149,15 @@ void AudioEngine::bindVoices(IVoice* const* voices, std::size_t count) noexcept
 
 void AudioEngine::processBlock(AudioBlock& output) noexcept
 {
+    // The block's own stopwatch.
+    //
+    // Reading a monotonic clock is the one thing on this list that looks like it
+    // might violate the real-time contract and does not: steady_clock::now() is
+    // QueryPerformanceCounter on Windows, mach_absolute_time on macOS and a vDSO
+    // clock_gettime on Linux. None of the three allocates, locks, enters the
+    // kernel or can throw. It is also how every host measures its own callbacks.
+    const auto blockStart = std::chrono::steady_clock::now();
+
     const std::size_t total = output.numFrames();
 
     if (maxBlockFrames_ == 0 || total == 0)
@@ -168,8 +191,25 @@ void AudioEngine::processBlock(AudioBlock& output) noexcept
     //
     // Both used to sit inside renderSlice(), which was harmless while a block was
     // only ever sliced by an oversized buffer and is not once events cut it.
+    if (governor_.isEnabled())
+        blockBudgetUnits_ = governor_.budgetUnits();
+
     if (blockBudgetUnits_ > 0.0f)
         budget_.reset(blockBudgetUnits_);
+
+    // Decide, for the whole block, what cannot be afforded -- before a single
+    // sample is rendered, so every slice sheds the same set. Also the honest
+    // measurement of what this block was ASKED for: the budget's own spent figure
+    // saturates at the allowance once it is exhausted, and feeding that back to
+    // the governor would understate the load exactly when it matters.
+    {
+        const VoiceScheduler::BlockPlan plan =
+            scheduler_.planBlock(pool_.view(), blockBudgetUnits_);
+        blockShedLevel_   = plan.shedBelowLevel;
+        blockDemandUnits_ = plan.demandUnits;
+        blockShedCount_   = plan.shedCount;
+    }
+
     stepWind(total);
     beginMeters();
 
@@ -191,6 +231,21 @@ void AudioEngine::processBlock(AudioBlock& output) noexcept
         renderSlice(slice);
         done += n;
     }
+
+    // Close the loop. The measurement is the render only: publishMeters below is a
+    // struct copy through a triple buffer and nothing the governor should charge a
+    // voice for, and taking the reading here is what lets the meter it publishes
+    // carry THIS block's load rather than the previous one's.
+    const double elapsed = std::chrono::duration<double>(
+                               std::chrono::steady_clock::now() - blockStart).count();
+    const double deadline = sampleRate_ > 0.0
+                          ? static_cast<double>(total) / sampleRate_
+                          : 0.0;
+
+    // An offline bounce runs on no deadline at all -- faster or slower than real
+    // time, and either way not a number the governor may act on.
+    governor_.setEnabled(governor_.isEnabled() && realtime_);
+    (void) governor_.observe(elapsed, deadline, blockDemandUnits_);
 
     publishMeters();
 }
@@ -389,6 +444,9 @@ RenderContext AudioEngine::makeContext(std::size_t numFrames) noexcept
 
     ctx.expression = expressionRamp_;
 
+    // The block's shed verdict, identical in every slice of it.
+    ctx.shedBelowLevel = blockShedLevel_;
+
     // This slice's share of the block, so the budget is spent once per block no
     // matter how many events cut it. See RenderContext::costScale.
     ctx.costScale = blockFrames_ > 0
@@ -478,6 +536,12 @@ void AudioEngine::publishMeters() noexcept
         meterSamples_ > 0
             ? static_cast<float>(std::sqrt(meterSumSq_ / static_cast<double>(meterSamples_)))
             : 0.0f;
+
+    pendingMeters_.cpuLoad     = governor_.load();
+    pendingMeters_.cpuPeakLoad  = governor_.peakLoad();
+    pendingMeters_.budgetUnits  = blockBudgetUnits_;
+    pendingMeters_.demandUnits  = blockDemandUnits_;
+    pendingMeters_.voicesShed   = blockShedCount_;
 
     if (wind_ != nullptr)
     {
