@@ -76,9 +76,23 @@ target_sources(caecilia_core PUBLIC
 # ---------------------------------------------------------------------------
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i.86)" OR
    CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "(arm|aarch64)")
+    # TARGET_DIRECTORY is not optional here, and leaving it out is a silent failure.
+    # set_source_files_properties is scoped to the DIRECTORY it is called from, and
+    # caecilia_core is created in the top-level CMakeLists -- so without it the
+    # property is set somewhere the target never looks, and the file compiles with
+    # no AVX2 flag at all.
+    #
+    # MSVC hid that completely: it accepts _mm256_* intrinsics without /arch:AVX2.
+    # GCC and Clang do not, and the first Linux build after this shipped failed with
+    # a screen of "inlining failed in call to always_inline ... target specific
+    # option mismatch".
     if(MSVC)
-        set_source_files_properties(KernelsAvx2.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/KernelsAvx2.cpp"
+            TARGET_DIRECTORY caecilia_core
+            PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        set_source_files_properties(KernelsAvx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/KernelsAvx2.cpp"
+            TARGET_DIRECTORY caecilia_core
+            PROPERTIES COMPILE_OPTIONS "-mavx2")
     endif()
 endif()
