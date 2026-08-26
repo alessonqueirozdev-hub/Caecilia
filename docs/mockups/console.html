@@ -1324,15 +1324,21 @@ if (CAE_BRIDGE) {
         k.classList.toggle("held", lit.has(m) || state.held.has(ld + ":" + m));
       });
       // Feed the REAL engine data into the meter animation (frame()), so the Output
-      // VU moves with the actual audio — even when you play the physical MIDI
-      // keyboard (not the on-screen keys). The wind gauges are NOT engine data:
-      // frame() still draws them from its own curve, fed the real voice count,
-      // because AudioEngine::stepWind() is empty and st.windSag is always 0.
+      // VU and the wind readout move with the actual instrument — even when you
+      // play the physical MIDI keyboard rather than the on-screen keys.
+      //
+      // windSag is the reservoir's own deviation from nominal, negative while it
+      // droops. It arrives here as a fraction and used to be ignored, because it
+      // was zero for as long as the wind model had no caller and the page drew its
+      // own curve over the voice count instead. It is real now, and a curve fitted
+      // to a voice count cannot know that ten notes on a 32' Bombarde load the
+      // bellows differently from ten on a 2' Doublette.
       if (typeof sim !== "undefined") {
         sim.bridged   = true;
         sim.realPeakL = +st.peakL || 0;
         sim.realPeakR = +st.peakR || 0;
         sim.realVoices = +st.voices || 0;
+        sim.realSag   = Math.max(0, -(+st.windSag || 0));
       }
       // The drawn registration, as two 32-bit halves because a JS number cannot
       // carry 64 bits of integer precision. Adopted whenever it disagrees with
@@ -1828,7 +1834,11 @@ function frame(now) {
       g.val.textContent = Math.round(d.nominal * frac);
     }
   }
-  $("#sag-read").textContent = maxSag > 0.02 ? `sag −${Math.round(maxSag * 100)}%` : "stable";
+  // Bridged to a real engine, the sag is measured, not modelled. The simulated
+  // pressures above still run because they are what the standalone page (this
+  // file opened in a browser, with no plugin behind it) has to show.
+  const sagShown = (bridged && typeof sim.realSag === "number") ? sim.realSag : maxSag;
+  $("#sag-read").textContent = sagShown > 0.02 ? `sag −${Math.round(sagShown * 100)}%` : "stable";
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
