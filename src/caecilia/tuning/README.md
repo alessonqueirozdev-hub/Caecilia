@@ -42,12 +42,16 @@ layer 4 is a pure per-pipe hash evaluated on the fly.
 - **On the audio thread:** `frequencyForNote` and `frequencyForPipe` are
   `noexcept`, allocation-free, lock-free lookups that never mutate live state.
 
-The engine hands the synthesis layer a stable `TuningModel` in `prepare()`. A
-temperament change is *designed* as a command that swaps/reconfigures the model
-off-thread rather than a live mutation of a model read mid-block — but that
-command is not implemented: `EngineCommandType::SetTemperament` is still an empty
-case in `AudioEngine::drainCommands`, so whatever temperament `prepare()`
-installs is the only one that ever sounds.
+The synthesis layer holds a stable `LiveTuning`, and its address never changes —
+which is what lets five hundred voices each keep a pointer to it and a temperament
+change cost a handoff rather than a walk.
+
+A change is a SNAPSHOT, not a mutation. `TuningModel` rebuilds its table in place,
+and a note-on reading that table mid-rebuild is a data race, not merely a wrong
+pitch — so the model stays off-thread, `makeSnapshot` turns it into plain data, and
+`LiveTuning::publish` hands that across a `core::TripleBuffer`. The audio thread
+calls `adoptPending()` once per block, before any note-on is drained, so a block
+sounds in one tuning throughout.
 
 ## Footage-exact sounding pitch
 

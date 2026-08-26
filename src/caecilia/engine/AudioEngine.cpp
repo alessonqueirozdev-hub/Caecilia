@@ -253,7 +253,11 @@ void AudioEngine::applyCommand(const EngineCommand& cmd) noexcept
             // change, which configure() does not do today.
             break;
         case EngineCommandType::SetTemperament:
-            // TODO(phase0.9): trigger off-thread tuning-table rebuild.
+            // Deliberately nothing, and not a gap. Realising a temperament is 128
+            // exp2 calls into a table a note-on may be reading, so it cannot happen
+            // here whatever this case did. The processor watches the parameters,
+            // rebuilds on the message thread, and publishes a snapshot the audio
+            // thread adopts at a block boundary -- see tuning::LiveTuning.
             break;
         case EngineCommandType::StopEngage:
         case EngineCommandType::StopDisengage:

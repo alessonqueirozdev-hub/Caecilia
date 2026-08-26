@@ -21,9 +21,10 @@ namespace caecilia::tuning
  * on an 8' unison stop.
  *
  * The table is @ref build "built" off the audio thread and thereafter read with
- * cheap, RT-safe index lookups. Today that only ever happens in prepare(): the
- * engine's SetTemperament command is still an empty case in
- * @c AudioEngine::drainCommands, so no runtime temperament change rebuilds it.
+ * cheap, RT-safe index lookups. Building is 128 @c exp2 calls into an array a
+ * note-on may be reading, which is why a rebuilt table reaches the audio thread as
+ * a @c tuning::TuningSnapshot handed over by value rather than as a mutation of
+ * something already bound.
  *
  * Anchoring: A4 (MIDI note 69) is pinned @e exactly to the requested reference
  * pitch by subtracting the temperament's own A deviation from every degree. This

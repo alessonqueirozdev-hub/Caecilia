@@ -30,9 +30,10 @@ double frequencyForNote(MidiNote note) const noexcept;              // note as a
 double frequencyForPipe(PipeId pipe, Footage footage) const noexcept; // scaled EXACTLY by Footage
 ```
 
-Everything is precomputed off the audio thread (in `prepare()`, and — once the
-ring's `SetTemperament` command is actually handled — on temperament change); the
-query methods never mutate live state and are safe to call while rendering.
+Everything is precomputed off the audio thread — in `prepare()`, and on every
+temperament or reference-pitch change, which arrives as a published snapshot rather
+than a live mutation. The query methods never mutate anything and are safe to call
+while rendering.
 
 ---
 
@@ -191,11 +192,17 @@ mutations out of a diapason chorus (see [`REGISTRATION.md`](REGISTRATION.md)).
 Temperament and A-reference are **never mutated mid-render**; the rebuild happens
 off-thread and the new table is swapped in at a block boundary.
 
-> Not wired yet: the plugin binds its `TuningModel` into the engine, so whatever
-> the model holds does reach the voices — but `prepareToPlay` only ever sets equal
-> temperament at A=440, and `EngineCommandType::SetTemperament` is an unhandled
-> case in `AudioEngine::drainCommands`. The host's Temperament and Tuning A4
-> parameters therefore change nothing today.
+> Wired. The plugin binds a `LiveTuning` into the engine and into every voice's
+> context; the audio thread notices the Temperament and Tuning A4 parameters
+> changing and asks the message thread to rebuild, which publishes a snapshot the
+> audio thread adopts at the next block boundary.
+>
+> `EngineCommandType::SetTemperament` remains unhandled ON PURPOSE and the command
+> is no longer the mechanism: realising a temperament is 128 `exp2` calls into a
+> table a note-on may be reading, so it cannot happen where the command is drained.
+> `tests/tuning/LiveTuningTest.cpp` measures the pitch a rendered pipe actually
+> sounds under two temperaments, because every layer above could pass with the
+> table never reaching a voice — which is exactly the state this was in.
 
 ---
 

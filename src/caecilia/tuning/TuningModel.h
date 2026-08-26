@@ -33,10 +33,9 @@ namespace caecilia::tuning
  *
  * ## Real-time contract
  * - @ref configure and the @c set* mutators rebuild the table and are NOT
- *   RT-safe; call them in prepare() or when handling a temperament-change command
- *   off the audio thread. Only the prepare() path is wired today: the engine's
- *   SetTemperament command is an empty case in @c AudioEngine::drainCommands, so
- *   a bound TuningModel is never reconfigured once the plugin is running.
+ *   RT-safe. A model must therefore never be BOUND to the audio thread and then
+ *   reconfigured; that is why the plugin binds a @c LiveTuning instead and uses
+ *   @c tuning::makeSnapshot to get a rebuilt table across the boundary as data.
  * - @ref frequencyForNote and @ref frequencyForPipe are @c noexcept, allocation-
  *   free and lock-free, safe to call while rendering (against a model that is not
  *   concurrently being reconfigured).

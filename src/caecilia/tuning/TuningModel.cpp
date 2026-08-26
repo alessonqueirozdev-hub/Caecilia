@@ -84,10 +84,12 @@ double TuningModel::frequencyForPipe(core::PipeId pipe, core::Footage footage) c
 
     const double base = unisonHz_[pipe.midiNote];
 
-    // Exact sounding-pitch ratio from the rank's footage relative to 8' unison:
+    // Sounding-pitch ratio from the rank's footage relative to 8' unison:
     // ratio = 8 / feet = (8 * den) / num. A 4' rank -> 2 (octave up), a 2 2/3'
-    // quint -> 3 (a twelfth up), a 16' -> 0.5 (octave down). Because this is the
-    // exact rational, a mutation lands precisely on its true harmonic.
+    // quint -> 3 (a twelfth up), a 16' -> 0.5 (octave down). Exact by construction
+    // rather than by luck -- see the measurement recorded in
+    // LiveTuning::frequencyForPipe, which found the float round trip through feet()
+    // bit-identical for every footage this organ actually has.
     const double footageRatio =
         (8.0 * static_cast<double>(footage.den)) / static_cast<double>(footage.num);
 
