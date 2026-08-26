@@ -1,14 +1,15 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 Caecilia — Console Mockup
 =========================
-A single self-contained, interactive visual design reference for the JUCE
-`caecilia::ui` module. It is NOT production code: it is the pixel/behaviour
-target that ConsoleLayoutModel + ISkin (PhotorealSkin / FlatVectorSkin) must
-reproduce, driven by the same data-driven, semantic-identity philosophy.
+THIS FILE IS THE SHIPPING CONSOLE. It began as a visual design reference for a
+JUCE `caecilia::ui` module; that module was written, never instantiated, and
+removed (see src/caecilia/ui/README.md). The page is now compiled into the plugin
+by juce_add_binary_data and served to the editor's WebBrowserComponent by
+CaeciliaEditor::provide. Opened in a plain browser it still runs standalone, with
+everything below simulated.
 
   - Data-driven: the console is generated from an ORGAN definition object
     (divisions -> stops with TonalFamily + Footage + ChorusRole + PitchClass),
@@ -19,9 +20,11 @@ reproduce, driven by the same data-driven, semantic-identity philosophy.
   - Two skins over ONE model + ONE live-state feed: the "Wood" (photoreal) and
     "Flat" (modern vector) themes are pure restyles of identical markup — the
     ISkin contract in miniature.
-  - Live feedback: a rAF loop mimics StateMirror — held keys + drawn stops feed
-    a VU meter and a wind model whose reservoir pressure SAGS under polyphony,
-    the single realism moat GrandOrgue/Aeolus lack.
+  - Live feedback: a rAF loop that, inside the plugin, is fed the StateMirror
+    frames the editor pushes at 30 Hz — so the VU shows the engine's real
+    mastered peak. The reservoir gauges still SAG from the JS curve in frame(),
+    driven by the live voice count, because the engine publishes no wind yet
+    (AudioEngine::stepWind() is empty).
   - Selector algebra (marquee feature): the omnibar parses `family & footage`
     style queries (e.g. `reed & 8`) live-highlighting matches; Enter draws them.
     The same grammar powers the combination pistons.
@@ -29,6 +32,12 @@ reproduce, driven by the same data-driven, semantic-identity philosophy.
 Everything is inline (no external fetch): resolution-independent CSS + a couple
 of inline SVG data-URI textures. Open directly in any modern browser.
 -->
+<!-- The plugin serves this as text/html; charset=utf-8, so inside the WebView the
+     encoding is already right. This declaration is for the other half of the
+     promise above: opened directly from disk there is no such header, the browser
+     guesses, and every accented character in four translated interfaces comes out
+     as mojibake. -->
+<meta charset="utf-8">
 <title>Caecilia — Console Mockup</title>
 <style>
   /* ============================================================= *
@@ -505,6 +514,14 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   .piston:hover { transform: translateY(-1px); }
   .piston:active, .piston.flash { transform: translateY(2px) scale(.94); box-shadow: 0 1px 3px rgba(0,0,0,.5) inset; }
   .piston.flash { box-shadow: 0 0 0 3px rgba(224,163,39,.6), 0 0 16px rgba(224,163,39,.5); }
+  /* A piston that holds a registration. Deliberately quiet -- an ivory-headed
+     piston on a real console shows nothing at all about what is stored in it, and
+     the point here is only to tell a captured one from an empty one at a glance. */
+  .piston.stored::after {
+    content: ""; position: absolute; left: 50%; bottom: 4px;
+    width: 4px; height: 4px; margin-left: -2px; border-radius: 50%;
+    background: rgba(224,163,39,.75);
+  }
   .piston.wide { width: auto; height: 34px; border-radius: 17px; padding: 0 13px; font-size: 11px; letter-spacing: .5px; }
   .piston.arm { box-shadow: 0 0 0 3px rgba(229,96,63,.6), 0 0 16px rgba(229,96,63,.45); color: var(--fam-Reed); }
   .piston.latched { background: linear-gradient(180deg,#f6dd9f,#d9ad57); color:#1a1206; }
@@ -722,7 +739,7 @@ const FAM_COLOR = {
 const s = (n, fam, ft, feet, role, pc) => ({ n, fam, ft, feet, role, pc });
 
 const DIVISIONS = [
-  { id:"ped", rn:"Péd", name:"Pédale", manual:null, enclosed:false, side:"left", chest:"ped", nominal:95, stops:[
+  { id:"ped", rn:"Péd", name:"Pédale", num:0, manual:null, enclosed:false, side:"left", chest:"ped", nominal:95, stops:[
     s("Soubasse",     "Flute",     "16′", 16, "Foundation", "Sub"),
     s("Contrebasse",  "Principal", "16′", 16, "Foundation", "Sub"),
     s("Octavebasse",  "Principal", "8′",   8, "Foundation", "Unison"),
@@ -730,7 +747,10 @@ const DIVISIONS = [
     s("Bombarde",     "Reed",      "16′", 16, "Chorus",     "Sub"),
     s("Trompette",    "Reed",      "8′",   8, "Chorus",     "Unison"),
   ]},
-  { id:"pos", rn:"III", name:"Positif", manual:2, enclosed:false, side:"left", chest:"pos", nominal:78, stops:[
+  // This console is a four-division French romantic instrument; the organ the
+  // plugin actually builds (model::buildCaeciliaDemoOrgan) has three and no
+  // Positif. See CAE_DIV for how this division's keys reach the engine.
+  { id:"pos", rn:"III", name:"Positif", num:null, manual:2, enclosed:false, side:"left", chest:"pos", nominal:78, stops:[
     s("Montre",       "Principal", "8′",   8, "Foundation", "Unison"),
     s("Bourdon",      "Flute",     "8′",   8, "Foundation", "Unison"),
     s("Prestant",     "Principal", "4′",   4, "Chorus",     "Octave"),
@@ -739,7 +759,7 @@ const DIVISIONS = [
     s("Larigot",      "Flute",     "1⅓′",  1.333, "Mutation","Mutation"),
     s("Cromorne",     "Reed",      "8′",   8, "Color",      "Unison"),
   ]},
-  { id:"go", rn:"I", name:"Grand-Orgue", manual:0, enclosed:false, side:"right", chest:"go", nominal:85, stops:[
+  { id:"go", rn:"I", name:"Grand-Orgue", num:1, manual:0, enclosed:false, side:"right", chest:"go", nominal:85, stops:[
     s("Montre",       "Principal", "16′", 16, "Foundation", "Sub"),
     s("Montre",       "Principal", "8′",   8, "Foundation", "Unison"),
     s("Bourdon",      "Flute",     "8′",   8, "Foundation", "Unison"),
@@ -749,7 +769,7 @@ const DIVISIONS = [
     s("Cornet",       "Cornet",    "V",    null, "Solo",     "Compound"),
     s("Trompette",    "Reed",      "8′",   8, "Chorus",     "Unison"),
   ]},
-  { id:"rec", rn:"II", name:"Récit", manual:1, enclosed:true, side:"right", chest:"rec", nominal:80, stops:[
+  { id:"rec", rn:"II", name:"Récit", num:2, manual:1, enclosed:true, side:"right", chest:"rec", nominal:80, stops:[
     s("Bourdon",      "Flute",     "8′",   8, "Foundation", "Unison"),
     s("Cor de Nuit",  "Flute",     "8′",   8, "Foundation", "Unison"),   // soft, dark stopped flute (nuit = night)
     s("Salicional",   "String",    "8′",   8, "Foundation", "Unison"),   // gentle narrow string (no beat)
@@ -773,8 +793,11 @@ DIVISIONS.forEach(d => d.stops.forEach((st, i) => {
   st.osc = "/caecilia/" + d.id + "/" + st.n.toLowerCase().replace(/[^a-z]/g,"") + "/" + (st.feet||st.ft);
   ALL.push(st);
 }));
-const byId = Object.fromEntries(ALL.map(x => [x.id, x]));
-const DIV = Object.fromEntries(DIVISIONS.map(d => [d.id, d]));
+// `let`, not `const`: when the plugin sends the real instrument these are rebuilt
+// from it. The literals above are the layout the page shows when it is opened on
+// its own, with nothing behind it.
+let byId = Object.fromEntries(ALL.map(x => [x.id, x]));
+let DIV = Object.fromEntries(DIVISIONS.map(d => [d.id, d]));
 
 /* ================================================================= *
  *  SELECTOR ALGEBRA (mini) — the marquee feature in miniature.      *
@@ -891,8 +914,115 @@ function divisionEl(d) {
   return wrap;
 }
 // Jambs: left = Pédale + Positif · right = Grand-Orgue + Récit
-DIVISIONS.filter(d => d.side === "left").forEach(d => $("#jamb-left").append(divisionEl(d)));
-DIVISIONS.filter(d => d.side === "right").forEach(d => $("#jamb-right").append(divisionEl(d)));
+function renderJambs() {
+  const L = $("#jamb-left"), R = $("#jamb-right");
+  if (L) L.innerHTML = "";
+  if (R) R.innerHTML = "";
+  DIVISIONS.filter(d => d.side === "left").forEach(d => L && L.append(divisionEl(d)));
+  DIVISIONS.filter(d => d.side === "right").forEach(d => R && R.append(divisionEl(d)));
+}
+renderJambs();
+
+/* ---- Adopt the REAL instrument ------------------------------------------
+ * The page's own stop list is a drawing. The plugin's is the instrument, and the
+ * two have never matched: six of the stops above exist nowhere in C++, and five
+ * of the C++ stops appear nowhere above. A click on one of the six has always
+ * been silently inert.
+ *
+ * Each stop keeps its numeric StopId in `sid` — the same number as its host
+ * parameter slot — so a click, an automation move and a saved session all name
+ * the same thing.
+ */
+const CAE_FAM_NAME = ["Principal","Flute","String","Reed","Mixture","Cornet","Hybrid"];
+const CAE_ROLE_NAME = ["Foundation","Chorus","Color","Mutation","MixtureCrown","Solo"];
+const CAE_PC_NAME = ["Sub","Unison","Octave","Super","Compound","Mutation"];
+
+function caeFootageLabel(num, den) {
+  if (den === 1) return num + "′";
+  // 8/3 -> "2 2/3′", the way an organ builder writes it.
+  const whole = Math.floor(num / den), rem = num % den;
+  return (whole ? whole + " " : "") + rem + "/" + den + "′";
+}
+
+function buildConsoleFromOrgan(spec) {
+  if (!spec || !Array.isArray(spec.divisions) || !Array.isArray(spec.stops)) return;
+
+  // Divisions in the order the instrument declares them. Pedals go on the left
+  // jamb with whatever manual follows; the rest go right, which is the same
+  // convention the drawn layout used.
+  // The SAME ids the rest of the page keys on. CAE_DIV_ID is already the engine's
+  // division number -> page id map that note routing uses; reusing it here is what
+  // keeps the jambs, the keyboards, the wind gauges and the note routing all
+  // talking about the same division.
+  const divs = spec.divisions.map((d, i) => ({
+    id: (typeof CAE_DIV_ID !== "undefined" && CAE_DIV_ID[d.id]) || ("d" + d.id),
+    num: d.id | 0,
+    rn: d.pedal ? "Péd" : ["I","II","III","IV","V"][Math.max(0, i - 1)] || "I",
+    name: String(d.name || ("Division " + d.id)),
+    manual: d.pedal ? null : i,
+    enclosed: !!d.enclosed,
+    side: (i < spec.divisions.length / 2) ? "left" : "right",
+    chest: (typeof CAE_DIV_ID !== "undefined" && CAE_DIV_ID[d.id]) || ("d" + d.id),
+    nominal: 95,
+    low: d.low | 0, high: d.high | 0,
+    stops: []
+  }));
+  const byNum = Object.fromEntries(divs.map(d => [d.num, d]));
+
+  spec.stops.forEach(s => {
+    const d = byNum[s.div | 0];
+    if (!d) return;
+    const feet = (s.den | 0) ? (s.num | 0) / (s.den | 0) : null;
+    d.stops.push({
+      n: String(s.name || "?"),
+      fam: CAE_FAM_NAME[s.fam | 0] || "Principal",
+      ft: caeFootageLabel(s.num | 0, s.den | 0),
+      feet: s.compound ? null : feet,
+      role: CAE_ROLE_NAME[s.role | 0] || "Foundation",
+      pc: CAE_PC_NAME[s.pc | 0] || "Unison",
+      sid: s.id | 0
+    });
+  });
+
+  // Swap the model over and rebuild everything derived from it.
+  DIVISIONS.length = 0;
+  divs.forEach(d => DIVISIONS.push(d));
+  ALL.length = 0;
+  DIVISIONS.forEach(d => d.stops.forEach((st, i) => {
+    st.id = d.id + ":" + i; st.div = d.id; st.divName = d.name; st.rn = d.rn;
+    st.osc = "/caecilia/" + d.id + "/" + st.n.toLowerCase().replace(/[^a-z]/g,"") + "/" + (st.feet||st.ft);
+    ALL.push(st);
+  }));
+  byId = Object.fromEntries(ALL.map(x => [x.id, x]));
+  DIV  = Object.fromEntries(DIVISIONS.map(d => [d.id, d]));
+  window.__caeSidToId = Object.fromEntries(ALL.filter(x => x.sid != null).map(x => [x.sid, x.id]));
+
+  // A registration expressed in the old model means nothing in the new one.
+  state.drawn.clear();
+  state.cresc.clear();
+  renderJambs();
+
+  // A manual whose division the instrument does not have is a keyboard whose
+  // notes go nowhere. The drawn layout has a Positif; this organ does not.
+  MANUAL_ORDER.forEach(id => {
+    const kb = document.getElementById("kb-" + id);
+    const row = kb && kb.closest(".manual");
+    if (row) row.style.display = DIV[id] ? "" : "none";
+  });
+
+  if (window.__caeRefreshStops) window.__caeRefreshStops();
+}
+
+/// Light exactly these StopIds, without telling the plugin about it — this IS
+/// what the plugin said.
+function caeAdoptRegistration(sids) {
+  const map = window.__caeSidToId || {};
+  state.drawn.clear();
+  (sids || []).forEach(sid => { const id = map[sid]; if (id) state.drawn.add(id); });
+  if (window.__caeRefreshStops) window.__caeRefreshStops();
+}
+window.buildConsoleFromOrgan = buildConsoleFromOrgan;
+window.caeAdoptRegistration = caeAdoptRegistration;
 
 /* ---- Keyboards ---------------------------------------------------------- */
 const BLACK_AFTER = new Set([0, 1, 3, 4, 5]);   // natural indices that have a sharp after them
@@ -1001,6 +1131,14 @@ GENERALS.forEach((g, i) => {
 /* ================================================================= *
  *  INTERACTION                                                      *
  * ================================================================= */
+/// Repaint every drawstop. Adoption calls this: the plugin has just told us what
+/// is drawn, and no single id changed — potentially all of them did.
+function refreshStops() {
+  ALL.forEach(st => refreshStop(st.id));
+  if (typeof updateStatus === "function") updateStatus();
+}
+window.__caeRefreshStops = refreshStops;
+
 function refreshStop(id) {
   const st = byId[id];
   const node = document.querySelector(`.stop[data-id="${id}"]`);
@@ -1012,7 +1150,24 @@ function refreshStop(id) {
   node.setAttribute("aria-label", `${st.divName} ${st.n} ${st.ft}, ${st.fam}, ${on ? "drawn" : "off"}`);
 }
 /* ---- Native engine bridge (JS -> C++). No-op in a plain browser. -------- */
-const CAE_DIV = { ped: 0, pos: 1, go: 2, rec: 3 };
+// Division ids, and they must match model::buildCaeciliaDemoOrgan() exactly:
+// Pedale = 0, Grand-Orgue = 1, Recit = 2. They did not. The page said
+// { ped: 0, pos: 1, go: 2, rec: 3 }, so its Grand-Orgue keyboard addressed the
+// Recit and its Recit keyboard addressed a division that does not exist.
+//
+// That was inaudible only because every voice carried the whole registration and
+// nothing filtered by division. It stops being inaudible the moment per-division
+// expression or per-rank voices land -- and it would have looked like those
+// broke the console.
+//
+// There is no Positif in the C++ organ, so "pos" is deliberately absent and
+// caeNote() falls its keyboard back to the Grand-Orgue. The page still builds
+// that keyboard; rebuilding the whole console from the real instrument is the
+// proper fix and belongs with the single-registration work.
+const CAE_DIV = { ped: 0, go: 1, rec: 2 };
+// Reverse map, for turning an engine-reported division back into the page's own
+// keyboard id.
+const CAE_DIV_ID = { 0: "ped", 1: "go", 2: "rec" };
 const CAE_BRIDGE = !!(window.__JUCE__ && window.__JUCE__.backend);
 function caeInvoke(name, params) {
   // Lazy backend lookup so it works whenever native integration is ready.
@@ -1022,40 +1177,125 @@ function caeInvoke(name, params) {
   } catch (e) {}
 }
 function caeNote(divStr, midi, down) {
-  caeInvoke("caeciliaNote", [CAE_DIV[divStr] != null ? CAE_DIV[divStr] : 2, midi | 0, !!down]);
+  // Unknown division -> the Grand-Orgue, which is also the division the engine
+  // makes primary (see CaeciliaAudioProcessor::chooseDefaultRegistration).
+  const div = CAE_DIV[divStr] != null ? CAE_DIV[divStr] : CAE_DIV.go;
+  caeInvoke("caeciliaNote", [div, midi | 0, !!down]);
 }
 function caeSyncReg() {
+  // StopIds when we know them, which is whenever the plugin has sent the
+  // instrument. The family+footage form below is the fallback for a page that has
+  // not received a spec — it makes the plugin guess its way back to ids, and it
+  // cannot express a stop the drawn layout has and the organ does not.
+  const sids = [];
+  let haveIds = true;
+  state.drawn.forEach(id => {
+    const st = byId[id];
+    if (!st) return;
+    if (st.sid == null) haveIds = false; else sids.push(st.sid);
+  });
+
+  if (haveIds && window.__caeSidToId) {
+    caeInvoke("caeciliaSetDrawnStops", [sids]);
+    return;
+  }
+
   const ranks = [];
   state.drawn.forEach(id => { const st = byId[id]; if (st) ranks.push({ fam: st.fam, feet: st.feet }); });
   caeInvoke("caeciliaSetRegistration", [ranks]);
 }
 window.caeSyncReg = caeSyncReg;
 window.caeNote = caeNote;
-// Once everything is built: draw a modest default so the instrument sings out of
-// the box (and the UI matches), then keep the engine in sync.
-if (CAE_BRIDGE) setTimeout(() => {
-  if (state.drawn.size === 0) applyPreset("default");
-  else caeSyncReg();
-}, 500);
+// Tell the plugin the page is up. It answers with the instrument and the drawn
+// registration, and the console adopts both.
+//
+// There used to be a 500 ms timer here that imposed a default preset when nothing
+// was drawn. That has to go: the opening plenum is now the host parameters' own
+// default, so the plugin always arrives with a registration -- and a page that
+// asserted one half a second after load would overwrite whatever session the host
+// had just restored.
+if (CAE_BRIDGE) caeInvoke("caeciliaReady", []);
+
+// C++ -> JS: the instrument itself, and what is drawn on it. Sent in reply to
+// caeciliaReady, and again whenever the plugin's registration moves for a reason
+// the page did not cause — host automation, a restored session, a MIDI piston.
+if (CAE_BRIDGE) {
+  window.__JUCE__.backend.addEventListener("caeciliaOrgan", (spec) => {
+    try { buildConsoleFromOrgan(spec); } catch (e) {}
+  });
+  window.__JUCE__.backend.addEventListener("caeciliaRegistration", (r) => {
+    try { caeAdoptRegistration((r && r.stops) || []); } catch (e) {}
+  });
+}
 
 // C++ -> JS: light the notes the engine is actually sounding (so playing your
 // MIDI keyboard lights the manual) and drive the real output VU.
 if (CAE_BRIDGE) {
   window.__JUCE__.backend.addEventListener("caeciliaState", (st) => {
     try {
+      // A piston fired by MIDI program change: flash it, so a program change from
+      // a sequencer track is visible on the jamb rather than a registration that
+      // changed for no apparent reason. -1 means nothing fired this frame.
+      if (typeof st.genFired === "number" && st.genFired >= 0
+          && st.genFired < genHost.children.length) {
+        const b = genHost.children[st.genFired];
+        b.classList.add("flash"); setTimeout(() => b.classList.remove("flash"), 260);
+      }
+
+      // Which pistons hold a registration, so an empty one looks empty.
+      if (typeof st.genSet === "number") {
+        for (let i = 0; i < genHost.children.length; i++)
+          genHost.children[i].classList.toggle("stored", (st.genSet & (1 << i)) !== 0);
+      }
+
       const lit = new Set((st.lit || []).map(Number));
-      document.querySelectorAll('[data-div="go"].wk, [data-div="go"].bk').forEach(k => {
+      // The frame names the division its lit set belongs to (litDiv); honour it
+      // rather than assuming the Grand-Orgue, so the lights follow whichever
+      // manual the engine made primary (see CaeciliaEditor::timerCallback).
+      const ld = CAE_DIV_ID[+st.litDiv] || "go";
+      const sel = `[data-div="${ld}"].wk, [data-div="${ld}"].bk, [data-div="${ld}"].pk`;
+      document.querySelectorAll(sel).forEach(k => {
         const m = +k.dataset.midi;
-        k.classList.toggle("held", lit.has(m) || state.held.has("go:" + m));
+        k.classList.toggle("held", lit.has(m) || state.held.has(ld + ":" + m));
       });
-      // Feed the REAL engine data into the meter/wind animation (frame()), so the
-      // Output VU moves with the actual audio and the wind gauges sag under load —
-      // even when you play the physical MIDI keyboard (not the on-screen keys).
+      // Feed the REAL engine data into the meter animation (frame()), so the Output
+      // VU moves with the actual audio — even when you play the physical MIDI
+      // keyboard (not the on-screen keys). The wind gauges are NOT engine data:
+      // frame() still draws them from its own curve, fed the real voice count,
+      // because AudioEngine::stepWind() is empty and st.windSag is always 0.
       if (typeof sim !== "undefined") {
         sim.bridged   = true;
         sim.realPeakL = +st.peakL || 0;
         sim.realPeakR = +st.peakR || 0;
         sim.realVoices = +st.voices || 0;
+      }
+      // The drawn registration, as two 32-bit halves because a JS number cannot
+      // carry 64 bits of integer precision. Adopted whenever it disagrees with
+      // what is on screen — which is how a host automating a drawstop lights that
+      // drawstop within a frame, and how a session restored with the editor closed
+      // is showing the right thing the moment it opens.
+      //
+      // Not "once": unlike the EQ, this can move for reasons the page did not
+      // cause, at any time. It is cheap because it only repaints on a difference.
+      if (window.__caeSidToId && st.regLo !== undefined) {
+        const lo = st.regLo >>> 0, hi = st.regHi >>> 0;
+        if (lo !== window.__caeRegLo || hi !== window.__caeRegHi) {
+          window.__caeRegLo = lo; window.__caeRegHi = hi;
+          const sids = [];
+          for (let b = 0; b < 32; ++b) {
+            if (lo & (1 << b)) sids.push(b);
+            if (hi & (1 << b)) sids.push(32 + b);
+          }
+          caeAdoptRegistration(sids);
+        }
+      }
+      // Adopt the plugin's EQ once, on the first frame that carries it. Once only:
+      // after that the user's own moves are what should be on screen, and a 30 Hz
+      // feed writing over a slider mid-drag would fight the mouse.
+      if (!window.__caeEqAdopted && Array.isArray(st.eq) && st.eq.length === 5) {
+        window.__caeEqAdopted = true;
+        if (window.__caeAdoptEqKnobs) window.__caeAdoptEqKnobs(st.eq);
+        if (window.__caeAdoptEqPanel) window.__caeAdoptEqPanel(st.eqOn !== false, st.eq);
       }
       // Installer-chosen language: apply once on first run, unless the user has
       // already picked a language in-app (their choice always wins).
@@ -1156,6 +1396,27 @@ function pressGeneral(i) {
   const g = GENERALS[i];
   const btn = genHost.children[i];
   btn.classList.add("flash"); setTimeout(() => btn.classList.remove("flash"), 260);
+  state.seqIndex = i;
+
+  // Hosted: the processor owns the combination memory. It has to, or a MIDI
+  // program change could not reach a piston and closing this window would take
+  // the memory with it. The jamb then follows through caeciliaRegistration, the
+  // same path a host automating a drawstop already travels.
+  if (CAE_BRIDGE) {
+    if (state.setArmed) {
+      caeInvoke("caeciliaCaptureGeneral", [i]);
+      state.setArmed = false; $("#p-set").classList.remove("arm");
+      explain(`Captured ${state.drawn.size} stops → General ${i + 1}`);
+    } else {
+      caeInvoke("caeciliaRecallGeneral", [i]);
+      explain(`General ${i + 1} · ${g.tag}`);
+    }
+    return;
+  }
+
+  // Standalone mockup: unchanged. This page is opened in a plain browser as often
+  // as it is loaded in the plugin, and a piston that did nothing there would make
+  // the mockup useless as a mockup.
   if (state.setArmed) {                       // SET was armed → capture current into this general
     g.sel = ["__captured__" + i];
     CAPTURED[i] = new Set(state.drawn);
@@ -1164,7 +1425,6 @@ function pressGeneral(i) {
     return;
   }
   const set = g.sel[0] && g.sel[0].startsWith("__captured__") ? new Set(CAPTURED[i]) : selectUnion(g.sel);
-  state.seqIndex = i;
   const touched = [...new Set([...set].map(id => byId[id].divName))];
   setDrawn(set, `General ${i + 1} · ${g.tag} · ${set.size} stops · ${touched.join(" + ")}`);
 }
@@ -1195,6 +1455,12 @@ function setShoe(which, pct) {
   pct = Math.max(0, Math.min(100, pct));
   if (which === "swell") {
     state.swell = pct; $("#swell-val").textContent = Math.round(pct) + "%";
+    // The shoe has always moved on screen and done nothing. It goes to every
+    // ENCLOSED division of the instrument -- taken from the organ spec, because a
+    // shoe wired to a division NAME is a shoe that is wrong on the next organ.
+    DIVISIONS.forEach(d => {
+      if (d.enclosed && d.num != null) caeInvoke("caeciliaSetExpression", [d.num, pct / 100]);
+    });
     $("#shoe-swell .fill").style.height = pct + "%";
     $("#shoe-swell .pad").style.bottom = pct + "%";
     // enclosed manual dims as shades close
@@ -1330,10 +1596,12 @@ function makeKnob(opts){
     knob.setAttribute("aria-valuenow", value.toFixed(2));
   }
   function set(v, fire){ value = Math.max(opts.min, Math.min(opts.max, v)); render(); if (fire && opts.onChange) opts.onChange(value); }
+  // onBegin/onEnd bracket a continuous drag. A knob that drives a HOST parameter
+  // has to say so, or the host records one automation point per mouse pixel.
   let dragging=false, startY=0, startV=0;
-  knob.addEventListener("pointerdown", e => { dragging=true; startY=e.clientY; startV=value; try{knob.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+  knob.addEventListener("pointerdown", e => { dragging=true; startY=e.clientY; startV=value; try{knob.setPointerCapture(e.pointerId);}catch(_){} if(opts.onBegin) opts.onBegin(); e.preventDefault(); });
   knob.addEventListener("pointermove", e => { if(!dragging) return; const range=opts.max-opts.min; set(startV + (startY-e.clientY)/170*range, true); });
-  const end = e => { dragging=false; try{knob.releasePointerCapture(e.pointerId);}catch(_){} };
+  const end = e => { if(dragging && opts.onEnd) opts.onEnd(); dragging=false; try{knob.releasePointerCapture(e.pointerId);}catch(_){} };
   knob.addEventListener("pointerup", end); knob.addEventListener("pointercancel", end);
   knob.addEventListener("dblclick", () => set(opts.def, true));
   knob.addEventListener("wheel", e => { e.preventDefault(); const range=opts.max-opts.min; set(value - Math.sign(e.deltaY)*range*0.03, true); }, {passive:false});
@@ -1387,12 +1655,26 @@ function ctrlGroup(i18nKey){
   try { const j=localStorage.getItem("cae.eqcfg"); if(j){ const o=JSON.parse(j); if(Array.isArray(o.gains)&&o.gains.length===5) eqGains=o.gains.map(Number);} } catch(e){}
   const eqKnobs = EQ.map(([key,short], b) => makeKnob({label:short, i18n:key+"Short", min:-9, max:9, def:EQ_DEF[b],
     fmt:v=>(v>0?"+":"")+v.toFixed(1), fam:"var(--fam-Reed,#e0894a)",
+    onBegin:()=>caeInvoke("caeciliaEqGesture",[b,true]),
+    onEnd:()=>caeInvoke("caeciliaEqGesture",[b,false]),
     onChange:v=>{ eqGains[b]=+v.toFixed(1); caeInvoke("caeciliaSetEq",[b,v]);
       try{ localStorage.setItem("cae.eqcfg", JSON.stringify({on:true,gains:eqGains})); }catch(e){}
       const s=document.getElementById("cae-eq-"+b); if(s){ s.value=v; const o=document.getElementById("cae-eq-"+b+"o"); if(o) o.textContent=(v>0?"+":"")+(+v).toFixed(1); } }}));
   eqKnobs.forEach(k=>gEq.append(k.el));
 
-  // TREMULANT toggle (knob-styled)
+  // The plugin owns these values now (they are host parameters), so the console
+  // takes them from the state frame rather than asserting its localStorage copy.
+  // Exposed on window because the settings panel's sliders live in a different
+  // scope and have to adopt the same frame.
+  window.__caeAdoptEqKnobs = (gains) => {
+    for (let b=0;b<5;b++){ eqGains[b] = +(+gains[b]).toFixed(1); eqKnobs[b].set(eqGains[b], false); }
+    try{ localStorage.setItem("cae.eqcfg", JSON.stringify({on:true,gains:eqGains})); }catch(e){}
+  };
+
+  // TREMULANT toggle (knob-styled). It shakes the chests that HAVE a tremulant --
+  // on this organ the Recit, which is where a French console puts it and why one
+  // switch is the right control for it. state.trem also drives the on-screen
+  // shimmer in frame().
   const gTr = ctrlGroup("tremulant");
   const trWrap = el("div","knob-wrap");
   const trK = el("div","knob"); trK.tabIndex=0; trK.style.setProperty("--fam","var(--fam-Mixture,#c98bd0)");
@@ -1414,7 +1696,9 @@ function ctrlGroup(i18nKey){
     caeInvoke("caeciliaSetVolume",[outCfg.vol/100]);
     caeInvoke("caeciliaSetMaster",[outCfg.gain/100]);
     caeInvoke("caeciliaSetReverb",[SPACE_IDX[outCfg.space]||3, outCfg.mix/100]);
-    for (let b=0;b<5;b++) caeInvoke("caeciliaSetEq",[b, eqGains[b]]);
+    // The EQ is deliberately NOT pushed here. It is a host parameter, so the
+    // plugin's value is the real one and this panel adopts it from the state
+    // frame; pushing would overwrite a restored session with a browser cache.
   }, 800);
 })();
 
@@ -1667,7 +1951,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
 <script>
 (function(){
   const I18N = {
-    en:{ lang:"English", brandSubtitle:"Console", selectorPlaceholder:"selector:  reed & 8   ·   principal | mixture   ·   swell & !reed", themeWood:"Wood", themeFlat:"Flat", setPiston:"SET", tuttiPiston:"Tutti", divTagPedal:"Pedal", divTagManual:"Man {rn}", presetSelectTitle:"Organ registration", languageTitle:"Language", closeLabel:"Close", allNotesOff:"All notes off", windReservoirSag:"wind reservoir sag", seqPrevTip:"Sequencer previous (mapped to B5)", seqNextTip:"Sequencer next (mapped to C6)", setTip:"Arm capture, then press a general to memorise", generalCancel:"General cancel", tuttiTip:"Tutti (reversible)", generalPistonTitle:"General {n} — recall intent ({tag})", presetFoundations:"Foundations (default)", presetSalmodia:"🕯 Salmodia · Psalmody (soft)", presetMonastic:"🕯 Monástico · Monastic", presetCeleste:"🕯 Voix Céleste · Meditative", presetBaroque:"Baroque Organ", presetRenaissance:"Renaissance Organ", presetClassic:"Classic Organ", presetRomantic:"Romantic Organ", presetPipe1:"Pipe Organ I", presetPipe2:"Pipe Organ II", presetStrings:"String Organ", presetFlutes:"Flute Organ", presetReeds:"Reed Organ", presetTutti:"Tutti (Full Organ)", stopStateDrawn:"drawn", stopStateRetired:"retired", stopStateOff:"off", panicAllNotesOff:"All notes off (panic)", capturedStopsToGeneral:"Captured {n} stops → General {i}", generalRecallLine:"General {i} · {tag} · {n} stops · {divisions}", tuttiReleased:"Tutti released", tuttiFullOrgan:"Tutti · full organ · {n} stops", crescendoEngaged:"Crescendo {pct}% · {n} stops active", selectorDrew:"Selector `{q}` → drew {n} stops", generalCancelRetired:"General cancel · all stops retired", setArmed:"SET armed — press a general to capture the current registration", setDisarmed:"SET disarmed", roleFoundation:"Foundation", roleChorus:"Chorus", roleColor:"Color", roleMutation:"Mutation", roleMixtureCrown:"Mixture crown", roleSolo:"Solo", pcSub:"Sub", pcUnison:"Unison", pcOctave:"Octave", pcSuper:"Super", pcCompound:"Compound", typeFull:"Full installation (VST3 + Standalone)", typeCustom:"Custom installation", infoBeforePage:"CAECILIA — Hybrid Virtual Pipe Organ Instrument\nCopyright (c) 2026 Alesson Queiroz. All rights reserved.\n\nThank you for installing Caecilia.\n\nWHAT YOU ARE INSTALLING\n  •  Caecilia VST3  — load it in any VST3 host (Cubase, Reaper, Studio One,\n     Bitwig, Ableton via VST3, …). Installed to the shared 64-bit VST3 folder.\n  •  Caecilia Standalone  — play the organ without a DAW, straight from the\n     Start menu.\n\nHIGHLIGHTS\n  •  A three-division romantic organ with per-tonal-family voicing.\n  •  A living console: draw a stop and the sound changes; the keys light up as\n     you play; the wind breathes under the polyphony.\n  •  Algorithmic room reverb and equal-temperament tuning.\n  •  Built-in demonstration pieces (J. S. Bach) that play with the keys lighting up.\n\nAFTER INSTALLING\n  •  Rescan the plug-ins in your DAW so Caecilia (VST3, Instrument) appears.\n  •  The Standalone needs the Microsoft Edge WebView2 Runtime, which ships with\n     Windows 10/11. If the console looks blank, install Microsoft's free \"Evergreen\n     WebView2 Runtime\" and restart.\n\nThis is proprietary software. See the license agreement on the next page.", versionInfoDescription:"Caecilia pipe organ instrument installer", settings:"Settings", settingsSub:"Reverb, output and expression",
+    en:{ lang:"English", brandSubtitle:"Console", selectorPlaceholder:"selector:  reed & 8   ·   principal | mixture   ·   swell & !reed", themeWood:"Wood", themeFlat:"Flat", setPiston:"SET", tuttiPiston:"Tutti", divTagPedal:"Pedal", divTagManual:"Man {rn}", presetSelectTitle:"Organ registration", languageTitle:"Language", closeLabel:"Close", allNotesOff:"All notes off", windReservoirSag:"wind reservoir sag", seqPrevTip:"Sequencer previous (mapped to B5)", seqNextTip:"Sequencer next (mapped to C6)", setTip:"Arm capture, then press a general to memorise", generalCancel:"General cancel", tuttiTip:"Tutti (reversible)", generalPistonTitle:"General {n} — recall intent ({tag})", presetFoundations:"Foundations (default)", presetSalmodia:"🕯 Salmodia · Psalmody (soft)", presetMonastic:"🕯 Monástico · Monastic", presetCeleste:"🕯 Voix Céleste · Meditative", presetBaroque:"Baroque Organ", presetRenaissance:"Renaissance Organ", presetClassic:"Classic Organ", presetRomantic:"Romantic Organ", presetPipe1:"Pipe Organ I", presetPipe2:"Pipe Organ II", presetStrings:"String Organ", presetFlutes:"Flute Organ", presetReeds:"Reed Organ", presetTutti:"Tutti (Full Organ)", stopStateDrawn:"drawn", stopStateRetired:"retired", stopStateOff:"off", panicAllNotesOff:"All notes off (panic)", capturedStopsToGeneral:"Captured {n} stops → General {i}", generalRecallLine:"General {i} · {tag} · {n} stops · {divisions}", tuttiReleased:"Tutti released", tuttiFullOrgan:"Tutti · full organ · {n} stops", crescendoEngaged:"Crescendo {pct}% · {n} stops active", selectorDrew:"Selector `{q}` → drew {n} stops", generalCancelRetired:"General cancel · all stops retired", setArmed:"SET armed — press a general to capture the current registration", setDisarmed:"SET disarmed", roleFoundation:"Foundation", roleChorus:"Chorus", roleColor:"Color", roleMutation:"Mutation", roleMixtureCrown:"Mixture crown", roleSolo:"Solo", pcSub:"Sub", pcUnison:"Unison", pcOctave:"Octave", pcSuper:"Super", pcCompound:"Compound", typeFull:"Full installation (VST3 + Standalone)", typeCustom:"Custom installation", infoBeforePage:"CAECILIA — Hybrid Virtual Pipe Organ Instrument\nCopyright (c) 2026 Alesson Queiroz and the Caecilia contributors.\nFree and open source under the Apache License 2.0.\n\nThank you for installing Caecilia.\n\nWHAT YOU ARE INSTALLING\n  •  Caecilia VST3  — load it in any VST3 host (Cubase, Reaper, Studio One,\n     Bitwig, Ableton via VST3, …). Installed to the shared 64-bit VST3 folder.\n  •  Caecilia Standalone  — play the organ without a DAW, straight from the\n     Start menu.\n\nHIGHLIGHTS\n  •  A three-division romantic organ with per-tonal-family voicing.\n  •  A living console: draw a stop and the sound changes; the keys light up as\n     you play; the wind breathes under the polyphony.\n  •  Algorithmic room reverb and equal-temperament tuning.\n  •  Built-in demonstration pieces (J. S. Bach) that play with the keys lighting up.\n\nAFTER INSTALLING\n  •  Rescan the plug-ins in your DAW so Caecilia (VST3, Instrument) appears.\n  •  The Standalone needs the Microsoft Edge WebView2 Runtime, which ships with\n     Windows 10/11. If the console looks blank, install Microsoft's free \"Evergreen\n     WebView2 Runtime\" and restart.\n\nCaecilia is open-source software licensed under the Apache License 2.0. See the license on the next page.", versionInfoDescription:"Caecilia pipe organ instrument installer", settings:"Settings", settingsSub:"Reverb, output and expression",
          releaseKeys:"Release keys", enterDraw:"Enter to draw", output:"Output", master:"Master volume",
          reverb:"Reverb", mix:"Mix", space:"Space", tremulant:"Tremulant", on:"On", off:"Off",
          hint:"Draw a stop, then play — the wind will breathe under the load",
@@ -1677,7 +1961,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          device:"Audio device & latency", deviceSub:"Pick a low-latency driver (ASIO / WASAPI exclusive) and a small buffer to remove the delay you feel", audioBtn:"Open audio settings…",
          eq:"Equalizer", eqSub:"5-band master voicing", warmth:"Warmth", boxiness:"Boxiness", bodyBand:"Body", presence:"Presence", air:"Air", flat:"Flat",
          outputVu:"Output · VU", windLabel:"Wind · reservoir pressure (mm H₂O)", stableTxt:"stable", sagTxt:"sag", seq:"Seq", pedalNotes:"Pédale — 30 notes", swell:"Swell", cresc:"Cresc.", drawn:"Drawn", keysLbl:"Keys", polyphony:"Polyphony", enclosed:"enclosed", matchWord:"match", matchesWord:"matches", hintPlay:"Draw a stop, then play — the wind will breathe under the load.", famPrincipal:"Principal", famFlute:"Flute", famString:"String", famReed:"Reed", famMixture:"Mixture", famCornet:"Cornet", play:"Play", stop:"Stop", organPreset:"🎹 Organ preset…", controlsLabel:"Console controls", grpOutput:"Output", grpReverb:"Reverb", grpEq:"EQ", vol:"Vol", gain:"Gain", warmthShort:"Warm", boxinessShort:"Box", bodyBandShort:"Body", presenceShort:"Pres", airShort:"Air", audioTipBody:"Hearing distortion or crackling? Open the app's audio settings and choose 'Windows Audio (Exclusive Mode)' or 'Low-Latency Mode' for clean sound.", audioTipClose:"Got it" },
-    pt:{ lang:"Português (BR)", brandSubtitle:"Console", selectorPlaceholder:"seletor:  palheta & 8   ·   principal | mistura   ·   rec & !palheta", themeWood:"Madeira", themeFlat:"Plano", setPiston:"GRAVAR", tuttiPiston:"Tutti", divTagPedal:"Pedal", divTagManual:"Man {rn}", presetSelectTitle:"Registro de órgão", languageTitle:"Idioma", closeLabel:"Fechar", allNotesOff:"Todas as notas desligadas", windReservoirSag:"queda do reservatório de vento", seqPrevTip:"Sequenciador anterior (mapeado para Si5)", seqNextTip:"Sequenciador seguinte (mapeado para Dó6)", setTip:"Arme a captura e pressione uma geral para memorizar", generalCancel:"Cancelar geral", tuttiTip:"Tutti (reversível)", generalPistonTitle:"Geral {n} — intenção de chamada ({tag})", presetFoundations:"Fundamentos (padrão)", presetSalmodia:"🕯 Salmodia · Salmodia (suave)", presetMonastic:"🕯 Monástico · Monástico", presetCeleste:"🕯 Voix Céleste · Meditativo", presetBaroque:"Órgão Barroco", presetRenaissance:"Órgão Renascentista", presetClassic:"Órgão Clássico", presetRomantic:"Órgão Romântico", presetPipe1:"Órgão de Tubos I", presetPipe2:"Órgão de Tubos II", presetStrings:"Órgão de Cordas", presetFlutes:"Órgão de Flautas", presetReeds:"Órgão de Palhetas", presetTutti:"Tutti (Órgão Completo)", stopStateDrawn:"puxado", stopStateRetired:"recolhido", stopStateOff:"desligado", panicAllNotesOff:"Todas as notas desligadas (pânico)", capturedStopsToGeneral:"Capturados {n} registros → Geral {i}", generalRecallLine:"Geral {i} · {tag} · {n} registros · {divisions}", tuttiReleased:"Tutti liberado", tuttiFullOrgan:"Tutti · órgão completo · {n} registros", crescendoEngaged:"Crescendo {pct}% · {n} registros ativos", selectorDrew:"Seletor `{q}` → puxou {n} registros", generalCancelRetired:"Cancelar geral · todos os registros recolhidos", setArmed:"SET armado — pressione um geral para capturar a registração atual", setDisarmed:"SET desarmado", roleFoundation:"Fundo", roleChorus:"Coro", roleColor:"Cor", roleMutation:"Mutação", roleMixtureCrown:"Coroa de mistura", roleSolo:"Solo", pcSub:"Sub", pcUnison:"Uníssono", pcOctave:"Oitava", pcSuper:"Super", pcCompound:"Composto", typeFull:"Instalação completa (VST3 + Standalone)", typeCustom:"Instalação personalizada", infoBeforePage:"CAECILIA — Instrumento Virtual de Órgão de Tubos Híbrido\nCopyright (c) 2026 Alesson Queiroz. Todos os direitos reservados.\n\nObrigado por instalar o Caecilia.\n\nO QUE VOCÊ ESTÁ INSTALANDO\n  •  Caecilia VST3  — carregue-o em qualquer host VST3 (Cubase, Reaper, Studio One,\n     Bitwig, Ableton via VST3, …). Instalado na pasta VST3 compartilhada de 64 bits.\n  •  Caecilia Standalone  — toque o órgão sem uma DAW, direto do\n     menu Iniciar.\n\nDESTAQUES\n  •  Um órgão romântico de três divisões com vozeamento por família tonal.\n  •  Um console vivo: puxe um registro e o som muda; as teclas acendem enquanto\n     você toca; o vento respira sob a polifonia.\n  •  Reverb de sala algorítmico e afinação em temperamento igual.\n  •  Peças de demonstração integradas (J. S. Bach) que tocam com as teclas acendendo.\n\nAPÓS A INSTALAÇÃO\n  •  Reescaneie os plug-ins na sua DAW para o Caecilia (VST3, Instrumento) aparecer.\n  •  O Standalone precisa do Microsoft Edge WebView2 Runtime, que acompanha o\n     Windows 10/11. Se o console parecer em branco, instale o gratuito \"Evergreen\n     WebView2 Runtime\" da Microsoft e reinicie.\n\nEste é um software proprietário. Veja o contrato de licença na próxima página.", versionInfoDescription:"Instalador do instrumento de órgão de tubos Caecilia", settings:"Ajustes", settingsSub:"Reverb, saída e expressão",
+    pt:{ lang:"Português (BR)", brandSubtitle:"Console", selectorPlaceholder:"seletor:  palheta & 8   ·   principal | mistura   ·   rec & !palheta", themeWood:"Madeira", themeFlat:"Plano", setPiston:"GRAVAR", tuttiPiston:"Tutti", divTagPedal:"Pedal", divTagManual:"Man {rn}", presetSelectTitle:"Registro de órgão", languageTitle:"Idioma", closeLabel:"Fechar", allNotesOff:"Todas as notas desligadas", windReservoirSag:"queda do reservatório de vento", seqPrevTip:"Sequenciador anterior (mapeado para Si5)", seqNextTip:"Sequenciador seguinte (mapeado para Dó6)", setTip:"Arme a captura e pressione uma geral para memorizar", generalCancel:"Cancelar geral", tuttiTip:"Tutti (reversível)", generalPistonTitle:"Geral {n} — intenção de chamada ({tag})", presetFoundations:"Fundamentos (padrão)", presetSalmodia:"🕯 Salmodia · Salmodia (suave)", presetMonastic:"🕯 Monástico · Monástico", presetCeleste:"🕯 Voix Céleste · Meditativo", presetBaroque:"Órgão Barroco", presetRenaissance:"Órgão Renascentista", presetClassic:"Órgão Clássico", presetRomantic:"Órgão Romântico", presetPipe1:"Órgão de Tubos I", presetPipe2:"Órgão de Tubos II", presetStrings:"Órgão de Cordas", presetFlutes:"Órgão de Flautas", presetReeds:"Órgão de Palhetas", presetTutti:"Tutti (Órgão Completo)", stopStateDrawn:"puxado", stopStateRetired:"recolhido", stopStateOff:"desligado", panicAllNotesOff:"Todas as notas desligadas (pânico)", capturedStopsToGeneral:"Capturados {n} registros → Geral {i}", generalRecallLine:"Geral {i} · {tag} · {n} registros · {divisions}", tuttiReleased:"Tutti liberado", tuttiFullOrgan:"Tutti · órgão completo · {n} registros", crescendoEngaged:"Crescendo {pct}% · {n} registros ativos", selectorDrew:"Seletor `{q}` → puxou {n} registros", generalCancelRetired:"Cancelar geral · todos os registros recolhidos", setArmed:"SET armado — pressione um geral para capturar a registração atual", setDisarmed:"SET desarmado", roleFoundation:"Fundo", roleChorus:"Coro", roleColor:"Cor", roleMutation:"Mutação", roleMixtureCrown:"Coroa de mistura", roleSolo:"Solo", pcSub:"Sub", pcUnison:"Uníssono", pcOctave:"Oitava", pcSuper:"Super", pcCompound:"Composto", typeFull:"Instalação completa (VST3 + Standalone)", typeCustom:"Instalação personalizada", infoBeforePage:"CAECILIA — Instrumento Virtual de Órgão de Tubos Híbrido\nCopyright (c) 2026 Alesson Queiroz e os contribuidores do Caecilia.\nSoftware livre e de código aberto sob a Licença Apache 2.0.\n\nObrigado por instalar o Caecilia.\n\nO QUE VOCÊ ESTÁ INSTALANDO\n  •  Caecilia VST3  — carregue-o em qualquer host VST3 (Cubase, Reaper, Studio One,\n     Bitwig, Ableton via VST3, …). Instalado na pasta VST3 compartilhada de 64 bits.\n  •  Caecilia Standalone  — toque o órgão sem uma DAW, direto do\n     menu Iniciar.\n\nDESTAQUES\n  •  Um órgão romântico de três divisões com vozeamento por família tonal.\n  •  Um console vivo: puxe um registro e o som muda; as teclas acendem enquanto\n     você toca; o vento respira sob a polifonia.\n  •  Reverb de sala algorítmico e afinação em temperamento igual.\n  •  Peças de demonstração integradas (J. S. Bach) que tocam com as teclas acendendo.\n\nAPÓS A INSTALAÇÃO\n  •  Reescaneie os plug-ins na sua DAW para o Caecilia (VST3, Instrumento) aparecer.\n  •  O Standalone precisa do Microsoft Edge WebView2 Runtime, que acompanha o\n     Windows 10/11. Se o console parecer em branco, instale o gratuito \"Evergreen\n     WebView2 Runtime\" da Microsoft e reinicie.\n\nEste é um software proprietário. Veja o contrato de licença na próxima página.", versionInfoDescription:"Instalador do instrumento de órgão de tubos Caecilia", settings:"Ajustes", settingsSub:"Reverb, saída e expressão",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Saída", master:"Volume geral",
          reverb:"Reverb", mix:"Mistura", space:"Espaço", tremulant:"Tremulante", on:"Ligado", off:"Desligado",
          hint:"Puxe um registro e toque — o vento respira sob a carga",
@@ -1687,7 +1971,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          device:"Áudio e latência", deviceSub:"Escolha um driver de baixa latência (ASIO / WASAPI exclusivo) e um buffer pequeno para tirar o atraso", audioBtn:"Abrir configurações de áudio…",
          eq:"Equalizador", eqSub:"Voicing master de 5 bandas", warmth:"Calor (grave)", boxiness:"Caixa (médio)", bodyBand:"Corpo", presence:"Presença", air:"Brilho", flat:"Plano",
          outputVu:"Saída · VU", windLabel:"Vento · pressão do fole (mm H₂O)", stableTxt:"estável", sagTxt:"queda", seq:"Seq", pedalNotes:"Pédale — 30 notas", swell:"Expressão", cresc:"Cresc.", drawn:"Registros", keysLbl:"Teclas", polyphony:"Polifonia", enclosed:"expressivo", matchWord:"resultado", matchesWord:"resultados", hintPlay:"Puxe um registro e toque — o vento respira sob a carga.", famPrincipal:"Principal", famFlute:"Flauta", famString:"Corda", famReed:"Palheta", famMixture:"Mistura", famCornet:"Corneta", play:"Tocar", stop:"Parar", organPreset:"🎹 Registro de órgão…", controlsLabel:"Controles", grpOutput:"Saída", grpReverb:"Reverb", grpEq:"EQ", vol:"Vol", gain:"Ganho", warmthShort:"Grave", boxinessShort:"Caixa", bodyBandShort:"Corpo", presenceShort:"Pres", airShort:"Ar", audioTipBody:"Ouvindo distorção ou estalos? Abra as configurações de áudio do app e escolha 'Windows Audio (Exclusive Mode)' ou 'Low-Latency Mode' para um som limpo.", audioTipClose:"Entendi" },
-    es:{ lang:"Español", brandSubtitle:"Consola", selectorPlaceholder:"selector:  lengüeta & 8   ·   principal | mixtura   ·   rec & !lengüeta", themeWood:"Madera", themeFlat:"Plano", setPiston:"FIJAR", tuttiPiston:"Tutti", divTagPedal:"Pedal", divTagManual:"Man {rn}", presetSelectTitle:"Registro de órgano", languageTitle:"Idioma", closeLabel:"Cerrar", allNotesOff:"Todas las notas apagadas", windReservoirSag:"caída del depósito de viento", seqPrevTip:"Secuenciador anterior (asignado a Si5)", seqNextTip:"Secuenciador siguiente (asignado a Do6)", setTip:"Arme la captura y pulse una general para memorizar", generalCancel:"Cancelación general", tuttiTip:"Tutti (reversible)", generalPistonTitle:"General {n} — intención de llamada ({tag})", presetFoundations:"Fundamentos (predeterminado)", presetSalmodia:"🕯 Salmodia · Salmodia (suave)", presetMonastic:"🕯 Monástico · Monástico", presetCeleste:"🕯 Voix Céleste · Meditativo", presetBaroque:"Órgano Barroco", presetRenaissance:"Órgano Renacentista", presetClassic:"Órgano Clásico", presetRomantic:"Órgano Romántico", presetPipe1:"Órgano de Tubos I", presetPipe2:"Órgano de Tubos II", presetStrings:"Órgano de Cuerdas", presetFlutes:"Órgano de Flautas", presetReeds:"Órgano de Lengüetas", presetTutti:"Tutti (Órgano Completo)", stopStateDrawn:"activado", stopStateRetired:"retirado", stopStateOff:"desactivado", panicAllNotesOff:"Todas las notas apagadas (pánico)", capturedStopsToGeneral:"Capturados {n} registros → General {i}", generalRecallLine:"General {i} · {tag} · {n} registros · {divisions}", tuttiReleased:"Tutti liberado", tuttiFullOrgan:"Tutti · órgano completo · {n} registros", crescendoEngaged:"Crescendo {pct}% · {n} registros activos", selectorDrew:"Selector `{q}` → activó {n} registros", generalCancelRetired:"Cancelación general · todos los registros retirados", setArmed:"SET armado — pulse un general para capturar la registración actual", setDisarmed:"SET desarmado", roleFoundation:"Fondo", roleChorus:"Coro", roleColor:"Color", roleMutation:"Mutación", roleMixtureCrown:"Corona de mixtura", roleSolo:"Solo", pcSub:"Sub", pcUnison:"Unísono", pcOctave:"Octava", pcSuper:"Super", pcCompound:"Compuesto", typeFull:"Instalación completa (VST3 + Standalone)", typeCustom:"Instalación personalizada", infoBeforePage:"CAECILIA — Instrumento Virtual de Órgano de Tubos Híbrido\nCopyright (c) 2026 Alesson Queiroz. Todos los derechos reservados.\n\nGracias por instalar Caecilia.\n\nQUÉ ESTÁS INSTALANDO\n  •  Caecilia VST3  — cárgalo en cualquier host VST3 (Cubase, Reaper, Studio One,\n     Bitwig, Ableton vía VST3, …). Instalado en la carpeta VST3 compartida de 64 bits.\n  •  Caecilia Standalone  — toca el órgano sin una DAW, directamente desde el\n     menú Inicio.\n\nDESTACADOS\n  •  Un órgano romántico de tres divisiones con vozificación por familia tonal.\n  •  Una consola viva: acciona un registro y el sonido cambia; las teclas se iluminan\n     mientras tocas; el viento respira bajo la polifonía.\n  •  Reverberación de sala algorítmica y afinación de temperamento igual.\n  •  Piezas de demostración integradas (J. S. Bach) que suenan con las teclas iluminándose.\n\nDESPUÉS DE INSTALAR\n  •  Vuelve a escanear los plug-ins en tu DAW para que Caecilia (VST3, Instrumento) aparezca.\n  •  El Standalone necesita Microsoft Edge WebView2 Runtime, que viene con\n     Windows 10/11. Si la consola se ve en blanco, instala el gratuito \"Evergreen\n     WebView2 Runtime\" de Microsoft y reinícialo.\n\nEste es un software propietario. Consulta el acuerdo de licencia en la página siguiente.", versionInfoDescription:"Instalador del instrumento de órgano de tubos Caecilia", settings:"Ajustes", settingsSub:"Reverb, salida y expresión",
+    es:{ lang:"Español", brandSubtitle:"Consola", selectorPlaceholder:"selector:  lengüeta & 8   ·   principal | mixtura   ·   rec & !lengüeta", themeWood:"Madera", themeFlat:"Plano", setPiston:"FIJAR", tuttiPiston:"Tutti", divTagPedal:"Pedal", divTagManual:"Man {rn}", presetSelectTitle:"Registro de órgano", languageTitle:"Idioma", closeLabel:"Cerrar", allNotesOff:"Todas las notas apagadas", windReservoirSag:"caída del depósito de viento", seqPrevTip:"Secuenciador anterior (asignado a Si5)", seqNextTip:"Secuenciador siguiente (asignado a Do6)", setTip:"Arme la captura y pulse una general para memorizar", generalCancel:"Cancelación general", tuttiTip:"Tutti (reversible)", generalPistonTitle:"General {n} — intención de llamada ({tag})", presetFoundations:"Fundamentos (predeterminado)", presetSalmodia:"🕯 Salmodia · Salmodia (suave)", presetMonastic:"🕯 Monástico · Monástico", presetCeleste:"🕯 Voix Céleste · Meditativo", presetBaroque:"Órgano Barroco", presetRenaissance:"Órgano Renacentista", presetClassic:"Órgano Clásico", presetRomantic:"Órgano Romántico", presetPipe1:"Órgano de Tubos I", presetPipe2:"Órgano de Tubos II", presetStrings:"Órgano de Cuerdas", presetFlutes:"Órgano de Flautas", presetReeds:"Órgano de Lengüetas", presetTutti:"Tutti (Órgano Completo)", stopStateDrawn:"activado", stopStateRetired:"retirado", stopStateOff:"desactivado", panicAllNotesOff:"Todas las notas apagadas (pánico)", capturedStopsToGeneral:"Capturados {n} registros → General {i}", generalRecallLine:"General {i} · {tag} · {n} registros · {divisions}", tuttiReleased:"Tutti liberado", tuttiFullOrgan:"Tutti · órgano completo · {n} registros", crescendoEngaged:"Crescendo {pct}% · {n} registros activos", selectorDrew:"Selector `{q}` → activó {n} registros", generalCancelRetired:"Cancelación general · todos los registros retirados", setArmed:"SET armado — pulse un general para capturar la registración actual", setDisarmed:"SET desarmado", roleFoundation:"Fondo", roleChorus:"Coro", roleColor:"Color", roleMutation:"Mutación", roleMixtureCrown:"Corona de mixtura", roleSolo:"Solo", pcSub:"Sub", pcUnison:"Unísono", pcOctave:"Octava", pcSuper:"Super", pcCompound:"Compuesto", typeFull:"Instalación completa (VST3 + Standalone)", typeCustom:"Instalación personalizada", infoBeforePage:"CAECILIA — Instrumento Virtual de Órgano de Tubos Híbrido\nCopyright (c) 2026 Alesson Queiroz y los colaboradores de Caecilia.\nSoftware libre y de código abierto bajo la Licencia Apache 2.0.\n\nGracias por instalar Caecilia.\n\nQUÉ ESTÁS INSTALANDO\n  •  Caecilia VST3  — cárgalo en cualquier host VST3 (Cubase, Reaper, Studio One,\n     Bitwig, Ableton vía VST3, …). Instalado en la carpeta VST3 compartida de 64 bits.\n  •  Caecilia Standalone  — toca el órgano sin una DAW, directamente desde el\n     menú Inicio.\n\nDESTACADOS\n  •  Un órgano romántico de tres divisiones con vozificación por familia tonal.\n  •  Una consola viva: acciona un registro y el sonido cambia; las teclas se iluminan\n     mientras tocas; el viento respira bajo la polifonía.\n  •  Reverberación de sala algorítmica y afinación de temperamento igual.\n  •  Piezas de demostración integradas (J. S. Bach) que suenan con las teclas iluminándose.\n\nDESPUÉS DE INSTALAR\n  •  Vuelve a escanear los plug-ins en tu DAW para que Caecilia (VST3, Instrumento) aparezca.\n  •  El Standalone necesita Microsoft Edge WebView2 Runtime, que viene con\n     Windows 10/11. Si la consola se ve en blanco, instala el gratuito \"Evergreen\n     WebView2 Runtime\" de Microsoft y reinícialo.\n\nEste es un software propietario. Consulta el acuerdo de licencia en la página siguiente.", versionInfoDescription:"Instalador del instrumento de órgano de tubos Caecilia", settings:"Ajustes", settingsSub:"Reverb, salida y expresión",
          releaseKeys:"Soltar teclas", enterDraw:"Enter para registrar", output:"Salida", master:"Volumen general",
          reverb:"Reverb", mix:"Mezcla", space:"Espacio", tremulant:"Trémolo", on:"Activado", off:"Desactivado",
          hint:"Registra y toca — el viento respira bajo la carga",
@@ -1697,7 +1981,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
          device:"Audio y latencia", deviceSub:"Elige un driver de baja latencia (ASIO / WASAPI exclusivo) y un búfer pequeño para quitar el retardo", audioBtn:"Abrir ajustes de audio…",
          eq:"Ecualizador", eqSub:"Voicing master de 5 bandas", warmth:"Calidez", boxiness:"Caja (medios)", bodyBand:"Cuerpo", presence:"Presencia", air:"Aire", flat:"Plano",
          outputVu:"Salida · VU", windLabel:"Viento · presión del fuelle (mm H₂O)", stableTxt:"estable", sagTxt:"caída", seq:"Sec", pedalNotes:"Pédale — 30 notas", swell:"Expresión", cresc:"Cresc.", drawn:"Registros", keysLbl:"Teclas", polyphony:"Polifonía", enclosed:"expresivo", matchWord:"resultado", matchesWord:"resultados", hintPlay:"Registra y toca — el viento respira bajo la carga.", famPrincipal:"Principal", famFlute:"Flauta", famString:"Cuerda", famReed:"Lengüeta", famMixture:"Mixtura", famCornet:"Corneta", play:"Reproducir", stop:"Parar", organPreset:"🎹 Registro de órgano…", controlsLabel:"Controles", grpOutput:"Salida", grpReverb:"Reverb", grpEq:"EQ", vol:"Vol", gain:"Ganancia", warmthShort:"Grave", boxinessShort:"Caja", bodyBandShort:"Cuerpo", presenceShort:"Pres", airShort:"Aire", audioTipBody:"¿Escuchas distorsión o chasquidos? Abre los ajustes de audio de la app y elige 'Windows Audio (Exclusive Mode)' o 'Low-Latency Mode' para un sonido limpio.", audioTipClose:"Entendido" },
-    de:{ lang:"Deutsch", brandSubtitle:"Spieltisch", selectorPlaceholder:"Selektor:  Zunge & 8   ·   Principal | Mixtur   ·   rec & !Zunge", themeWood:"Holz", themeFlat:"Flach", setPiston:"SETZEN", tuttiPiston:"Tutti", divTagPedal:"Pedal", divTagManual:"Man {rn}", presetSelectTitle:"Orgel-Register", languageTitle:"Sprache", closeLabel:"Schließen", allNotesOff:"Alle Noten aus", windReservoirSag:"Absinken des Windbalgs", seqPrevTip:"Sequenzer zurück (belegt mit Si5)", seqNextTip:"Sequenzer vor (belegt mit Do6)", setTip:"Aufnahme scharfschalten, dann eine General zum Speichern drücken", generalCancel:"General ab", tuttiTip:"Tutti (reversierbar)", generalPistonTitle:"General {n} — Abrufabsicht ({tag})", presetFoundations:"Grundstimmen (Standard)", presetSalmodia:"🕯 Salmodia · Psalmodie (leise)", presetMonastic:"🕯 Monástico · Klösterlich", presetCeleste:"🕯 Voix Céleste · Meditativ", presetBaroque:"Barockorgel", presetRenaissance:"Renaissance-Orgel", presetClassic:"Klassische Orgel", presetRomantic:"Romantische Orgel", presetPipe1:"Pfeifenorgel I", presetPipe2:"Pfeifenorgel II", presetStrings:"Streicherorgel", presetFlutes:"Flötenorgel", presetReeds:"Zungenorgel", presetTutti:"Tutti (Volles Werk)", stopStateDrawn:"gezogen", stopStateRetired:"abgestoßen", stopStateOff:"aus", panicAllNotesOff:"Alle Töne aus (Panik)", capturedStopsToGeneral:"{n} Register erfasst → General {i}", generalRecallLine:"General {i} · {tag} · {n} Register · {divisions}", tuttiReleased:"Tutti gelöst", tuttiFullOrgan:"Tutti · volles Werk · {n} Register", crescendoEngaged:"Crescendo {pct}% · {n} Register aktiv", selectorDrew:"Selektor `{q}` → {n} Register gezogen", generalCancelRetired:"Generalabsteller · alle Register abgestoßen", setArmed:"SET aktiviert — eine General-Taste drücken, um die aktuelle Registrierung zu erfassen", setDisarmed:"SET deaktiviert", roleFoundation:"Grundstimme", roleChorus:"Chor", roleColor:"Farbe", roleMutation:"Aliquote", roleMixtureCrown:"Mixturkrone", roleSolo:"Solo", pcSub:"Sub", pcUnison:"Unison", pcOctave:"Oktave", pcSuper:"Super", pcCompound:"Zusammengesetzt", typeFull:"Vollständige Installation (VST3 + Standalone)", typeCustom:"Benutzerdefinierte Installation", infoBeforePage:"CAECILIA — Hybrides virtuelles Pfeifenorgel-Instrument\nCopyright (c) 2026 Alesson Queiroz. Alle Rechte vorbehalten.\n\nDanke, dass du Caecilia installierst.\n\nWAS DU INSTALLIERST\n  •  Caecilia VST3  — lade es in einen beliebigen VST3-Host (Cubase, Reaper, Studio One,\n     Bitwig, Ableton über VST3, …). Wird in den gemeinsamen 64-Bit-VST3-Ordner installiert.\n  •  Caecilia Standalone  — spiele die Orgel ohne DAW, direkt aus dem\n     Startmenü.\n\nHIGHLIGHTS\n  •  Eine romantische Orgel mit drei Werken und Intonation je Klangfamilie.\n  •  Eine lebendige Spielanlage: ziehe ein Register und der Klang ändert sich; die Tasten leuchten,\n     während du spielst; der Wind atmet unter der Polyphonie.\n  •  Algorithmischer Saal-Hall und gleichstufige Stimmung.\n  •  Integrierte Demostücke (J. S. Bach), die mit aufleuchtenden Tasten spielen.\n\nNACH DER INSTALLATION\n  •  Scanne die Plug-ins in deiner DAW neu, damit Caecilia (VST3, Instrument) erscheint.\n  •  Das Standalone benötigt die Microsoft Edge WebView2 Runtime, die mit\n     Windows 10/11 geliefert wird. Wenn die Spielanlage leer aussieht, installiere die kostenlose\n     „Evergreen WebView2 Runtime“ von Microsoft und starte neu.\n\nDies ist proprietäre Software. Siehe die Lizenzvereinbarung auf der nächsten Seite.", versionInfoDescription:"Caecilia Pfeifenorgel-Instrument-Installer", settings:"Einstellungen", settingsSub:"Hall, Ausgang und Expression",
+    de:{ lang:"Deutsch", brandSubtitle:"Spieltisch", selectorPlaceholder:"Selektor:  Zunge & 8   ·   Principal | Mixtur   ·   rec & !Zunge", themeWood:"Holz", themeFlat:"Flach", setPiston:"SETZEN", tuttiPiston:"Tutti", divTagPedal:"Pedal", divTagManual:"Man {rn}", presetSelectTitle:"Orgel-Register", languageTitle:"Sprache", closeLabel:"Schließen", allNotesOff:"Alle Noten aus", windReservoirSag:"Absinken des Windbalgs", seqPrevTip:"Sequenzer zurück (belegt mit Si5)", seqNextTip:"Sequenzer vor (belegt mit Do6)", setTip:"Aufnahme scharfschalten, dann eine General zum Speichern drücken", generalCancel:"General ab", tuttiTip:"Tutti (reversierbar)", generalPistonTitle:"General {n} — Abrufabsicht ({tag})", presetFoundations:"Grundstimmen (Standard)", presetSalmodia:"🕯 Salmodia · Psalmodie (leise)", presetMonastic:"🕯 Monástico · Klösterlich", presetCeleste:"🕯 Voix Céleste · Meditativ", presetBaroque:"Barockorgel", presetRenaissance:"Renaissance-Orgel", presetClassic:"Klassische Orgel", presetRomantic:"Romantische Orgel", presetPipe1:"Pfeifenorgel I", presetPipe2:"Pfeifenorgel II", presetStrings:"Streicherorgel", presetFlutes:"Flötenorgel", presetReeds:"Zungenorgel", presetTutti:"Tutti (Volles Werk)", stopStateDrawn:"gezogen", stopStateRetired:"abgestoßen", stopStateOff:"aus", panicAllNotesOff:"Alle Töne aus (Panik)", capturedStopsToGeneral:"{n} Register erfasst → General {i}", generalRecallLine:"General {i} · {tag} · {n} Register · {divisions}", tuttiReleased:"Tutti gelöst", tuttiFullOrgan:"Tutti · volles Werk · {n} Register", crescendoEngaged:"Crescendo {pct}% · {n} Register aktiv", selectorDrew:"Selektor `{q}` → {n} Register gezogen", generalCancelRetired:"Generalabsteller · alle Register abgestoßen", setArmed:"SET aktiviert — eine General-Taste drücken, um die aktuelle Registrierung zu erfassen", setDisarmed:"SET deaktiviert", roleFoundation:"Grundstimme", roleChorus:"Chor", roleColor:"Farbe", roleMutation:"Aliquote", roleMixtureCrown:"Mixturkrone", roleSolo:"Solo", pcSub:"Sub", pcUnison:"Unison", pcOctave:"Oktave", pcSuper:"Super", pcCompound:"Zusammengesetzt", typeFull:"Vollständige Installation (VST3 + Standalone)", typeCustom:"Benutzerdefinierte Installation", infoBeforePage:"CAECILIA — Hybrides virtuelles Pfeifenorgel-Instrument\nCopyright (c) 2026 Alesson Queiroz und die Caecilia-Mitwirkenden.\nFreie und quelloffene Software unter der Apache-Lizenz 2.0.\n\nDanke, dass du Caecilia installierst.\n\nWAS DU INSTALLIERST\n  •  Caecilia VST3  — lade es in einen beliebigen VST3-Host (Cubase, Reaper, Studio One,\n     Bitwig, Ableton über VST3, …). Wird in den gemeinsamen 64-Bit-VST3-Ordner installiert.\n  •  Caecilia Standalone  — spiele die Orgel ohne DAW, direkt aus dem\n     Startmenü.\n\nHIGHLIGHTS\n  •  Eine romantische Orgel mit drei Werken und Intonation je Klangfamilie.\n  •  Eine lebendige Spielanlage: ziehe ein Register und der Klang ändert sich; die Tasten leuchten,\n     während du spielst; der Wind atmet unter der Polyphonie.\n  •  Algorithmischer Saal-Hall und gleichstufige Stimmung.\n  •  Integrierte Demostücke (J. S. Bach), die mit aufleuchtenden Tasten spielen.\n\nNACH DER INSTALLATION\n  •  Scanne die Plug-ins in deiner DAW neu, damit Caecilia (VST3, Instrument) erscheint.\n  •  Das Standalone benötigt die Microsoft Edge WebView2 Runtime, die mit\n     Windows 10/11 geliefert wird. Wenn die Spielanlage leer aussieht, installiere die kostenlose\n     „Evergreen WebView2 Runtime“ von Microsoft und starte neu.\n\nDies ist proprietäre Software. Siehe die Lizenzvereinbarung auf der nächsten Seite.", versionInfoDescription:"Caecilia Pfeifenorgel-Instrument-Installer", settings:"Einstellungen", settingsSub:"Hall, Ausgang und Expression",
          releaseKeys:"Tasten lösen", enterDraw:"Enter zum Registrieren", output:"Ausgang", master:"Gesamtlautstärke",
          reverb:"Hall", mix:"Anteil", space:"Raum", tremulant:"Tremulant", on:"An", off:"Aus",
          hint:"Zieh ein Register und spiele — der Wind atmet unter Last",
@@ -1929,10 +2213,29 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
       }
     }
     if (eqOn) eqOn.onclick = () => { eqCfg.on=!eqCfg.on; eqSave(); emit("caeciliaSetEqEnabled",[!!eqCfg.on]); eqRefresh(); };
-    for (let b=0;b<5;b++){ const s=$("cae-eq-"+b); if (s) s.oninput = () => { eqCfg.gains[b]=+s.value; eqSave(); emit("caeciliaSetEq",[b,+s.value]); eqRefresh(); }; }
+    for (let b=0;b<5;b++){
+      const s=$("cae-eq-"+b); if (!s) continue;
+      s.oninput = () => { eqCfg.gains[b]=+s.value; eqSave(); emit("caeciliaSetEq",[b,+s.value]); eqRefresh(); };
+      // A range input fires oninput per pixel of travel; bracket the drag so the
+      // host records one ramp rather than a few hundred points.
+      s.addEventListener("pointerdown", ()=>emit("caeciliaEqGesture",[b,true]));
+      const endGesture = ()=>emit("caeciliaEqGesture",[b,false]);
+      s.addEventListener("pointerup", endGesture);
+      s.addEventListener("pointercancel", endGesture);
+      s.addEventListener("blur", endGesture);
+    }
     if (eqFlat) eqFlat.onclick = () => { for (let b=0;b<5;b++){ eqCfg.gains[b]=0; emit("caeciliaSetEq",[b,0]); } eqSave(); eqRefresh(); };
     eqRefresh();
-    /* EQ is pushed on load by the top control panel (authoritative). */
+    // Same adoption hook as the control-panel knobs: whichever of the two the user
+    // last touched, both now show what the PLUGIN holds. They kept separate copies
+    // of the same localStorage key and never told each other, so moving one left
+    // the other displaying a value that was no longer true anywhere.
+    window.__caeAdoptEqPanel = (on, gains) => {
+      eqCfg.on = !!on;
+      for (let b=0;b<5;b++) eqCfg.gains[b] = +(+gains[b]).toFixed(1);
+      eqSave();
+      eqRefresh();
+    };
 
     langSel.onchange = () => { lang = langSel.value; try { localStorage.setItem("cae.lang", lang); } catch(e){} applyLang(); };
     // Programmatic language set (installer coupling); applyLang is in scope here.

@@ -1,14 +1,15 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — UI Mockups
 
-Interactive, self-contained HTML mockups that are the **visual and behavioural
-design reference** for the JUCE `caecilia::ui` module. They are not shipped
-code and pull in nothing external — open any file directly in a browser.
+Self-contained HTML pages that pull in nothing external — open one directly in a
+browser. `console.html` is **no longer only a mockup**: `juce_add_binary_data`
+compiles it into the plugin and `CaeciliaEditor::provide` serves it to the
+editor's `juce::WebBrowserComponent`, so it *is* the shipping console. Editing it
+changes the product.
 
 | File | What it specifies |
 |------|-------------------|
@@ -22,7 +23,12 @@ A pixel/behaviour target for the console. Everything is generated from a single
 `ORGAN` definition object, so the mockup exercises the same **data-driven,
 semantic-identity** philosophy the real module must implement.
 
-### What it demonstrates (mapped to the module design)
+### What it demonstrates (mapped to the original JUCE module design)
+
+The `caecilia::ui` counterparts in the right-hand column were written, never
+instantiated, and removed — see
+[`src/caecilia/ui/README.md`](../../src/caecilia/ui/README.md). The column now
+reads as the design each element was drawn against, not as code you can find.
 
 | Mockup element | `caecilia::ui` counterpart |
 |----------------|----------------------------|
@@ -49,7 +55,9 @@ semantic-identity** philosophy the real module must implement.
   sequencer (the Si5/Do6 → Previous/Next mapping from the user's rig).
 - **Expression shoes** — drag (or scroll) **Swell** (dims the enclosed Récit) and
   **Crescendo** (a Walze that progressively engages stops softest-to-loudest).
-- **Tremulant** — toggles wind modulation on the Récit (visible on its gauge).
+- **Tremulant** — toggles the *simulated* wind modulation on the Récit (visible on
+  its gauge). It is inaudible inside the plugin: the page calls
+  `caeciliaSetTremulant`, a name `CaeciliaEditor::makeOptions` does not register.
 - **Wood / Flat** — top-right skin switch.
 
 ### Constraints honoured
@@ -62,5 +70,8 @@ semantic-identity** philosophy the real module must implement.
 - Every drawstop is a real `<button>` with `aria-pressed` and a semantic
   `aria-label`, sketching the `ConsoleAccessibilityHandler` contract.
 
-> This is a **design reference only** — no audio, no real DSP. The numbers on the
-> meters are a plausible simulation, not the engine.
+> Opened in a plain browser this is a design reference: no audio, and the meters
+> are a plausible simulation. Inside the plugin the native bridge is live —
+> drawstops and keys really sound, and the VU shows the engine's mastered output
+> peak — but the wind gauges are still that simulation, because the engine does
+> not step the wind model yet.
