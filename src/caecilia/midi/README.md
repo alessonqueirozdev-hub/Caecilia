@@ -13,18 +13,26 @@ mapping, and **MIDI-learn** bindings that carry the *same* selector-grammar
 identity the OSC and JSON-RPC surfaces carry. (The console omnibar is not part of
 that: it matches with its own, simpler grammar written in JavaScript.)
 
-It is part of the pure, JUCE-free `caecilia_core` static library and is
-headless-unit-testable, though no test suite covers it yet. No `juce::` MIDI type
+It is part of the pure, JUCE-free `caecilia_core` static library. The learn
+table, the binding predicates and the event packing are covered by
+`tests/midi/MidiLearnTest.cpp`; the router, the sequencer and the combination
+store are not, and nothing instantiates them either. No `juce::` MIDI type
 ever reaches it: the design is for the `plugin` module to translate
 `juce::MidiMessage` into [`MidiEvent`](MidiEvent.h) at the seam.
 
-> **Status: this module is not wired into the plugin — but most of what it
-> describes now happens anyway, somewhere else.** The shipping VST3/Standalone
-> uses only [`ChannelToDivisionMap`](ChannelToDivisionMap.h) from here:
-> `plugin::CommandBridge` reads it while walking `juce::MidiMessage`s directly
-> and builds no `MidiEvent`. `MidiRouter`, `MidiMap`, `MidiLearn`,
-> `CombinationStore`, `Sequencer`, `VelocityCurve` and `ProgramChangeMap` are
-> never instantiated outside this directory.
+> **Status: partly wired.** The shipping VST3/Standalone uses
+> [`ChannelToDivisionMap`](ChannelToDivisionMap.h) for note routing, and
+> [`MidiMap`](MidiMap.h) + [`MidiLearn`](MidiLearn.h) +
+> [`MidiLearnBinding`](MidiLearnBinding.h) for MIDI learn — a drawstop or a
+> general piston bound to a physical control, right-clicked on the console,
+> saved with the document. That path is also the first thing to cross the seam
+> this module was designed around: `plugin::CaeciliaAudioProcessor` translates a
+> `juce::MidiMessage` into a [`MidiEvent`](MidiEvent.h) for it.
+>
+> Still never instantiated outside this directory: `MidiRouter`,
+> `CombinationStore`, `Sequencer`, `VelocityCurve`, `ProgramChangeMap`. The note
+> path continues to be decoded on `juce::MidiMessage`s inside
+> `plugin::CommandBridge`, so the duplication below is reduced, not ended.
 >
 > What the plugin does handle, through that second implementation: note on/off
 > with channel→division routing and per-division compass limits, all-notes-off,
@@ -35,9 +43,10 @@ ever reaches it: the design is for the `plugin` module to translate
 > implementation on raw juce MIDI inside `plugin::CaeciliaAudioProcessor`, not
 > this module's `Sequencer`.
 >
-> So the honest gap is narrower than "the MIDI layer is missing": it is
-> **MIDI learn** — binding a physical control to a drawstop or a piston — and the
-> duplication of everything else across two implementations.
+> So what is left is not a missing feature so much as one implementation too
+> many: notes, channels, expression, program change and the page-turn are all
+> decoded in the plugin against `juce::MidiMessage`, and described here against
+> `MidiEvent`. MIDI learn is the piece that crossed.
 
 ## Design in one paragraph
 
