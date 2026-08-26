@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -17,10 +14,11 @@ namespace caecilia::registration
 /**
  * @brief Provenance for one stop's state: the answer to "why is this on?".
  *
- * The rules/derivation engine records an Explanation for every stop it engages,
- * so @c RegistrationEngine::explain(StopId) can attribute the current sound to a
- * user action, a plenum build, a coupler, or a ported intent — the kind of
- * transparency no mainstream organ VST offers.
+ * @c RegistrationEngine records an Explanation for every stop it engages, so
+ * @c RegistrationEngine::explain(StopId) can attribute the current sound to a
+ * user action, a plenum build, a snapshot recall or a ported intent — the kind
+ * of transparency no mainstream organ VST offers. @todo @ref Reason::CouplerImplied
+ * is defined but never assigned, so coupler-implied stops are not attributed.
  */
 struct Explanation
 {

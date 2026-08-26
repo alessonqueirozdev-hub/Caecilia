@@ -12,6 +12,16 @@ It is part of the pure, JUCE-free `caecilia_core` static library. It runs
 **entirely off the audio thread**; the only thing it hands across the audio seam
 is a fixed-capacity, trivially-copyable `StateDelta`.
 
+> **Status: not wired into the plugin.** The engine, selector algebra, parser,
+> branching history, plenum builder, provenance and intent porting are
+> implemented and covered by the Catch2 suite, but nothing in the
+> VST3/Standalone constructs a `RegistrationEngine` or a `SelectorParser`. The
+> sounding registration is sent by the WebView console as a
+> `vector<model::RegistrationRank>` that `plugin::CaeciliaAudioProcessor` turns
+> into one composite spectrum, and `AudioEngine`'s `ApplyStateDelta` command is
+> still an empty case. Read what follows as this module in isolation, not as a
+> description of what the product does today.
+
 ## The three layers
 
 | Layer | Lives in | This module's types |
@@ -31,8 +41,10 @@ is a fixed-capacity, trivially-copyable `StateDelta`.
   set algebra — union `|`, intersection `&`, difference `-`, complement `!` —
   that resolves against the live `OrganSpec` + `RegistrationState` on demand.
 - **`SelectorParser`** is the single, **versioned** grammar (`GrammarVersion`
-  1.0) shared verbatim by OSC, JSON-RPC, MIDI-learn and the UI omnibar, so there
-  is zero API drift in how a stop is selected anywhere in the product.
+  1.0) the OSC, JSON-RPC and MIDI-learn surfaces are designed to carry verbatim,
+  so a stop would be selected the same way everywhere. It has no callers yet:
+  those surfaces only transport the text, and the console omnibar runs its own
+  simpler grammar in JavaScript.
 - **`RegistrationState`** is the engaged `StopSet` plus first-class couplers.
 - **`RegistrationCommand`** is the tagged variant every mutation is expressed as
   (engage / disengage / toggle a stop, selector or coupler; solo; clear;
@@ -71,9 +83,11 @@ is a fixed-capacity, trivially-copyable `StateDelta`.
 ```
 
 `StateDelta` is a `static_assert`-enforced trivially-copyable POD (no heap, no
-pointers), so it crosses the lock-free ring without allocation. Everything that
+pointers), so it can cross the lock-free ring without allocation. Everything that
 produces it — set algebra, rules evaluation, history, plenum derivation, intent
-porting — stays off the audio thread.
+porting — stays off the audio thread. The diagram above is the design, not the
+wiring: no caller pushes a `StateDelta` today, and the engine's `ApplyStateDelta`
+case does not yet perform the crossfade.
 
 ## Public API
 
@@ -128,13 +142,15 @@ const registration::PortResult ported = registration::port(intent, otherOrgan);
 Nothing in this module is real-time safe, by design — the registration brain is a
 shell that runs off the audio thread. The one exception is `StateDelta`, which is
 a trivially-copyable POD so the caller can memcpy it onto the SPSC command ring;
-the audio engine applies it as a wind-modelled crossfade.
+the audio engine is to apply it as a wind-modelled crossfade once that command is
+implemented.
 
 ## Roadmap notes
 
 Scaffold for **v0.7 — Registration brain**. The state model, selector algebra,
 parser, branching history, plenum builder, provenance and intent porting are
-wired end-to-end; deeper behaviour is marked in-code:
+complete *within this module*; no caller outside it exists yet (see the status
+note above). Deeper behaviour is marked in-code:
 
 - `TODO(phase7)`: restore per-node provenance across undo/redo so `explain()`
   reports each node's original cause rather than a conservative rebuild.

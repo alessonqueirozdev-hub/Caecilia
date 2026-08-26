@@ -1,14 +1,12 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
 #include "caecilia/core/EngineTypes.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -68,6 +66,35 @@ public:
     StopSet& uniteWith(const StopSet& other);       ///< this |= other
     StopSet& intersectWith(const StopSet& other);   ///< this &= other
     StopSet& subtract(const StopSet& other);        ///< this -= other
+
+    // --- Bit-mask form ------------------------------------------------------
+    //
+    // A registration small enough to fit in a machine word is a registration the
+    // audio thread can read without a lock, a copy or an allocation: one relaxed
+    // load per host parameter and a single 64-bit compare against what is already
+    // sounding. That is the whole reason the host stop-parameter pool is capped
+    // at @ref kMaskCapacity rather than at some rounder, larger number.
+
+    /// Stops representable in a mask. Bit N is @c StopId{N}.
+    static constexpr std::size_t kMaskCapacity = 64;
+
+    /**
+     * @brief This set as a bit mask, one bit per @c StopId::value.
+     * @return The mask. Ids at or beyond @ref kMaskCapacity are DROPPED — the
+     *         mask cannot represent them, and silently widening it would break
+     *         the audio thread's single-compare contract.
+     *
+     * RT-safe, @c noexcept: this is the form the audio thread reads.
+     */
+    [[nodiscard]] std::uint64_t toMask() const noexcept;
+
+    /// The inverse of @ref toMask. Ids come out sorted ascending, as always.
+    [[nodiscard]] static StopSet fromMask(std::uint64_t mask);
+
+    /// @return true if every id in this set fits in a mask, i.e. @ref toMask is
+    ///         lossless. Off-thread; the guard rail for an organ that outgrows the
+    ///         reserved parameter pool.
+    [[nodiscard]] bool fitsInMask() const noexcept;
 
     // --- Comparison ---------------------------------------------------------
     friend bool operator==(const StopSet& a, const StopSet& b) noexcept

@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -50,9 +47,12 @@ struct GrammarVersion
  * mirroring the @c core::Footage representation so text and code agree exactly.
  * String values may be quoted (`name:"open diapason"`).
  *
- * This grammar is reused verbatim by the control, midi and ui modules, so there
- * is zero API drift between how a stop is selected from a script, a learned MIDI
- * control, and the omnibar. The parser is off-thread, allocation-tolerant and
+ * The control and midi modules carry this grammar verbatim as text, so a stop is
+ * described the same way from a script and from a learned MIDI control; neither
+ * calls the parser yet. @ref caecilia::registration::factoryGenerals does — the
+ * instrument's eight general pistons are selector expressions resolved against
+ * whatever organ is loaded — and the console omnibar matches with its own simpler
+ * grammar in JavaScript. The parser is off-thread, allocation-tolerant and
  * exception-free (errors are returned, never thrown).
  */
 class SelectorParser

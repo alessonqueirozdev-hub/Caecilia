@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -22,12 +19,12 @@ namespace caecilia::registration
  *        combined with set algebra (union `|`, intersection `&`, difference `-`,
  *        complement `!`).
  *
- * A Selector is the first-class, composable expression the whole product speaks:
- * it is produced by the shared @c SelectorParser (from OSC / JSON-RPC /
- * MIDI-learn / the UI omnibar), stored inside a @c RegistrationCommand, and
- * resolved on demand against the live @c OrganSpec + @c RegistrationState. Nothing
- * is precomputed, so a stored Selector keeps meaning as the registration or even
- * the loaded organ changes.
+ * A Selector is the first-class, composable expression the registration brain is
+ * built around: produced by the shared @c SelectorParser, stored inside a
+ * @c RegistrationCommand, and resolved on demand against the live @c OrganSpec +
+ * @c RegistrationState. Nothing is precomputed, so a stored Selector keeps its
+ * meaning as the registration or even the loaded organ changes. @todo the OSC,
+ * JSON-RPC, MIDI-learn and console surfaces do not feed the parser yet.
  *
  * The tree is value-semantic and self-contained (children held by value), which
  * keeps commands trivially copyable-ish and safe to snapshot into history.

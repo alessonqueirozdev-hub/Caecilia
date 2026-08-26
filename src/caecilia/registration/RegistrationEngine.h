@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -32,10 +29,14 @@ namespace caecilia::registration
  *
  * Kept as an interface so the control, midi, ui and plugin modules can drive one
  * shared brain without depending on its concrete storage. Every mutating call
- * returns the @c StateDelta the caller pushes over the SPSC ring to the audio
- * engine for a click-free, wind-modelled stop crossfade.
+ * returns the @c StateDelta its caller is meant to push over the SPSC ring to the
+ * audio engine for a click-free, wind-modelled stop crossfade.
  *
  * Nothing here is real-time safe: the whole engine runs off the audio thread.
+ *
+ * @todo No module drives this engine yet. The plugin builds its sounding
+ *       registration straight from the console's rank list, and the engine's
+ *       @c ApplyStateDelta command is still an empty case.
  */
 class IRegistrationEngine
 {

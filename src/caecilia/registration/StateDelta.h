@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -33,6 +30,10 @@ namespace caecilia::registration
  * @ref truncated is set; the caller should split the transition into several
  * deltas (a fresh recompute against the partially-applied state). This never
  * happens for ordinary draws and is only reachable by a full-organ recall.
+ *
+ * @todo Nothing pushes a StateDelta across the seam yet, and the engine's
+ *       @c ApplyStateDelta command is an empty case, so the crossfade described
+ *       above is the design rather than current behaviour.
  */
 struct StateDelta
 {

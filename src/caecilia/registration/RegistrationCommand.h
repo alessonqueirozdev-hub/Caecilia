@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -20,14 +17,15 @@ namespace caecilia::registration
 {
 
 /**
- * @brief A single declarative registration operation — the tagged variant that
- *        the whole system speaks and that the history folds into state.
+ * @brief A single declarative registration operation — the tagged variant the
+ *        registration brain speaks and that the history folds into state.
  *
  * State is the fold of the command log, so every mutation is expressed as one of
  * these values (never by poking the state directly). A command carries a @ref kind
  * plus exactly the payload that kind needs; the others are ignored. Commands are
  * plain values, so they snapshot cleanly into the branching @c RegistrationHistory
- * and travel unchanged from OSC, JSON-RPC, MIDI-learn and the UI.
+ * and are meant to travel unchanged from OSC, JSON-RPC, MIDI-learn and the UI.
+ * @todo none of those surfaces produce one yet; only the unit tests do.
  */
 struct RegistrationCommand
 {
