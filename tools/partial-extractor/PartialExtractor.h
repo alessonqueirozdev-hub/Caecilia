@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -32,7 +29,7 @@ struct PartialExtractorOptions
 /**
  * @brief FFT-analyses a steady pipe tone into an additive @ref PartialBank.
  *
- * This is the off-line producer of the proprietary SpectralModel that later
+ * This is the off-line producer of the SpectralModel that later
  * seeds the modeled sustain tier, so a sampled attack and a modeled sustain can
  * share one timbre. It is a pure transform over decoded @ref WavData with no
  * console/file I/O of its own.

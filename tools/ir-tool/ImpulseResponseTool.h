@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -22,7 +19,8 @@ namespace caecilia::tools
 enum class IrOperation
 {
     Info,       ///< Describe the IR only; do not modify it.
-    Trim,       ///< Trim leading pre-delay and the inaudible tail.
+    Trim,       ///< Copies the IR through unchanged today (and reports success);
+                ///< @todo(phase03) trim the leading pre-delay and inaudible tail.
     Normalise,  ///< Scale so the peak sits at a target level.
     Resample,   ///< Convert to a target sample rate.
     Deconvolve  ///< Recover an IR from a sine-sweep + inverse-filter pair.

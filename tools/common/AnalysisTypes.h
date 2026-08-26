@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -18,7 +15,7 @@
  * These structures live in @c caecilia::tools (NOT in @c caecilia::core): they
  * are host-side, off-line artefacts written to disk by the command-line
  * toolchain and later re-ingested by the synthesis/model modules as the
- * proprietary SpectralModel / sample-set metadata. Nothing here ever touches
+ * SpectralModel / sample-set metadata. Nothing here ever touches
  * the audio thread, so unlike the RT core these types are free to own
  * heap-backed containers (@c std::vector).
  *

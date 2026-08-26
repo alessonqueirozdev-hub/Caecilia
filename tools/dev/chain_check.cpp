@@ -1,13 +1,12 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; see LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 // Full master-chain gain-staging + distortion probe. Renders chords of varying
-// density through engine + reverb + MasterEq + polyphony trim + Limiter (the real
-// plugin chain) and reports mastered dBFS levels and a bass-chord distortion
-// proxy, so loudness (sparse must be loud) and cleanliness (dense/bass must not
-// distort) can be tuned without the plugin.
+// density through engine + reverb + MasterEq + Limiter (the real plugin chain)
+// and reports mastered dBFS levels and a bass-chord distortion proxy, so loudness
+// (sparse must be loud) and cleanliness (dense/bass must not distort) can be tuned
+// without the plugin. The polyphony trim below survives only as a switch: kPolyK
+// is 0, matching the plugin, which no longer ducks by voice count.
 
 #include "caecilia/core/AudioBlock.h"
 #include "caecilia/core/EngineTypes.h"
@@ -81,7 +80,7 @@ Res run(const std::vector<model::RegistrationRank>& ranks, const std::vector<int
     for (int b=0;b<totalBlocks;++b){
         L.fill(0);R.fill(0); core::AudioBlock blk(ch,2,kBlock); engine.processBlock(blk);
         eq.process(blk);
-        // polyphony trim (smoothed), mirrors the processor
+        // polyphony trim (smoothed); identity while kPolyK is 0, as in the processor
         const std::size_t nv = engine.activeVoiceCount();
         const float polyTarget = 1.0f/(1.0f+kPolyK*(nv>0?(float)(nv-1):0.0f));
         // AdditiveVoice bakes kShipBase itself; probe other bases via the ratio.

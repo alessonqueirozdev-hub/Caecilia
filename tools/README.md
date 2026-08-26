@@ -1,13 +1,12 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — offline analysis tools
 
 Host-side command-line utilities that make up Caecilia's **off-line analysis
-toolchain**. They turn raw recordings into the proprietary metadata the runtime
+toolchain**. They turn raw recordings into the metadata the runtime
 engine later ingests (loop points, per-pipe pitch, additive `PartialBank`s that
 seed the modeled sustain, and conditioned impulse responses for the convolution
 reverb).
@@ -28,7 +27,10 @@ These tools are deliberately **separate from the real-time signal path**:
 |---|---|---|
 | `caecilia-sampleset-analyzer` | Extract loop points and pitch from a recorded pipe sample. | Scaffold: level/peak scan real; pitch + loop search are `TODO(phase04)`. |
 | `caecilia-partial-extractor`  | FFT a steady pipe tone into an additive `PartialBank` (off-line `SpectralModel`). | Scaffold: bank plumbing real; STFT + partial tracking are `TODO(phase05/06)`. |
-| `caecilia-ir-tool`            | Inspect and condition impulse responses for the convolution reverb. | Scaffold: `info` + `normalise` real; `trim`/`resample`/`deconvolve` are `TODO(phase03/95)`. |
+| `caecilia-ir-tool`            | Inspect and condition impulse responses for the convolution reverb. | Scaffold: `info` + `normalise` real; `resample`/`deconvolve` fail with "not implemented"; `trim` silently writes the IR back **unchanged** (`TODO(phase03)`). |
+| `caecilia-fingerprint`        | Render a fixed set of cases and print a stable numeric signature of the sound, so a refactor can be shown not to have changed it. | Real. |
+| `caecilia-bench`              | Real-time factor of a held Tutti (FTZ/DAZ on, warm-up discarded, minimum of N runs). | Real. |
+| `caecilia-verify-registration` | Headless proof that the shared composite voicing sounds, and that the partial cap no longer drops reeds. | Real. |
 
 ## Usage
 
@@ -52,10 +54,11 @@ Every tool supports `--help`. Options use `--key value` or `--key=value`; bare
 
 ```
 tools/
-  CMakeLists.txt              # 3 executables + a shared helper static lib
+  CMakeLists.txt              # 6 executables + a shared helper static lib
   common/
     AnalysisTypes.h           # POD result types (in caecilia::tools, not core)
     CliArgs.{h,cpp}           # tiny dependency-free argument parser
+    DenormalGuard.h           # scoped FTZ/DAZ, so measurements match the plugin
     WavFile.{h,cpp}           # minimal RIFF/WAVE reader + float32 writer
   sampleset-analyzer/
     SampleSetAnalyzer.{h,cpp} # loop/pitch extraction transform
@@ -66,6 +69,13 @@ tools/
   ir-tool/
     ImpulseResponseTool.{h,cpp} # IR measure/condition transform
     Main.cpp                  # CLI driver
+  fingerprint/
+    Main.cpp                  # sonic-signature harness
+  bench/
+    Main.cpp                  # real-time-factor benchmark
+  verify-registration/
+    Main.cpp                  # registration voicing proof
+  dev/                        # scratch harnesses + build scripts, NOT in CMake
 ```
 
 The analysis classes do no console/file I/O — the `Main.cpp` drivers own that —

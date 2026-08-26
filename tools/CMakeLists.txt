@@ -1,13 +1,12 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential; unauthorized copying,
-# distribution, or use of any part is prohibited. See LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # ---------------------------------------------------------------------------
 # tools : offline, host-side, JUCE-free command-line utilities.
 #
 # These executables CONSUME the pure caecilia_core static library (for the
 # shared vocabulary: PipeId, Footage, versionString, ...) but are NOT part of
-# it. They form the off-line analysis toolchain that produces the proprietary
+# it. They form the off-line analysis toolchain that produces the
 # SpectralModel / sample-set metadata; nothing here ever runs on the audio
 # thread, so std::vector, <fstream> and iostream are all fair game.
 #
@@ -56,6 +55,15 @@ caecilia_add_tool(caecilia-sampleset-analyzer
 caecilia_add_tool(caecilia-partial-extractor
     partial-extractor/PartialExtractor.cpp
     partial-extractor/Main.cpp)
+
+# 3) Sonic fingerprint: a stable numeric signature of how the organ sounds, so a
+#    large refactor can be shown not to have changed the sound.
+caecilia_add_tool(caecilia-fingerprint
+    fingerprint/Main.cpp)
+
+# 3) Render benchmark: what fraction of a core does a Tutti actually cost?
+caecilia_add_tool(caecilia-bench
+    bench/Main.cpp)
 
 # 3) Impulse-response utility for the convolution reverb.
 caecilia_add_tool(caecilia-ir-tool
