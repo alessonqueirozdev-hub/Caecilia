@@ -754,7 +754,9 @@ std::vector<core::StopId> resolveRanksToStops(const Organ&                      
 
 core::Footage footageFromFeet(double feet) noexcept
 {
-    struct Std { double feet; core::Footage f; };
+    // Default member initialisers so the aggregate has no uninitialised state
+    // even if somebody later default-constructs one.
+    struct Std { double feet = 0.0; core::Footage f{}; };
     static const Std table[] = {
         { 32.0,             core::footage::kThirtyTwo },
         { 16.0,             core::footage::kSixteen },
@@ -920,13 +922,20 @@ namespace
 
         core::WindchestId addWindchest(std::string name, float pressurePa, bool tremulant)
         {
+            // The id is taken BEFORE the move, not read back out of the moved-from
+            // object afterwards. Reading w.id after std::move(w) happens to work
+            // today -- Windchest's implicit move copies its POD members and only
+            // moves the string -- and stops working, silently, the day Windchest
+            // gains a move constructor of its own that clears them.
+            const auto id = core::WindchestId{ static_cast<std::uint16_t>(windchests.size()) };
+
             Windchest w;
-            w.id                = core::WindchestId{ static_cast<std::uint16_t>(windchests.size()) };
+            w.id                = id;
             w.name              = std::move(name);
             w.nominalPressurePa = pressurePa;
             w.hasTremulant      = tremulant;
             windchests.push_back(std::move(w));
-            return w.id;
+            return id;
         }
 
         /// @return The new division's id.
