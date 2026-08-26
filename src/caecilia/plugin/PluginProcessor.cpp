@@ -514,6 +514,23 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     engine_.prepare(sampleRate, frames, channels, chestCount);
     engine_.setWindSupply(&wind_);
 
+    // Let the engine size its own CPU budget from how long its blocks take.
+    //
+    // Without this the budget stayed at its default of one unit per voice slot,
+    // which is more than a completely full pool can ever demand -- so the deadline
+    // governor could not fire even in principle and the scheduler's promise that a
+    // worst-case tutti thins rather than xruns was decorative. A constant would be
+    // no better: a cost unit is a voice's relative weight, so how many fit in a
+    // block is a fact about the MACHINE.
+    //
+    // The ceiling is the point past which nothing would be shed anyway, so on a
+    // machine that copes the governor sits at it and never touches a note.
+    {
+        core::engine::CpuGovernor::Config cfg;
+        cfg.ceilingUnits = static_cast<float>(core::engine::kMaxVoices);
+        engine_.enableCpuGovernor(cfg);
+    }
+
     // Which chests sit inside a swell box, and whose shoe closes them. Enclosure is
     // a property of the division and the buses are per chest, so the mapping has to
     // be stated -- and on a real instrument it is unambiguous, because the box
@@ -884,6 +901,14 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // Wrap the host buffer as the JUCE-free AudioBlock — the only audio type that
     // crosses the engine seam — and render. The engine overwrites the buffer.
+    // An offline bounce is not a deadline: the host runs the graph as fast as it
+    // can, or as slowly as its disk allows, and either way the wall clock says
+    // nothing about whether this machine can play the piece. Told so, the governor
+    // keeps metering and stops acting, and a bounce comes out matching what the
+    // organist heard live instead of thinned by a stopwatch. Asked every block
+    // because a host can bounce and then go straight back to playing.
+    engine_.setRealtime(! isNonRealtime());
+
     core::AudioBlock block(buffer.getArrayOfWritePointers(), numChannels, numFrames);
     engine_.processBlock(block);
 

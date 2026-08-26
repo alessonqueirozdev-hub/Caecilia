@@ -421,10 +421,10 @@ void CaeciliaEditor::pushRegistration()
 void CaeciliaEditor::timerCallback()
 {
     // Push one consistent frame (lit keys + meters) to the page. The console listens
-    // for "caeciliaState" and updates its key lights and VU from it. The wind field
-    // is sent too but is always zero (AudioEngine::stepWind() is an empty stub, and
-    // captureMeters never fills the wind members), so the console's wind gauges are
-    // animated by its own JS curve from the voice count.
+    // for "caeciliaState" and updates its key lights, VU, wind gauges and load
+    // meter from it. The wind fields carry the reservoir's real pressure and sag --
+    // they used to be sent as a constant zero while stepWind was a stub, and the
+    // console animated its gauges from a JS curve over the voice count instead.
     const ui::ConsoleFrame frame = processor_.stateMirror().read();
 
     auto* obj = new juce::DynamicObject();
@@ -435,6 +435,12 @@ void CaeciliaEditor::timerCallback()
     obj->setProperty("peakL",    processor_.outputPeakL());
     obj->setProperty("peakR",    processor_.outputPeakR());
     obj->setProperty("windSag",  frame.meters.windSagNorm);
+    // What the engine is costing, and what it is giving up for it. cpuPeak rather
+    // than cpuLoad alone because an xrun is ONE block over 1.0 and a third of a
+    // second of averaging cannot show one.
+    obj->setProperty("cpuLoad",  frame.meters.cpuLoad);
+    obj->setProperty("cpuPeak",  frame.meters.cpuPeakLoad);
+    obj->setProperty("shed",     static_cast<int>(frame.meters.voicesShed));
     obj->setProperty("playDiv",  static_cast<int>(processor_.playDivision().value));
     // The installer's chosen language (empty if none) — the console applies it on
     // first receipt if the user has not already picked a language in-app.

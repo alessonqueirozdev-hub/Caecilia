@@ -246,6 +246,12 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   .bridge .cluster { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .cluster > .cap { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); display:flex; justify-content:space-between; align-items:center;}
   .cluster > .cap b { color: var(--ink-dim); font-family: var(--font-mono); font-weight: 500; letter-spacing:.5px; }
+  .cluster > .cap .reads { display: flex; gap: 12px; align-items: center; }
+  /* The load readout only draws attention when there is something to say: quiet
+     grey while the machine is coping, amber once the governor is trimming the
+     budget, red once a block has actually run past its deadline. */
+  #cpu-read.warn { color: #d9ad57; }
+  #cpu-read.over { color: #e0603c; font-weight: 700; }
 
   /* VU meter */
   .vu { display: grid; grid-template-columns: 18px 1fr; gap: 8px 8px; align-items: center; }
@@ -661,7 +667,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
         </div>
       </div>
       <div class="cluster ctrl-cluster">
-        <div class="cap"><span data-i18n="controlsLabel">Console controls</span><b id="sag-read" title="wind reservoir sag" data-i18n-title="windReservoirSag">stable</b></div>
+        <div class="cap"><span data-i18n="controlsLabel">Console controls</span><span class="reads"><b id="cpu-read" title="engine CPU load">0%</b><b id="sag-read" title="wind reservoir sag" data-i18n-title="windReservoirSag">stable</b></span></div>
         <div class="controls" id="controls"></div>
       </div>
     </section>
@@ -1323,6 +1329,24 @@ if (CAE_BRIDGE) {
         const m = +k.dataset.midi;
         k.classList.toggle("held", lit.has(m) || state.held.has(ld + ":" + m));
       });
+      // What the engine costs, and what it is giving up to stay inside its block.
+      //
+      // The peak drives the colour rather than the average, because an xrun is ONE
+      // block over 100% and a third of a second of averaging cannot show one. The
+      // shed count is what turns "the machine is busy" into "you have lost pipes",
+      // which is the only version of this an organist actually needs.
+      if (typeof st.cpuLoad === "number") {
+        const el = document.getElementById("cpu-read");
+        if (el) {
+          const pct  = Math.round((+st.cpuLoad || 0) * 100);
+          const peak = +st.cpuPeak || 0;
+          const shed = +st.shed || 0;
+          el.textContent = shed > 0 ? `${pct}% · −${shed}` : `${pct}%`;
+          el.classList.toggle("warn", peak >= 0.6 && peak < 1);
+          el.classList.toggle("over", peak >= 1 || shed > 0);
+        }
+      }
+
       // Feed the REAL engine data into the meter animation (frame()), so the Output
       // VU and the wind readout move with the actual instrument — even when you
       // play the physical MIDI keyboard rather than the on-screen keys.
