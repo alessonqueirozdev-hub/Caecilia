@@ -1,23 +1,24 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential; unauthorized copying,
-# distribution, or use of any part is prohibited. See LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # ---------------------------------------------------------------------------
 # synthesis module : the voice layers and engines behind core::IVoice.
 #
-# Contributes to the pure caecilia_core static library. It implements the
-# LAYERED voice pipeline (attack + modeled sustain + release) as concrete voices
-# selected per rank by the VoiceFactory:
+# Contributes to the pure caecilia_core static library. It holds the voices the
+# LAYERED pipeline (attack + modeled sustain + release) is to be built from; only
+# the modeled sustain stage exists so far. VoiceFactory selects between them per
+# rank, though nothing calls it yet -- the plugin builds AdditiveVoice directly:
 #   - SampleVoice       : multi-sample playback (safe fallback tier)
 #   - AdditiveVoice     : wind-modulated PartialBank (modeled sustain / plenum)
 #   - PhysicalPipeVoice : nonlinear excitation + resonator (solo / exposed tier)
 #
 # It includes no JUCE. Beyond caecilia_core (and the C++ standard library) its
-# only sibling dependency is the wind module, whose wind::WindResponseCurve the
-# partial bank consumes for family-specific breathing. Where the design still
-# calls for the dsp module (the 16-point sinc interpolator, the oversampled
-# nonlinear island) this scaffold uses self-contained placeholders marked with
-# TODO(phaseN) until that module is wired in.
+# sibling dependencies are the wind module, whose wind::WindResponseCurve the
+# partial bank consumes for family-specific breathing, and the dsp module, whose
+# DspMath gives the partial bank its equal-power panning. The dsp pieces the
+# design still calls for here -- the 16-point sinc interpolator in SampleVoice,
+# the oversampled nonlinear island around the excitations -- now exist in dsp but
+# are not wired in; those call sites stay marked TODO(phaseN).
 # ---------------------------------------------------------------------------
 
 target_sources(caecilia_core PRIVATE

@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -23,9 +20,10 @@ namespace caecilia::synth
 /**
  * @brief One partial in a @ref PartialBank at render time.
  *
- * Holds both the persistent oscillator state (@ref phase) and per-block scratch
- * (@ref increment, @ref blockGain) recomputed at each block boundary so the
- * inner sample loop stays branch-light and allocation-free.
+ * Holds both the persistent oscillator state (@ref oscX / @ref oscY) and the
+ * per-block scratch (@ref cosInc, @ref sinInc, @ref blockGain) recomputed at
+ * each block boundary so the inner sample loop stays branch-light and
+ * allocation-free.
  */
 struct Partial
 {
@@ -33,8 +31,24 @@ struct Partial
     float amplitude       = 0.0f; ///< Linear steady-state amplitude.
     float windSensitivity = 0.0f; ///< Per-partial scaling of the wind response.
     float onsetSeconds    = 0.0f; ///< Staggered onset delay (chiff/speech emergence).
-    float phase           = 0.0f; ///< Current oscillator phase in radians (persistent).
-    float increment       = 0.0f; ///< Phase increment per sample (per-block scratch).
+
+    // --- Recursive quadrature oscillator (replaces a per-sample std::sin) ------
+    // The partial is a unit phasor advanced by a complex rotation each sample:
+    //     x' = x*cosInc - y*sinInc      y' = x*sinInc + y*cosInc
+    // with y == sin(phase), so the output is read straight off `oscY`. That is
+    // ~4 multiplies and 2 adds instead of a transcendental, it vectorises, and it
+    // is the difference between a full-organ Tutti being impossible and being
+    // comfortable: the bank runs one oscillator per partial per voice, and a
+    // 26-stop registration is ~291 partials.
+    //
+    // The rotation is only conditionally stable in floating point — |z| drifts —
+    // so the magnitude is renormalised once per block by one Newton step, which
+    // costs nothing at block rate. See recomputeBlockCoefficients().
+    float oscX            = 1.0f; ///< cos(phase) — persistent oscillator state.
+    float oscY            = 0.0f; ///< sin(phase) — persistent; this IS the output.
+    float cosInc          = 1.0f; ///< cos(2*pi*f/sr) for this block (per-block scratch).
+    float sinInc          = 0.0f; ///< sin(2*pi*f/sr) for this block (per-block scratch).
+
     float blockGain       = 0.0f; ///< Target gain for the current block (per-block scratch).
     float curGain         = 0.0f; ///< Actual gain, ramped per-sample toward blockGain (persistent).
     float gainInc         = 0.0f; ///< Per-sample gain ramp step for the current block (scratch).
@@ -46,25 +60,67 @@ struct Partial
     // partials speak later than the fundamental instead of all clicking at once.
     float driftCents      = 0.0f; ///< Current slow random-walk detune, in cents (persistent).
     std::uint32_t rng     = 0x2545F491u; ///< Per-partial PRNG state for the drift walk.
+    std::uint32_t seed    = 0u;   ///< Stable identity from the spectrum (NOT the array index).
+    bool  breaksBack      = false;///< Mixture rank: fold down an octave rather than be muted.
+    float soundingRatio   = 1.0f; ///< ratioToF0 after any break-back, resolved at note-on.
+    float logRatio        = 0.0f; ///< log2(ratioToF0), precomputed at seed time.
+
+    // --- Placement in the case ------------------------------------------------
+    // Each RANK occupies its own position on the windchest, so the same key played
+    // through two different ranks comes from two different points in the case. That
+    // is why a Principal 8' and a Bourdon 8' reinforce rather than cancel, even
+    // though their fundamentals are within a cent of each other: they are not one
+    // coherent source. Collapsing every rank to a single point made drawing a
+    // second unison stop measurably QUIETER than drawing one.
+    float panL            = 0.70710678f; ///< Left  gain for this partial's rank.
+    float panR            = 0.70710678f; ///< Right gain for this partial's rank.
     float bloomSeconds    = 0.010f; ///< Per-partial attack bloom time (derived at seed/trigger).
 
     // --- Per-note voicing baked at note-on (off the hot loop) ----------------
     int   harmonicIndex   = 1;     ///< Nearest integer harmonic number (>=1).
+    float logHarmonic     = 0.0f;  ///< log2(harmonicIndex), precomputed off the hot path.
     float noteLevelScale  = 1.0f;  ///< Per-note treble tilt (upper partials voiced down on high notes).
     float formantGain     = 1.0f;  ///< Fixed-formant boost at this partial's absolute Hz (reeds).
-    bool  active          = true;  ///< False when blockGain is ~0 (skip the sinf, keep phase coherent).
 };
 
 /**
- * @brief A wind-modulated additive/modal partial bank — the CPU-cheap modeled
- *        sustain tier, and the reconstruction target of the attack-splice.
+ * @brief How fast a pipe speaks and how fast it stops, as a function of size.
+ *
+ * A real rank's speech time is dominated by how long the wind takes to fill the
+ * pipe and set the air column oscillating, so it scales with pipe LENGTH: a 16'
+ * Bourdon takes a substantial fraction of a second to come fully on speech,
+ * while a small mixture pipe is essentially instantaneous. The release behaves
+ * the same way — a big pipe keeps sounding as its column collapses.
+ *
+ * A single fixed attack/release for every rank and every note (which is what a
+ * one-envelope-per-registration design forces) is the single most audible
+ * departure from a real instrument after registration dynamics, so the times
+ * are interpolated per note between a bass and a treble anchor.
+ */
+struct SpeechProfile
+{
+    float attackAtC2Sec  = 0.055f; ///< Attack for a ~65 Hz pipe (16'/8' bass).
+    float attackAtC7Sec  = 0.010f; ///< Attack for a ~2 kHz pipe (small treble).
+    float releaseAtC2Sec = 0.300f; ///< Release for a ~65 Hz pipe.
+    float releaseAtC7Sec = 0.110f; ///< Release for a ~2 kHz pipe.
+};
+
+/**
+ * @brief An additive/modal partial bank — the modeled sustain tier, and the
+ *        only voice layer the shipping plugin renders.
  *
  * PartialBank implements @ref IModeledSustain: it is seeded from a
- * @ref SpectralModel so its timbre matches a recorded attack, and every partial
- * is a function of the wind supply (pitch/level/brightness track pressure
- * deviation through a per-family @ref WindResponseCurve) rather than a stored
- * table. This is the tier used for plenum polyphony and the demotion target when
- * the deadline budget sheds the nonlinear physical tier.
+ * @ref SpectralModel (today a hand-authored recipe built by the @c model
+ * module) and, when a wind supply is wired, the pitch and level of every partial
+ * track pressure deviation through a per-family @ref WindResponseCurve rather
+ * than a stored table. This is the tier that carries plenum polyphony.
+ *
+ * @todo Nothing wires a wind supply in the plugin's signal path — the
+ *       @c VoiceContext it builds carries a null @c IWindSupply — so
+ *       @ref setWindCoupling receives a null source, the deviation reads 0 and
+ *       the breathing is inert. The curve's brightness and attack axes are not
+ *       consumed at all, and there is no attack-splice or tier demotion for this
+ *       bank to be the target of.
  *
  * ## Real-time contract
  * - @ref prepare reserves the partial storage; it is the ONLY allocating method.
@@ -86,6 +142,19 @@ public:
     void seedFrom(const SpectralModel& model, float phaseAlignSeconds) noexcept override;
     void trigger(core::PipeId pipe, core::Velocity velocity, double frequencyHz) noexcept override;
     void release() noexcept override;
+
+    /// Stop dead: envelope to zero, stage to Idle, every partial's gain cleared.
+    /// The oscillator phasors are left turning -- they cost nothing while the
+    /// gains are zero, and re-randomising them would only undo the per-voice
+    /// decorrelation the next note-on relies on. RT-safe.
+    void silence() noexcept;
+
+    /// This block's swell-shoe ramp. See @c core::IVoice::setExpression. RT-safe.
+    void setExpression(float startGain, float incPerSample) noexcept
+    {
+        exprGain_ = startGain;
+        exprInc_  = incPerSample;
+    }
     void renderAdd(core::AudioBlock& block) noexcept override;
     [[nodiscard]] bool isActive() const noexcept override;
 
@@ -109,6 +178,26 @@ public:
 
     /// Set the attack/release ramp times in seconds. RT-safe.
     void setEnvelopeTimes(float attackSeconds, float releaseSeconds) noexcept;
+
+    /**
+     * @brief Set the per-family speech timing curve (see @ref SpeechProfile).
+     *
+     * @ref trigger interpolates the envelope times from this by the note's own
+     * pitch, so a 16' pedal note and a treble mixture no longer share one
+     * envelope. Off-thread configuration; RT-safe to call.
+     */
+    void setSpeechProfile(const SpeechProfile& profile) noexcept { speech_ = profile; }
+
+    /**
+     * @brief Set the stereo spread of the chest layout, 0 = mono, 1 = widest.
+     *
+     * Real windchests are laid out C-side / C#-side: consecutive semitones sit on
+     * OPPOSITE halves of the case. Panning by note parity reproduces that, and is
+     * what turns a dead-centre additive stack into an instrument with width.
+     * Applied per voice at @ref trigger from the pipe's own identity, so it is
+     * stable for a given pipe across runs.
+     */
+    void setStereoSpread(float spread) noexcept;
 
     /**
      * @brief Tune the "living pipe" character (Aeolus-inspired liveliness).
@@ -135,21 +224,50 @@ public:
      */
     void setChiff(float amount) noexcept { chiffAmount_ = amount < 0.0f ? 0.0f : amount; }
 
+    /// @return Current audible level of the bank, linear, roughly 0..1. Used by
+    ///         the pool to pick the least audible voice to steal. RT-safe.
+    [[nodiscard]] float levelEstimate() const noexcept
+    {
+        return stage_ == Stage::Idle ? 0.0f : envGain_ * masterGain_;
+    }
+
     /// @return Number of partials currently seeded.
     [[nodiscard]] std::size_t activePartialCount() const noexcept { return partialCount_; }
 
 private:
     enum class Stage : std::uint8_t { Idle, Attack, Sustain, Release };
 
-    void recomputeBlockCoefficients() noexcept;
+    /// @param frames Block length, so the control-rate drift filter can be given a
+    ///        coefficient in TIME rather than in blocks (see the .cpp).
+    void recomputeBlockCoefficients(std::size_t frames) noexcept;
 
     std::vector<Partial> partials_;                 ///< Reserved in prepare(); never re-allocated on the hot path.
+
+    /// Frames a single render chunk covers.
+    ///
+    /// A fixed 512 rather than the host's block size, because this is memory
+    /// multiplied by the POOL: one voice per rank means 512 banks, and three
+    /// buffers each at a 2048-frame host buffer would be 12.6 MB — touched every
+    /// block, so a cache figure and not merely a memory one. renderAdd loops.
+    static constexpr std::size_t kChunkFrames = 512;
+
+    /// Per-chunk accumulators: the partials sum here before the bank envelope is
+    /// applied, which is what lets the inner loop run partial-outer and vectorise.
+    std::vector<float> chunkL_;
+    std::vector<float> chunkR_;
+    std::vector<float> chunkEnv_;
     std::size_t          maxPartials_  = kDefaultMaxPartials;
     std::size_t          partialCount_ = 0;         ///< Seeded partials in [0, partials_.size()].
 
     double sampleRate_    = 0.0;
     double fundamentalHz_ = 0.0;
     float  masterGain_    = 0.25f; ///< Base level (owner-set; e.g. per-pipe level trim).
+
+    // Swell shoe, as a per-sample ramp. Folded into the envelope multiply that was
+    // already there, so an enclosed division costs one extra multiply-add per
+    // sample and an unenclosed one costs the same with inc == 0.
+    float  exprGain_      = 1.0f;
+    float  exprInc_       = 0.0f;
     float  velocityGain_  = 1.0f;  ///< Note-velocity gain, set on trigger().
 
     // Simple linear attack/release envelope gating the whole bank.
@@ -168,6 +286,12 @@ private:
     float  maxBloomSeconds_  = 0.060f; ///< Longest per-partial attack bloom (uppers).
     float  hfRolloffHz_      = 7000.0f;///< Corner of the gentle absolute-Hz top tilt (raised; per-note tilt does the work).
     float  trebleTiltDb_     = 6.0f;   ///< Per-octave upper-harmonic roll on high notes (Aeolus _h_lev).
+
+    // --- Per-family speech timing and chest placement -------------------------
+    SpeechProfile speech_{};           ///< Attack/release anchors, interpolated per note.
+    float  stereoSpread_ = 0.55f;      ///< 0 = mono, 1 = widest C-side / C#-side split.
+    float  panL_         = 0.70710678f;///< Left  gain for this voice (equal power).
+    float  panR_         = 0.70710678f;///< Right gain for this voice (equal power).
 
     // Fixed-formant envelope (reeds); flues carry peakCount==0 and are unaffected.
     FormantEnvelope steadyFormants_{};

@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/synthesis/PhysicalPipeVoice.h"
 
@@ -60,6 +57,32 @@ void PhysicalPipeVoice::noteOff() noexcept
     envelope_.noteOff();
     // TODO(phase6): trigger the pressure-collapse chiff on the excitation as the
     // wind falls away, per ReleaseSpec::pressureCollapseChiff.
+}
+
+void PhysicalPipeVoice::silence() noexcept
+{
+    // Straight to Idle, no release curve. The resonator is cleared too: a
+    // waveguide holds its own energy, so stopping only the envelope would leave a
+    // charged delay line waiting to be heard again on the next note.
+    envelope_.reset();
+    heldSeconds_ = 0.0;
+    if (resonator_ != nullptr)
+        resonator_->reset();
+    if (excitation_ != nullptr)
+        excitation_->reset();
+}
+
+void PhysicalPipeVoice::setExpression(float startGain, float incPerSample) noexcept
+{
+    exprGain_ = startGain;
+    exprInc_  = incPerSample;
+}
+
+void PhysicalPipeVoice::adoptRank(const void* voicing) noexcept
+{
+    // Per-rank voicing is an additive-bank feature; this tier is not part of
+    // the migration and keeps whatever it was configured with.
+    (void) voicing;
 }
 
 void PhysicalPipeVoice::renderAdd(core::AudioBlock& block) noexcept

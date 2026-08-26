@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/synthesis/SampleVoice.h"
 
@@ -55,6 +52,26 @@ void SampleVoice::noteOff() noexcept
     // Choose a release time from how long the note was held.
     envelope_.setReleaseTime(sampleRate_, release_.releaseMsForHold(heldSeconds_) * 0.001f);
     envelope_.noteOff();
+}
+
+void SampleVoice::silence() noexcept
+{
+    envelope_.reset();
+    cursor_      = 0.0;
+    heldSeconds_ = 0.0;
+}
+
+void SampleVoice::setExpression(float startGain, float incPerSample) noexcept
+{
+    exprGain_ = startGain;
+    exprInc_  = incPerSample;
+}
+
+void SampleVoice::adoptRank(const void* voicing) noexcept
+{
+    // Per-rank voicing is an additive-bank feature; this tier is not part of
+    // the migration and keeps whatever it was configured with.
+    (void) voicing;
 }
 
 void SampleVoice::renderAdd(core::AudioBlock& block) noexcept

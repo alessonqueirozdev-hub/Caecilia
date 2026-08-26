@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -28,10 +25,15 @@ namespace caecilia::synth
  *
  * PhysicalPipeVoice composes an @ref IExcitation (a @ref NonlinearJet for flues,
  * a @ref BeatingReed for reeds) with an @ref IResonator (a @ref Waveguide or a
- * @ref ModalResonator). The excitation is driven by the per-block wind snapshot,
- * so pitch/level/brightness and the onset transient all breathe with the wind —
- * the realism moat neither GrandOrgue nor Aeolus reaches. Under CPU pressure the
- * engine demotes the rank to an @ref AdditiveVoice via a phase-aligned crossfade.
+ * @ref ModalResonator), and hands the excitation the per-block wind snapshot so
+ * that pitch/level/brightness and the onset transient will breathe with the
+ * wind — the realism moat neither GrandOrgue nor Aeolus reaches.
+ *
+ * @todo The structure is complete but the voice is silent: both excitations are
+ *       phase-0 placeholders returning 0.0, so the resonator is never driven.
+ *       Only @ref VoiceFactory constructs a PhysicalPipeVoice and nothing calls
+ *       the factory, and the CPU-pressure demotion to @ref AdditiveVoice is not
+ *       implemented.
  *
  * ## Real-time contract
  * - @ref prepare and @ref setComponents allocate / wire; not RT-safe.
@@ -48,6 +50,9 @@ public:
     void prepare(core::SampleRate sampleRate, std::size_t maxBlockFrames) override;
     void noteOn(core::PipeId pipe, core::Velocity velocity) noexcept override;
     void noteOff() noexcept override;
+    void silence() noexcept override;
+    void setExpression(float startGain, float incPerSample) noexcept override;
+    void adoptRank(const void* voicing) noexcept override;
     void renderAdd(core::AudioBlock& block) noexcept override;
     [[nodiscard]] bool isActive() const noexcept override;
     [[nodiscard]] core::EngineKind kind() const noexcept override { return engineKind_; }
@@ -87,6 +92,10 @@ private:
     VoicingProfile voicing_{};
     ReleaseSpec    release_{};
     ArEnvelope     envelope_{};
+
+    /// This block's swell-shoe ramp; see IVoice::setExpression.
+    float exprGain_ = 1.0f;
+    float exprInc_  = 0.0f;
 
     core::SampleRate sampleRate_  = 0.0;
     core::WindchestId chest_{};

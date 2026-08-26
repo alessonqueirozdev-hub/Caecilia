@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -23,12 +20,12 @@ namespace caecilia::synth
 /**
  * @brief What the factory needs to know about a rank to pick and build a voice.
  *
- * This is a synthesis-local description; once the @c model module lands it will
- * be derived from that module's RankSpec/StopSpec rather than hand-filled. The
- * flags below drive the engine/tier selection: an @ref exposed solo stop earns
- * the expensive physical tier, while a plenum rank with an analysed
- * @ref SpectralModel gets the cheap modeled-additive tier, and a rank with only
- * a recorded sample set falls back to pure sample playback.
+ * This is a synthesis-local description. The @c model module now exists, but
+ * nothing derives a RankVoiceRequest from its @c Rank / @c Stop types, so every
+ * request is still hand-filled. The flags below drive the engine/tier selection:
+ * an @ref exposed solo stop earns the expensive physical tier, while a plenum
+ * rank with a @ref SpectralModel gets the cheap modeled-additive tier, and a
+ * rank with only a recorded sample set falls back to pure sample playback.
  */
 struct RankVoiceRequest
 {
@@ -41,7 +38,8 @@ struct RankVoiceRequest
     bool hasSampleSet     = false; ///< A recorded sample set is available (safe fallback).
     bool hasSpectralModel = false; ///< An analysed SpectralModel is available (modeled tier).
 
-    /// Ceiling on synthesis quality (the deadline budget may lower this further).
+    /// Ceiling on synthesis quality. (The deadline budget is meant to lower this
+    /// further at run time; no such demotion is implemented.)
     core::VoiceTier maxTier = core::VoiceTier::Waveguide;
 
     const SpectralModel* spectralModel = nullptr; ///< Seed for additive/modeled voices (non-owning).
@@ -59,6 +57,9 @@ struct RankVoiceRequest
  * physical model, all as configurations of the same layered pipeline. All work
  * here happens OFF the audio thread (organ-load / prepare time); @ref create may
  * allocate. The audio thread only renders the returned, already-prepared voices.
+ *
+ * @note Nothing calls the factory. The plugin builds its @ref AdditiveVoice pool
+ *       directly, so this tiering policy governs nothing that currently sounds.
  */
 class VoiceFactory
 {

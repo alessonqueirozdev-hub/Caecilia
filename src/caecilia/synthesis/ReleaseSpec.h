@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -13,17 +10,21 @@ namespace caecilia::synth
  * @brief Multi-stage release behaviour, keyed to how long the note was held.
  *
  * A quickly-tapped pipe releases differently from a long-held one: the reservoir
- * collapse and room tail differ. ReleaseSpec selects a release time by hold time
- * and optionally injects a modeled pressure-collapse chiff as the wind falls
- * away, so the release is not a single canned fade.
+ * collapse and room tail differ. @ref releaseMsForHold implements that much —
+ * it interpolates a release time from the hold duration — and @ref SampleVoice
+ * and @ref PhysicalPipeVoice call it. Neither voice is reachable from the
+ * plugin, which plays @ref AdditiveVoice and never consults a ReleaseSpec.
+ *
+ * @todo The pressure-collapse chiff and the modeled tail are unimplemented; see
+ *       @ref pressureCollapseChiff and @ref modeledTailSeconds.
  */
 struct ReleaseSpec
 {
     float shortReleaseMs        = 60.0f;  ///< Release time for a briefly-held note.
     float longReleaseMs         = 220.0f; ///< Release time for a long-held note.
     float holdThresholdSeconds  = 0.75f;  ///< Hold time above which @ref longReleaseMs applies.
-    bool  pressureCollapseChiff = true;   ///< Inject a modeled chiff as wind collapses on release.
-    float modeledTailSeconds    = 0.4f;   ///< Length of the modeled (non-sampled) release tail.
+    bool  pressureCollapseChiff = true;   ///< @todo Unread: no chiff-on-release exists.
+    float modeledTailSeconds    = 0.4f;   ///< @todo Unread: no modeled release tail exists.
 
     /**
      * @brief Resolve the release time for a given hold duration.

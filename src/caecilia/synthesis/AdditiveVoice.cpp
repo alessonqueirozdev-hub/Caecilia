@@ -1,10 +1,8 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/synthesis/AdditiveVoice.h"
+#include "caecilia/synthesis/RankVoicing.h"
 #include "caecilia/wind/WindResponseCurve.h"
 
 #include <cmath>
@@ -95,6 +93,62 @@ void AdditiveVoice::noteOn(core::PipeId pipe, core::Velocity velocity) noexcept
 void AdditiveVoice::noteOff() noexcept
 {
     bank_.release();
+}
+
+void AdditiveVoice::silence() noexcept
+{
+    bank_.silence();
+}
+
+void AdditiveVoice::setExpression(float startGain, float incPerSample) noexcept
+{
+    bank_.setExpression(startGain, incPerSample);
+}
+
+void AdditiveVoice::adoptRank(const void* voicing) noexcept
+{
+    if (voicing == nullptr)
+        return;
+    const auto& v = *static_cast<const RankVoicing*>(voicing);
+
+    context_.family = v.family;
+    context_.chest  = v.chest;
+    context_.rank   = core::RankId{ v.stop.value };
+
+    // EIGHT FOOT, always -- not the rank's own footage, however wrong that reads.
+    //
+    // The voicing's partial ratios are already referenced to 8' unison: a 16' rank
+    // carries its ratios halved, and a mixture or mutation encodes its pitch in the
+    // ratios directly (which is what buildRankVoicing's `fold` is for). Setting the
+    // context to the rank's footage transposes all of that a SECOND time.
+    //
+    // Measured before this line existed: the 16' ranks sounded an octave low, and
+    // the mixtures and mutations were pitched so far up that the anti-aliasing gate
+    // silenced most of them. A full Tutti came out 3.8 dB down and thin -- with the
+    // right number of partials, the right spectra and the right levels.
+    //
+    // The footage does still matter, just not here: it shapes the speech profile,
+    // which arrives already resolved in v.speech.
+    context_.footage = core::footage::kEight;
+
+    // Re-wire the wind coupling for the rank just adopted. The bank was given a
+    // chest and a family response curve by setContext(), once, at prepare time --
+    // and a voice does not know which rank it will become until here, so without
+    // this it keeps them: every voice of the instrument read chest 0's pressure and
+    // responded with the curve of whatever family the pool happened to be built
+    // with. The Récit's tremulant reached nothing, and a Trompette breathed like a
+    // Montre. Both are invisible in a spectrum and only show up as a rendered
+    // pressure response, which is what "The tremulant reaches the pipes" measures.
+    bank_.setWindCoupling(context_.wind,
+                          context_.chest,
+                          wind::defaultResponseFor(context_.family));
+
+    bank_.setSpeechProfile(v.speech);
+
+    // Allocation-free: the bank's storage was reserved for kMaxPartials at prepare
+    // time, and seedFrom copies into it. A Tutti chord is twenty-six of these
+    // inside one audio callback and must not touch the allocator once.
+    bank_.seedFrom(v.spectrum, 0.0f);
 }
 
 void AdditiveVoice::renderAdd(core::AudioBlock& block) noexcept

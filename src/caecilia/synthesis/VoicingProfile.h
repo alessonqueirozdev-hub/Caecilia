@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -16,10 +13,15 @@ namespace caecilia::synth
  *
  * A real organ is voiced pipe by pipe: no two pipes of a rank are identical. A
  * VoicingProfile captures that deterministic, repeatable variance for ONE pipe.
- * It is produced off the audio thread by the @ref PerPipeVoicer from a stable
- * @ref caecilia::core::PipeId seed, so a given pipe always receives the same
- * voicing across runs and sessions, and so a mixture shimmers because its ranks
- * scatter independently rather than sounding cloned.
+ * @ref PerPipeVoicer produces one off the audio thread from a stable
+ * @ref caecilia::core::PipeId seed, so a given pipe would always receive the
+ * same voicing across runs and sessions, and a mixture would shimmer because its
+ * ranks scatter independently rather than sounding cloned.
+ *
+ * @todo Nothing in the project constructs a @ref PerPipeVoicer, so no voice is
+ *       ever handed a profile: they all run on the default-zero one. Even then
+ *       the voices read only @ref detuneCents and @ref levelTrimDb — the
+ *       remaining fields have no consumer at all.
  */
 struct VoicingProfile
 {
@@ -37,10 +39,12 @@ struct VoicingProfile
  * @brief The voicing "recipe" for a whole rank: the ranges the @ref PerPipeVoicer
  *        scatters a per-pipe @ref VoicingProfile within.
  *
- * These are authored per rank (or imported from a real-instrument voicing curve)
- * and bound the deterministic scatter, so a gently-voiced Principal stays tight
- * while a keen String is allowed more life. All fields are symmetric maxima
- * unless noted.
+ * These are meant to be authored per rank (or imported from a real-instrument
+ * voicing curve) and to bound the deterministic scatter, so a gently-voiced
+ * Principal stays tight while a keen String is allowed more life. All fields are
+ * symmetric maxima unless noted. The @c model module authors the parallel
+ * @c model::RankVoicingSpec per rank, but nothing converts one into a
+ * VoicingParams, so the defaults below are all any caller would ever see.
  */
 struct VoicingParams
 {

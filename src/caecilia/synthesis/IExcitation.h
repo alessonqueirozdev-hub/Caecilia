@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -22,9 +19,10 @@ namespace caecilia::synth
  * than a stored transient. Concrete implementations include @ref NonlinearJet
  * (flues) and @ref BeatingReed (reeds).
  *
- * The excitation runs inside an oversampled polyphase island (set up by the
- * @c dsp module in a later phase) with bandlimited residuals, so its nonlinear
- * output does not alias.
+ * The excitation is to run inside an oversampled polyphase island with
+ * bandlimited residuals, so its nonlinear output does not alias. The @c dsp
+ * module now carries @c dsp::Oversampler for that, but no excitation routes
+ * through it yet — both implementations named above return silence.
  *
  * ## Real-time contract
  * - @ref prepare allocates/precomputes; not RT-safe.
@@ -51,8 +49,9 @@ public:
      * @param pressurePa        Absolute chest pressure in pascals.
      * @param pressureDeviation Normalised deviation (actual - nominal)/nominal.
      *
-     * This is the coupling that makes the pipe breathe; sag reduces drive,
-     * tremulant modulates it (AM+FM+timbral) because it modulates the driver.
+     * This is the coupling that is to make the pipe breathe: sag reducing drive,
+     * tremulant modulating it (AM+FM+timbral) because it modulates the driver.
+     * Both current implementations only store the values handed in.
      */
     virtual void setWind(float pressurePa, float pressureDeviation) noexcept = 0;
 

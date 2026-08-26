@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -18,10 +15,12 @@ namespace caecilia::synth
 /**
  * @brief One stage of a voice's layered pipeline (attack, sustain or release).
  *
- * Realism in Caecilia lives in composition: a voice is an AttackLayer spliced
- * into a modeled SustainLayer plus a ReleaseLayer, all sharing one spectral seed
- * and one per-pipe voicing. IVoiceLayer is the common contract those stages
- * implement so a voice can drive them uniformly.
+ * Realism in Caecilia is meant to live in composition: a voice as an attack
+ * layer spliced into a modeled sustain layer plus a release layer, all sharing
+ * one spectral seed and one per-pipe voicing. IVoiceLayer is the common contract
+ * those stages would implement so a voice can drive them uniformly. Only the
+ * sustain stage exists so far — @ref PartialBank, through
+ * @ref IModeledSustain, is the sole implementer.
  *
  * ## Real-time contract
  * - @ref prepare is the only allocating method; it runs off the audio thread.
@@ -57,13 +56,14 @@ public:
 
 /**
  * @brief A read-only provider of recorded sample data for an attack (or a full
- *        pure-sample voice), in Caecilia's own proprietary sample format.
+ *        pure-sample voice), in Caecilia's own sample format.
  *
- * The concrete streaming/loading lives in the @c model module (off the audio
- * thread); the RT path only reads frames through this interface, which a
- * resampler drives. Caecilia prefers a loop-free modeled sustain, so
- * @ref loopEnd may be 0 to signal a one-shot recording whose tail hands off to a
- * modeled sustain.
+ * The concrete streaming/loading is to live in the @c model module (off the
+ * audio thread); the RT path would only read frames through this interface,
+ * which a resampler drives. Nothing implements ISampleSource yet, so its one
+ * consumer — @ref SampleVoice — is always handed a null source. Caecilia
+ * prefers a loop-free modeled sustain, so @ref loopEnd may be 0 to signal a
+ * one-shot recording whose tail is meant to hand off to a modeled sustain.
  *
  * Real-time contract: every accessor is @c noexcept and allocation-free.
  */
@@ -107,9 +107,9 @@ public:
  *        @ref SpectralModel so its timbre matches a recorded attack.
  *
  * This is the heart of the hybrid: instead of looping a recording (which kills
- * the note's life), the sustain is reconstructed from tracked partials that
- * remain functions of the wind supply. @ref seedFrom copies the analysed timbre
- * into pre-allocated storage so it is RT-safe.
+ * the note's life), the sustain is reconstructed from tracked partials, written
+ * to remain functions of the wind supply once a supply is actually wired in.
+ * @ref seedFrom copies the timbre into pre-allocated storage so it is RT-safe.
  */
 class IModeledSustain : public IVoiceLayer
 {
@@ -117,7 +117,8 @@ public:
     /**
      * @brief Seed the modeled sustain's timbre from an analysed spectral model.
      * @param model           The partials/formants to reconstruct.
-     * @param phaseAlignSeconds Time offset used to phase-align with a spliced attack.
+     * @param phaseAlignSeconds Time offset for phase-aligning with a spliced
+     *        attack. No implementation reads it yet; @ref PartialBank ignores it.
      *
      * RT-safe: fills only pre-allocated storage reserved in @ref prepare; never
      * allocates. Partials beyond the reserved capacity are dropped.

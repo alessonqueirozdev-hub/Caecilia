@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -44,11 +41,15 @@ public:
     void prepare(core::SampleRate sampleRate, std::size_t maxBlockFrames) override;
     void noteOn(core::PipeId pipe, core::Velocity velocity) noexcept override;
     void noteOff() noexcept override;
+    void silence() noexcept override;
+    void setExpression(float startGain, float incPerSample) noexcept override;
+    void adoptRank(const void* voicing) noexcept override;
     void renderAdd(core::AudioBlock& block) noexcept override;
     [[nodiscard]] bool isActive() const noexcept override;
     [[nodiscard]] core::EngineKind kind() const noexcept override { return core::EngineKind::Additive; }
     [[nodiscard]] core::VoiceTier tier() const noexcept override { return core::VoiceTier::Additive; }
     [[nodiscard]] float cpuCostEstimate() const noexcept override;
+    [[nodiscard]] float levelEstimate() const noexcept override { return bank_.levelEstimate(); }
 
     // ---- Synthesis-side configuration (off the audio thread) ----------------
 
@@ -58,7 +59,9 @@ public:
     /// Apply the resolved per-pipe voicing variance.
     void setVoicing(const VoicingProfile& voicing) noexcept { voicing_ = voicing; }
 
-    /// Seed the timbre from an analysed spectral model. RT-safe (fills reserved storage).
+    /// Seed the timbre from a spectral model. RT-safe (fills reserved storage).
+    /// @p phaseAlignSeconds belongs to the attack-splice contract and is ignored
+    /// by @ref PartialBank::seedFrom today.
     void seedFrom(const SpectralModel& model, float phaseAlignSeconds = 0.0f) noexcept;
 
     /// @return The underlying partial bank (for tests / inspection).

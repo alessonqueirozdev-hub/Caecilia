@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -17,12 +14,16 @@ namespace caecilia::synth
 /**
  * @brief Resolves deterministic, repeatable per-pipe hand-voicing variance.
  *
- * A real organ is voiced pipe by pipe; Caecilia reproduces that by scattering a
- * @ref VoicingProfile within the rank's @ref VoicingParams, seeded from the
+ * A real organ is voiced pipe by pipe; this class reproduces that by scattering
+ * a @ref VoicingProfile within the rank's @ref VoicingParams, seeded from the
  * pipe's stable @ref caecilia::core::PipeId. Because the seed is stable, a given
  * pipe always receives the same voicing across runs and sessions, and because
- * each rank's seed stream is independent, a mixture shimmers instead of sounding
- * cloned.
+ * each rank's seed stream is independent, a mixture would shimmer instead of
+ * sounding cloned.
+ *
+ * @note Nothing in the project constructs a PerPipeVoicer, so no voice in the
+ *       shipping signal path is handed a profile and none of this variance is
+ *       audible yet.
  *
  * The generator is a small deterministic hash (SplitMix64-style), so it needs no
  * heap and no @c <random> machinery and is safe to call anywhere, though it is

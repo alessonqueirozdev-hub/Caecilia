@@ -1,20 +1,26 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # caecilia::synth — Synthesis module
 
 Voice implementations behind the pure `caecilia::core::IVoice` contract. This
 module turns a keypress on a rank into audio, and it is where Caecilia's core
-thesis becomes sound: **a voice is a layered pipeline, not one engine per rank.**
+thesis is meant to become sound: **a voice is a layered pipeline, not one engine
+per rank.**
 
-Every voice is a composition of an **attack layer**, a **loop-free modeled
+The design composes every voice from an **attack layer**, a **loop-free modeled
 sustain layer**, and a **release layer**, sharing one spectral seed and a
 deterministic per-pipe voicing. Pure-sample and pure-additive ranks are simply
 degenerate configurations of that same pipeline — the safe, fully-shippable
 fallbacks, never abandoned.
+
+**Where that stands today:** only the modeled sustain stage exists
+(`PartialBank`), and the plugin plays the pure-additive degenerate case
+(`AdditiveVoice`) and nothing else. Everything else here compiles and is
+exported, but sits outside the instrument's signal path; the status list at the
+bottom says which is which.
 
 ## What it depends on
 
@@ -33,9 +39,9 @@ fallbacks, never abandoned.
 
 | Type | Engine | Role |
 |------|--------|------|
-| `SampleVoice` | `EngineKind::Sample` | Multi-sample playback (linear-interp resampler → `dsp` sinc later). The safe fallback tier. |
-| `AdditiveVoice` | `EngineKind::Additive` | Wind-modulated `PartialBank`. The CPU-cheap plenum tier and the demotion target. |
-| `PhysicalPipeVoice` | `EngineKind::Waveguide` / `Modal` | Nonlinear excitation + resonator, wind-coupled. The expensive solo/exposed tier. |
+| `SampleVoice` | `EngineKind::Sample` | Multi-sample playback (linear-interp resampler; the `dsp` sinc is not wired in). The safe fallback tier — unreachable, since nothing implements `ISampleSource`. |
+| `AdditiveVoice` | `EngineKind::Additive` | `PartialBank` with the wind coupling wired but never fed. The CPU-cheap plenum tier, and the only voice the plugin plays. |
+| `PhysicalPipeVoice` | `EngineKind::Waveguide` / `Modal` | Nonlinear excitation + resonator. Structurally complete but silent: both excitations are placeholders. |
 
 ### Selection
 
@@ -43,12 +49,15 @@ fallbacks, never abandoned.
   (`selectEngine`, `selectTier`) and builds a prepared voice (`create`, off the
   audio thread). Exposed stops earn the physical tier; ranks with a
   `SpectralModel` get modeled-additive; ranks with only a sample set fall back to
-  `SampleVoice`.
+  `SampleVoice`. Nothing calls it: the plugin builds its `AdditiveVoice` pool
+  directly, so none of this policy is exercised.
 
 ### Layer & component interfaces
 
-- `IVoiceLayer` — common contract for attack/sustain/release stages.
-- `ISampleSource` — read-only recorded-sample provider (loaded by `model`).
+- `IVoiceLayer` — common contract for attack/sustain/release stages. Only the
+  sustain stage has an implementation.
+- `ISampleSource` — read-only recorded-sample provider, to be loaded by `model`.
+  No implementation exists yet, in `model` or anywhere else.
 - `IModeledSustain` — loop-free sustain seeded from a `SpectralModel`
   (`seedFrom`); implemented by `PartialBank`.
 - `IExcitation` — `NonlinearJet` (flues), `BeatingReed` (reeds).
@@ -58,13 +67,16 @@ fallbacks, never abandoned.
 
 - `PartialBank` / `Partial` — the wind-modulated additive/modal partial bank.
 - `PerPipeVoicer` → `VoicingProfile` — deterministic per-pipe hand-voicing
-  variance from a stable `core::PipeId` seed (a mixture shimmers, never cloned).
+  variance from a stable `core::PipeId` seed (so a mixture would shimmer rather
+  than sound cloned). Nothing constructs one, so no voice receives a profile.
 - `VoicingParams` — a rank's voicing recipe (the scatter ranges).
 - `SpectralModel` / `PartialTrack` / `FormantEnvelope` — the analysis bridge that
   lets a sampled attack and a modeled sustain share one timbre.
 - `AttackSpliceConfig`, `ReleaseSpec`, `VoiceContext`, `ArEnvelope` — the
   splice/release/wind-coupling configuration types (the per-family response curve
   itself is `wind::WindResponseCurve`, owned by the `wind` module).
+  `AttackSpliceConfig` has no reader at all; of `ReleaseSpec` only
+  `releaseMsForHold` is consumed, and only by the two unreferenced voices.
 
 ## Real-time contract
 

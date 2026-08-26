@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -16,10 +13,11 @@ namespace caecilia::synth
 /**
  * @brief The resonant body an @ref IExcitation drives in the physical voice tier.
  *
- * For flues this is a @ref Waveguide (a tuned bidirectional delay line modelling
- * the air column); for reeds a @ref ModalResonator (a bank of tuned modes). The
- * resonator is linear and stable; all the character comes from the nonlinear
- * coupling with the excitation and the wind.
+ * For flues this is a @ref Waveguide (today one lossy delay line standing in for
+ * the air column; the bidirectional model comes later); for reeds a
+ * @ref ModalResonator (a bank of tuned modes). The resonator is linear and
+ * stable; the character is to come from the nonlinear coupling with the
+ * excitation and the wind, which no @ref IExcitation implements yet.
  *
  * ## Real-time contract
  * - @ref prepare allocates the delay line / mode bank; not RT-safe.

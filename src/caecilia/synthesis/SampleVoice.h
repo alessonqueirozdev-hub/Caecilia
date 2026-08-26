@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -26,13 +23,16 @@ namespace caecilia::synth
  * SampleVoice streams a recorded pipe from an @ref ISampleSource and pitch-shifts
  * it to the played note by resampling, looping the sustain region (or running as
  * a one-shot when the source declares no loop, which is Caecilia's preferred
- * loop-free path handing off to a modeled sustain). It is a degenerate
+ * loop-free path, meant to hand off to a modeled sustain). It is the degenerate
  * configuration of the layered pipeline where the attack AND sustain come from
  * the recording.
  *
- * The scaffold resamples with linear interpolation; the production path delegates
- * to the @c dsp module's 16-point Kaiser-windowed-sinc interpolator once that
- * module lands (see the TODO in @c renderAdd).
+ * It resamples with linear interpolation. @c dsp::SincKaiser16Interpolator now
+ * exists and is what should replace that tap (see the TODO in @c renderAdd).
+ *
+ * @todo Not reachable from the plugin: nothing implements @ref ISampleSource and
+ *       nothing constructs a SampleVoice, so this path is never exercised. With
+ *       a null source @ref renderAdd returns immediately.
  *
  * ## Real-time contract
  * - @ref prepare precomputes; @ref setSampleSource wires a (pre-loaded) source.
@@ -49,6 +49,9 @@ public:
     void prepare(core::SampleRate sampleRate, std::size_t maxBlockFrames) override;
     void noteOn(core::PipeId pipe, core::Velocity velocity) noexcept override;
     void noteOff() noexcept override;
+    void silence() noexcept override;
+    void setExpression(float startGain, float incPerSample) noexcept override;
+    void adoptRank(const void* voicing) noexcept override;
     void renderAdd(core::AudioBlock& block) noexcept override;
     [[nodiscard]] bool isActive() const noexcept override;
     [[nodiscard]] core::EngineKind kind() const noexcept override { return core::EngineKind::Sample; }
@@ -77,6 +80,10 @@ private:
     VoicingProfile       voicing_{};
     ReleaseSpec          release_{};
     ArEnvelope           envelope_{};
+
+    /// This block's swell-shoe ramp; see IVoice::setExpression.
+    float exprGain_ = 1.0f;
+    float exprInc_  = 0.0f;
 
     core::SampleRate sampleRate_ = 0.0;
     double           cursor_     = 0.0;  ///< Fractional read position in source frames.
