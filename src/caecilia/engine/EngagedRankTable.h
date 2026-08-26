@@ -57,6 +57,19 @@ struct EngagedRank
 };
 
 /**
+ * @brief A drawn coupler, as the audio thread needs it.
+ *
+ * Everything the expansion uses and nothing else: which division's keys reach
+ * which division's ranks, and by how many semitones.
+ */
+struct EngagedCoupler
+{
+    DivisionId   from{};          ///< The division whose RANKS are borrowed.
+    DivisionId   to{};            ///< The division whose KEYS borrow them.
+    std::int16_t semitones = 0;   ///< 0 unison, +12 super-octave, -12 sub.
+};
+
+/**
  * @brief The engaged ranks of the current registration.
  *
  * Trivially copyable and fixed-size on purpose: it crosses the message/audio
@@ -73,6 +86,14 @@ struct EngagedRankTable
 
     std::array<EngagedRank, kMaxRanks> ranks{};
     std::size_t                        count = 0;
+
+    /// Drawn couplers. Published WITH the ranks because they are drawn the same
+    /// way, change at the same moments, and are read together: a key's expansion
+    /// is meaningless if the two halves can disagree by a block.
+    static constexpr std::size_t kMaxCouplers = 32;
+    std::array<EngagedCoupler, kMaxCouplers> couplers{};
+    std::size_t                              couplerCount = 0;
+
     std::uint32_t                      epoch = 0;
 };
 

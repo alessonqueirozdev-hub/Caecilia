@@ -242,6 +242,46 @@ private:
 
     void handleNoteOn(const EngineCommand::NoteOnPayload& p) noexcept;
 
+    /// One rank sounding one note: what a key press resolves to, once.
+    struct KeyVoice
+    {
+        const EngagedRank* rank = nullptr;
+        MidiNote           note = 0;
+    };
+
+    /// The most voices one key may call for.
+    ///
+    /// Sixty-four ranks is the registration mask's width, and an octave coupler can
+    /// ask a rank for a second note -- so this covers every rank twice over. A key
+    /// that somehow exceeded it drops the excess rather than overrunning: silent in
+    /// one rank beats undefined behaviour in all of them.
+    static constexpr std::size_t kMaxKeyVoices = 128;
+
+    /**
+     * @brief Everything a key on @p division should be sounding, couplers included.
+     * @return How many entries were written into @p out.
+     *
+     * Couplers do NOT chain: a coupler borrows the ranks of its source division as
+     * they are, not as that division would sound them with its own couplers drawn.
+     * This organ declares Récit/Pédale separately from Récit/Grand-Orgue plus
+     * Grand-Orgue/Pédale, which is exactly what an instrument does when the two are
+     * not the same thing.
+     */
+    [[nodiscard]] std::size_t expandKey(MidiNote note, DivisionId division,
+                                        const EngagedRankTable& table,
+                                        KeyVoice* out) const noexcept;
+
+    /// Is some OTHER held key already calling for this rank at this note?
+    ///
+    /// A pipe sounds while ANY key holds it. Two keys reaching the same pipe -- the
+    /// Récit's own key and a Grand-Orgue key through the coupler -- must start it
+    /// once and release it when the LAST of them comes up, which is what a pallet
+    /// does and what makes coupled playing survive an organist letting go of one
+    /// hand.
+    [[nodiscard]] bool heldElsewhere(const KeyVoice& v, MidiNote exceptNote,
+                                     DivisionId exceptDivision,
+                                     const EngagedRankTable& table) const noexcept;
+
     /// Acquire and trigger one voice for one (rank, note). @return false if the
     /// pool had nothing left, which the caller has already made impossible.
     bool startRankVoice(const EngagedRank& rank, MidiNote note, Velocity velocity) noexcept;

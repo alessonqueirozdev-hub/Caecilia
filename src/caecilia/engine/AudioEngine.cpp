@@ -556,61 +556,151 @@ void AudioEngine::reconcileHeldKeys(const EngagedRankTable& next) noexcept
     if (heldKeyCount_ == 0)
         return;
 
-    const auto engagedIn = [](const EngagedRankTable& t, StopId stop)
+    // Per HELD KEY, as a diff of what that key should be sounding before and
+    // after. Comparing rank sets globally, as this used to, cannot see a coupler
+    // being drawn -- the rank set is unchanged and every key's expansion is not --
+    // and would have to grow a second special case to. One concept covers stops,
+    // couplers, and both moving at once.
+    KeyVoice before[kMaxKeyVoices];
+    KeyVoice after[kMaxKeyVoices];
+
+    const auto contains = [](const KeyVoice* set, std::size_t n, const KeyVoice& v)
     {
-        for (std::size_t i = 0; i < t.count; ++i)
-            if (t.ranks[i].stop.value == stop.value)
+        for (std::size_t i = 0; i < n; ++i)
+            if (set[i].rank->stop.value == v.rank->stop.value && set[i].note == v.note)
                 return true;
         return false;
     };
 
-    // Retired ranks: a real note-off on every held key, so the pipe stops the way
-    // a pipe stops -- its own release, its own decay -- rather than vanishing.
-    for (std::size_t i = 0; i < ranks_.count; ++i)
+    for (std::size_t k = 0; k < heldKeyCount_; ++k)
     {
-        const EngagedRank& gone = ranks_.ranks[i];
-        if (engagedIn(next, gone.stop))
-            continue;
-        for (std::size_t k = 0; k < heldKeyCount_; ++k)
-            if (heldKeys_[k].division.value == gone.division.value)
-                pool_.noteOff(PipeId{ static_cast<std::uint16_t>(gone.stop.value),
-                                      heldKeys_[k].note,
-                                      static_cast<std::uint8_t>(gone.division.value) });
-    }
+        const HeldKey key = heldKeys_[k];
+        const std::size_t nBefore = expandKey(key.note, key.division, ranks_, before);
+        const std::size_t nAfter  = expandKey(key.note, key.division, next,   after);
 
-    // Newly drawn ranks: a real note-on from silence, with that rank's own speech.
-    // A rank that was ALREADY sounding is not touched at all -- not re-seeded, not
-    // ramped, nothing -- so it stays bit-identical across the change.
-    for (std::size_t i = 0; i < next.count; ++i)
-    {
-        const EngagedRank& added = next.ranks[i];
-        bool wasEngaged = false;
-        for (std::size_t j = 0; j < ranks_.count; ++j)
-            wasEngaged = wasEngaged || ranks_.ranks[j].stop.value == added.stop.value;
-        if (wasEngaged)
-            continue;
-
-        for (std::size_t k = 0; k < heldKeyCount_; ++k)
+        // Gone: a real note-off, so the pipe stops the way a pipe stops -- its own
+        // release, its own decay -- rather than vanishing. Unless another held key
+        // still calls for it under the NEW table.
+        for (std::size_t i = 0; i < nBefore; ++i)
         {
-            if (heldKeys_[k].division.value != added.division.value)
+            if (contains(after, nAfter, before[i]))
+                continue;
+            if (heldElsewhere(before[i], key.note, key.division, next))
+                continue;
+            pool_.noteOff(PipeId{
+                static_cast<std::uint16_t>(before[i].rank->stop.value),
+                before[i].note,
+                static_cast<std::uint8_t>(before[i].rank->division.value) });
+        }
+
+        // Arrived: a real note-on from silence, with that rank's own speech. What
+        // was ALREADY sounding is not touched at all -- not re-seeded, not ramped,
+        // nothing -- so it stays bit-identical across the change.
+        for (std::size_t i = 0; i < nAfter; ++i)
+        {
+            if (contains(before, nBefore, after[i]))
+                continue;
+            // Started by whichever held key reaches it first; the rest find it
+            // already sounding. Checked against the OLD table, because a key later
+            // in this loop has not been reconciled yet.
+            if (heldElsewhere(after[i], key.note, key.division, ranks_))
                 continue;
             if (pool_.freeCount() == 0
                 && pool_.stealQuietestKey(scheduler_.stealPolicy()) == 0)
                 break;
-            (void) startRankVoice(added, heldKeys_[k].note, heldKeys_[k].velocity);
+            (void) startRankVoice(*after[i].rank, after[i].note, key.velocity);
         }
     }
 }
 
+std::size_t AudioEngine::expandKey(MidiNote note, DivisionId division,
+                                   const EngagedRankTable& table,
+                                   KeyVoice* out) const noexcept
+{
+    std::size_t n = 0;
+
+    const auto push = [&](const EngagedRank& r, MidiNote soundingNote)
+    {
+        if (n >= kMaxKeyVoices)
+            return;
+        // Two couplers reaching the same rank at the same note is a configuration
+        // that says one thing twice; sounding it twice would be one rank at +6 dB.
+        for (std::size_t i = 0; i < n; ++i)
+            if (out[i].rank->stop.value == r.stop.value && out[i].note == soundingNote)
+                return;
+        out[n++] = KeyVoice{ &r, soundingNote };
+    };
+
+    // The key's own division.
+    for (std::size_t i = 0; i < table.count; ++i)
+        if (table.ranks[i].division.value == division.value)
+            push(table.ranks[i], note);
+
+    // Every drawn coupler whose KEYS are this division borrows another's RANKS.
+    // Single level, deliberately: see the note on expandKey.
+    for (std::size_t c = 0; c < table.couplerCount; ++c)
+    {
+        const EngagedCoupler& cp = table.couplers[c];
+        if (cp.to.value != division.value)
+            continue;
+
+        // A key transposed off the compass is silent rather than clamped. Clamping
+        // would pile the whole top octave of a super-octave coupler onto note 127,
+        // which is a chord nobody played.
+        const int shifted = static_cast<int>(note) + static_cast<int>(cp.semitones);
+        if (shifted < 0 || shifted > 127)
+            continue;
+        const auto sounding = static_cast<MidiNote>(shifted);
+
+        for (std::size_t i = 0; i < table.count; ++i)
+            if (table.ranks[i].division.value == cp.from.value)
+                push(table.ranks[i], sounding);
+    }
+
+    return n;
+}
+
+bool AudioEngine::heldElsewhere(const KeyVoice& v, MidiNote exceptNote,
+                                DivisionId exceptDivision,
+                                const EngagedRankTable& table) const noexcept
+{
+    KeyVoice scratch[kMaxKeyVoices];
+
+    for (std::size_t k = 0; k < heldKeyCount_; ++k)
+    {
+        if (heldKeys_[k].note == exceptNote
+            && heldKeys_[k].division.value == exceptDivision.value)
+            continue;
+
+        const std::size_t n =
+            expandKey(heldKeys_[k].note, heldKeys_[k].division, table, scratch);
+        for (std::size_t i = 0; i < n; ++i)
+            if (scratch[i].rank->stop.value == v.rank->stop.value
+                && scratch[i].note == v.note)
+                return true;
+    }
+    return false;
+}
+
 void AudioEngine::handleNoteOn(const EngineCommand::NoteOnPayload& p) noexcept
 {
-    // One key is one voice per engaged rank. A single Principal is one voice; a
-    // Tutti is twenty-six, all starting together, each with its own speech timing,
-    // its own place in the case and its own tuning -- which is what an organ is
-    // and what a single composite voice cannot be.
-    const std::size_t needed = ranks_.count;
-    if (needed == 0)
-        return; // nothing drawn: correctly silent
+    // One key is one voice per engaged rank -- of its own division, and of every
+    // division a drawn coupler lends it. A single Principal is one voice; a Tutti
+    // with the manuals coupled is most of the instrument, all starting together,
+    // each with its own speech timing, its own place in the case and its own
+    // tuning, which is what an organ is and what a composite voice cannot be.
+    KeyVoice wanted[kMaxKeyVoices];
+    const std::size_t want = expandKey(p.pipe.midiNote, p.division, ranks_, wanted);
+    if (want == 0)
+        return; // nothing drawn reaches this key: correctly silent
+
+    // A pipe already held by another key is not started again. Two keys can call
+    // for the same pipe -- the Récit's own and a Grand-Orgue key through the
+    // coupler -- and a real pallet opens once.
+    std::size_t needed = 0;
+    for (std::size_t i = 0; i < want; ++i)
+        if (! heldElsewhere(wanted[i], p.pipe.midiNote, p.division, ranks_))
+            ++needed;
 
     // ADMISSION. Reserve the whole group or take none of it. Starting a key that
     // runs out of voices halfway leaves a chord with a hole in its registration --
@@ -620,22 +710,15 @@ void AudioEngine::handleNoteOn(const EngineCommand::NoteOnPayload& p) noexcept
     //
     // The steal is a whole KEY for the same reason: taking one rank off a sounding
     // chord is more audible than ending one note early.
-    while (pool_.freeCount() < needed)
+    while (needed > 0 && pool_.freeCount() < needed)
         if (pool_.stealQuietestKey(scheduler_.stealPolicy()) == 0)
             return; // nothing left to take; the block is genuinely full
 
     rememberHeldKey(p.pipe.midiNote, p.division, p.velocity);
 
-    for (std::size_t i = 0; i < needed; ++i)
-    {
-        const EngagedRank& rank = ranks_.ranks[i];
-        // Only the ranks of the division the key belongs to. A drawstop on the
-        // Récit does not sound when a Grand-Orgue key goes down -- that is what a
-        // coupler is for, and couplers arrive as their own key events.
-        if (rank.division.value != p.division.value)
-            continue;
-        (void) startRankVoice(rank, p.pipe.midiNote, p.velocity);
-    }
+    for (std::size_t i = 0; i < want; ++i)
+        if (! heldElsewhere(wanted[i], p.pipe.midiNote, p.division, ranks_))
+            (void) startRankVoice(*wanted[i].rank, wanted[i].note, p.velocity);
 }
 
 void AudioEngine::handleNoteOff(const EngineCommand::NoteOffPayload& p) noexcept
@@ -646,13 +729,32 @@ void AudioEngine::handleNoteOff(const EngineCommand::NoteOffPayload& p) noexcept
     //
     // It also means a key release stays one command on the ring however many stops
     // are drawn, instead of one per rank.
+    // Forgotten FIRST, so "is another key still holding this pipe" does not count
+    // the key that is coming up.
     forgetHeldKey(p.pipe.midiNote, p.division);
 
-    const std::size_t div = p.pipe.divisionId;
-    if (div < kMaxDivisions && sustainDown_[div])
-        pool_.holdKeyForSustain(p.pipe.midiNote, p.division);
-    else
-        pool_.noteOffKey(p.pipe.midiNote, p.division);
+    KeyVoice going[kMaxKeyVoices];
+    const std::size_t n = expandKey(p.pipe.midiNote, p.division, ranks_, going);
+
+    const std::size_t div       = p.pipe.divisionId;
+    const bool        sustained = div < kMaxDivisions && sustainDown_[div];
+
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        // Still called for by another key: the pallet stays open. Hold C4 on the
+        // Récit and C4 on the Grand-Orgue with Récit/Grand-Orgue drawn, and letting
+        // go of one hand must not silence what the other is still playing.
+        if (heldElsewhere(going[i], p.pipe.midiNote, p.division, ranks_))
+            continue;
+
+        const PipeId pipe{ static_cast<std::uint16_t>(going[i].rank->stop.value),
+                           going[i].note,
+                           static_cast<std::uint8_t>(going[i].rank->division.value) };
+        if (sustained)
+            pool_.holdPipeForSustain(pipe);
+        else
+            pool_.noteOff(pipe);
+    }
 }
 
 void AudioEngine::handleSustain(const EngineCommand::SustainPayload& p) noexcept

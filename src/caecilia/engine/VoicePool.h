@@ -231,6 +231,24 @@ public:
      * The voices keep sounding through their release layer and are reclaimed by
      * the next @ref refresh(); this only starts the release. RT-safe.
      */
+    /// @copydoc noteOff(PipeId) but marks the voice sustained instead of releasing.
+    ///
+    /// The pipe-level twin of @ref holdKeyForSustain, needed once couplers exist:
+    /// a Grand-Orgue key can be holding a Récit pipe, and releasing that key under
+    /// the sustain pedal has to hold THAT pipe -- not every Récit voice at the same
+    /// note, some of which a Récit key may still be holding for real.
+    std::size_t holdPipeForSustain(PipeId pipe) noexcept
+    {
+        std::size_t n = 0;
+        for (std::size_t i = 0; i < boundCount_; ++i)
+            if (active_[i] && voices_[i] != nullptr && pipe_[i] == pipe)
+            {
+                sustained_[i] = true;
+                ++n;
+            }
+        return n;
+    }
+
     std::size_t noteOff(PipeId pipe) noexcept
     {
         std::size_t n = 0;

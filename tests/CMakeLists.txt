@@ -30,6 +30,7 @@ add_executable(caecilia_tests
     core/ReverbSendGateTest.cpp
     core/TripleBufferTest.cpp
     engine/AudioEngineTest.cpp
+    engine/CouplerTest.cpp
     engine/SwellBoxTest.cpp
     engine/AuFormatContractTest.cpp
     engine/ExpressionTest.cpp
