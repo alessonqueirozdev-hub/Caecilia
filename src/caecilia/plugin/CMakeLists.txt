@@ -1,6 +1,5 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential; unauthorized copying,
-# distribution, or use of any part is prohibited. See LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # ---------------------------------------------------------------------------
 # plugin module : the JUCE VST3 / Standalone wrapper.
@@ -11,7 +10,7 @@
 # `ui` module (added after this one by the root CMakeLists) contributes its
 # sources to the same `Caecilia` target.
 #
-# The proprietary / JUCE license boundary is kept at the target level: JUCE is a
+# The Apache-2.0 / JUCE license boundary is kept at the target level: JUCE is a
 # separate third-party dependency (see THIRD_PARTY_NOTICES.md) and is NEVER linked
 # into caecilia_core.
 # ---------------------------------------------------------------------------
@@ -27,13 +26,61 @@ if(NOT COMMAND juce_add_plugin)
     return()
 endif()
 
+# ---------------------------------------------------------------------------
+# WebView2 (Windows only): the embedded console needs Microsoft's SDK, which is
+# NOT bundled with Windows or with JUCE. Without it, juce_add_plugin fails deep
+# inside JUCE's FindWebView2 with a message that says nothing about how to fix
+# it. Detect it here and say exactly what to install.
+# ---------------------------------------------------------------------------
+if(WIN32)
+    # NOTE: JUCE pre-declares JUCE_WEBVIEW2_PACKAGE_LOCATION as a BOOL cache entry
+    # defaulting to OFF. A plain `set(... CACHE PATH ...)` is therefore a silent
+    # no-op — the entry already exists — so detect into a local first and FORCE the
+    # cache entry afterwards.
+    set(_caecilia_webview2_dir "")
+
+    if(JUCE_WEBVIEW2_PACKAGE_LOCATION
+       AND NOT JUCE_WEBVIEW2_PACKAGE_LOCATION STREQUAL "OFF"
+       AND NOT JUCE_WEBVIEW2_PACKAGE_LOCATION STREQUAL "ON")
+        # Explicitly supplied on the command line: trust it.
+        set(_caecilia_webview2_dir "${JUCE_WEBVIEW2_PACKAGE_LOCATION}")
+    else()
+        # Probe the conventional NuGet output directories, so the common case
+        # needs no flags at all.
+        foreach(_probe "${CMAKE_SOURCE_DIR}/packages" "$ENV{USERPROFILE}/packages")
+            if(EXISTS "${_probe}/Microsoft.Web.WebView2/build/native/include/WebView2.h")
+                set(_caecilia_webview2_dir "${_probe}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    if(_caecilia_webview2_dir)
+        set(JUCE_WEBVIEW2_PACKAGE_LOCATION "${_caecilia_webview2_dir}" CACHE PATH
+            "Directory containing the Microsoft.Web.WebView2 NuGet package" FORCE)
+        message(STATUS "Caecilia: WebView2 SDK at ${_caecilia_webview2_dir}")
+    else()
+        message(FATAL_ERROR
+            "Caecilia: the Microsoft WebView2 SDK is required to build the plugin on "
+            "Windows (the console is an embedded WebView) but was not found.\n"
+            "  Install it with:\n"
+            "      nuget install Microsoft.Web.WebView2 -Version 1.0.1901.177 "
+            "-OutputDirectory packages -ExcludeVersion\n"
+            "  then re-run CMake. If it lives elsewhere, point CMake at it:\n"
+            "      -DJUCE_WEBVIEW2_PACKAGE_LOCATION=<dir containing Microsoft.Web.WebView2>\n"
+            "  To skip the plugin entirely and build only the pure engine + tests:\n"
+            "      cmake -S . -B build-core -DCAECILIA_CORE_ONLY=ON")
+    endif()
+endif()
+
 juce_add_plugin(Caecilia
     PRODUCT_NAME              "Caecilia"
     COMPANY_NAME             "Alesson Queiroz"
     BUNDLE_ID                 "com.alessonqueiroz.caecilia"
     PLUGIN_MANUFACTURER_CODE  Alqz
     PLUGIN_CODE               Ceci
-    FORMATS                   VST3 Standalone
+    FORMATS                   AU VST3 Standalone
+    AU_MAIN_TYPE              kAudioUnitType_MusicDevice
     IS_SYNTH                  TRUE
     NEEDS_MIDI_INPUT          TRUE
     NEEDS_MIDI_OUTPUT         FALSE
@@ -45,6 +92,24 @@ juce_add_plugin(Caecilia
     ICON_BIG                  "${CMAKE_SOURCE_DIR}/assets/brand/caecilia-icon-512.png"
     ICON_SMALL                "${CMAKE_SOURCE_DIR}/assets/brand/caecilia-icon.png"
     DESCRIPTION               "Caecilia hybrid pipe-organ virtual instrument")
+
+# ---------------------------------------------------------------------------
+# The FORMATS line above names AU unconditionally, which is correct: JUCE's
+# _juce_get_platform_plugin_kinds gates AU on CMAKE_SYSTEM_NAME being Darwin and
+# never errors on a format the platform cannot build. Writing if(APPLE) by hand
+# would add nothing and would be wrong under an iOS toolchain, where APPLE is
+# true and JUCE deliberately omits AU.
+#
+# This is what makes that trustworthy rather than merely believed. If an AU
+# target ever appears where it should not, configuring stops here -- and the
+# Windows and Linux CI jobs become the standing proof that it does not.
+# ---------------------------------------------------------------------------
+if(NOT APPLE AND TARGET Caecilia_AU)
+    message(FATAL_ERROR
+        "Caecilia: an AU target was created on a non-Apple host. JUCE is supposed "
+        "to drop Audio Unit on anything but Darwin; if that has changed, the "
+        "FORMATS line needs a guard after all.")
+endif()
 
 # --- plugin module translation units ---------------------------------------
 target_sources(Caecilia PRIVATE

@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -38,6 +35,15 @@ public:
     void parentHierarchyChanged() override;
 
 private:
+    /// Publish the compiled instrument to the console: divisions, and every stop
+    /// with its REAL StopId. Until this existed the page carried its own
+    /// hard-coded stop list, eight entries of which had no counterpart in the
+    /// organ at all -- drawing one did nothing, silently.
+    void pushOrganSpec();
+
+    /// Publish the drawn registration as a list of StopIds.
+    void pushRegistration();
+
     void timerCallback() override; ///< Frame-rate push of meters + lit keys to the page.
 
     /// Serve the embedded console HTML to the WebView's resource provider.

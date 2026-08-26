@@ -1,17 +1,22 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/plugin/PluginProcessor.h"
 
+#include "caecilia/registration/FactoryGenerals.h"
+#include "caecilia/wind/OrganWind.h"
+#include "caecilia/registration/StopSet.h"
+
+#include "caecilia/midi/ChannelToDivisionMap.h"
+#include "caecilia/model/Division.h"
 #include "caecilia/plugin/PluginEditor.h"
 
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <cmath>
 #include <span>
+#include <utility>
 
 namespace caecilia::plugin
 {
@@ -20,195 +25,383 @@ namespace
 {
 /// Total simultaneous voices. Each key grabs one composite voice, so this is the
 /// polyphony ceiling across every manual and the pedal at once.
-constexpr std::size_t kPolyphony = 96;
+/// Voice slots. One voice per (rank, note) needs far more of them: a ten-note
+/// chord on a twenty-six-stop Tutti is 260 voices, where the composite design
+/// needed ten.
+///
+/// This costs LESS memory, not more. A composite voice reserved 1024 partials
+/// because it held every drawn rank at once; a rank holds ninety-six. 512 x 96 is
+/// about half of 96 x 1024.
+constexpr std::size_t kPolyphony = 512;
+
 } // namespace
-
-synth::SpectralModel CaeciliaAudioProcessor::compositeSpectrum() const
-{
-    // Collect the drawn StopIds and delegate to the shared pure-core builder, so
-    // the plugin and the headless render/verification harness voice identically.
-    std::vector<core::StopId> engagedIds;
-    engagedIds.reserve(engaged_.size());
-    for (const model::Stop& stop : organ_.stops())
-        if (stop.id().value < engaged_.size() && engaged_[stop.id().value])
-            engagedIds.push_back(stop.id());
-
-    return model::buildRegistrationCompositeSpectrum(organ_, engagedIds);
-}
 
 void CaeciliaAudioProcessor::buildInstrument(double sampleRate, std::size_t maxBlockFrames)
 {
-    const synth::SpectralModel composite = compositeSpectrum();
-
     synth::VoiceContext ctx;
+    // Bind the tuning table. Without this the voices fell back to a hard-coded
+    // equal-tempered A=440 inside VoiceContext, which meant the Temperament and
+    // Tuning A4 parameters were exposed to the host, automatable, and had no
+    // effect whatsoever -- historical temperaments were implemented, unit-tested,
+    // and simply never consulted.
+    // @todo The binding is only half the path. prepareToPlay leaves this model at
+    // equal temperament / A=440, and EngineCommandType::SetTemperament is an
+    // unhandled case in AudioEngine::drainCommands, so the host's Temperament and
+    // Tuning A4 parameters STILL change nothing audible. Applying them here (or
+    // handling the command) is what finishes the job.
+    ctx.tuning  = &tuning_;
+
+    // The wind supply, so a voice's partials actually respond to pressure. The
+    // voice re-points the coupling at its own chest when it adopts a rank; this is
+    // what puts a supply there to point at in the first place.
+    ctx.wind    = &wind_;
+
     ctx.family  = core::TonalFamily::Principal;
     ctx.footage = core::footage::kEight; // composite is already referenced to 8'
 
-    // Size every voice's partial bank to hold the WHOLE composite: the default
-    // bank caps at 64 partials and silently drops the rest, which would mute the
-    // last-ordered ranks of any full registration. Must precede prepare(), which
-    // is what reserves the storage.
-    const std::size_t maxPartials = std::max<std::size_t>(composite.partials.size(), 16);
-
+    // Reserve for the LARGEST registration, not for the current one. Sizing to the
+    // current composite meant every stop change had to rebuild all 96 voices --
+    // roughly 2 MB of allocate-and-free, on the message thread, synchronously with
+    // the console click -- and, far worse, rebinding the pool afterwards reset it
+    // and killed every note that was sounding.
     voices_.clear();
     voicePtrs_.clear();
     voices_.reserve(kPolyphony);
     voicePtrs_.reserve(kPolyphony);
+
+    // Sized for the largest thing a voice can be asked to become, which is one
+    // rank. It was 1024 while a voice might have had to become an entire
+    // registration -- a figure multiplied by 512 voices for memory, and TOUCHED per
+    // block, so a cache figure too.
+    //
+    // Nothing is seeded here. Every trigger path adopts a rank first and seeding is
+    // part of adoption, so a voice always carries its rank's spectrum before it
+    // sounds and never reads a starting point.
     for (std::size_t i = 0; i < kPolyphony; ++i)
     {
         auto v = std::make_unique<synth::AdditiveVoice>();
-        v->bank().setMaxPartials(maxPartials);
+        v->bank().setMaxPartials(synth::RankVoicing::kMaxPartials);
         v->prepare(sampleRate, maxBlockFrames);
         v->setContext(ctx);
-        v->seedFrom(composite);
         voicePtrs_.push_back(v.get());
         voices_.push_back(std::move(v));
     }
+
+    // One voicing per stop, built once. They do not depend on what is drawn, so
+    // drawing and retiring stops never rebuilds any of this -- which is what makes
+    // a drawstop click cost a table publication rather than a re-voicing of the
+    // entire pool.
+    rankVoicings_.clear();
+    rankVoicings_.resize(registration::StopSet::kMaskCapacity);
+    for (const model::Stop& s : organ_.stops())
+        if (s.id().value < rankVoicings_.size())
+            rankVoicings_[s.id().value] = model::buildRankVoicing(organ_, s.id());
+
+    publishEngagedRanks();
+}
+
+void CaeciliaAudioProcessor::publishEngagedRanks()
+{
+    core::engine::EngagedRankTable table;
+
+    for (std::size_t i = 0; i < rankVoicings_.size()
+                            && table.count < table.ranks.size(); ++i)
+    {
+        if ((registration_ & (std::uint64_t{1} << i)) == 0)
+            continue;
+        const synth::RankVoicing& v = rankVoicings_[i];
+        if (v.spectrum.partials.empty())
+            continue; // a bit set for a stop this instrument does not have
+        // What one pipe of this rank draws at middle C, relative to an 8'. A 16'
+        // rank's pipes are twice the length of an 8''s and empty the reservoir
+        // accordingly; the note's own half of the figure is applied by the engine.
+        table.ranks[table.count++] =
+            core::engine::EngagedRank{ &v, v.stop, v.division,
+                                       wind::rankWindFlow(v.footage) };
+    }
+
+    table.epoch = ++registrationEpoch_;
+    engine_.setEngagedRanks(table);
 }
 
 CaeciliaAudioProcessor::CaeciliaAudioProcessor()
     : juce::AudioProcessor(BusesProperties().withOutput("Output",
                                                         juce::AudioChannelSet::stereo(),
                                                         true))
-    , parameters_(*this)
+    // The organ is compiled in the member-initialiser list, before the parameter
+    // mirror, because the mirror's layout is built FROM it: the stop parameters
+    // take their names from its stops and their DEFAULTS from its opening plenum.
+    // Choosing the plenum afterwards -- which is what the old constructor body did
+    // -- meant the host's idea of "default" was silence, and its "reset to
+    // default" gave back an instrument with nothing drawn.
+    , organ_(model::buildCaeciliaDemoOrgan())
+    , playDivision_(model::primaryManual(organ_))
+    , parameters_(*this, organ_, model::defaultOpeningRegistration(organ_, playDivision_))
 {
-    // Compile the instrument once (off-thread). The console lays itself out from
-    // it and the registration is a subset of its stops.
-    organ_ = model::buildCaeciliaDemoOrgan();
-    engaged_.assign(organ_.stops().size(), false);
-    chooseDefaultRegistration();
+    // The parameters now hold the opening plenum as their own value, so the
+    // registration is simply read back out of them rather than chosen again here.
+    registration_ = parameters_.stopBits();
+
+    // The published parameter set has to be exactly what core/ParameterIds.h pins,
+    // because ParameterIdHashTest guards THAT list and a host keys its automation on
+    // it. The IDs cannot drift -- ParameterLayout aliases core rather than restating
+    // them -- so the only way the two can disagree is create() adding or missing one,
+    // which is what this catches.
+    jassert(getParameters().size() == static_cast<int>(ParameterLayout::kParameterCount));
+
+    // The factory pistons, resolved against THIS organ. Built once: a general is a
+    // stored registration, and rebuilding one behind the organist's back is the
+    // opposite of what a combination memory is for.
+    buildDefaultGenerals();
 }
 
 // ---------------------------------------------------------------------------
 // Registration defaults and control.
 // ---------------------------------------------------------------------------
 
-void CaeciliaAudioProcessor::chooseDefaultRegistration()
-{
-    // Primary manual = the division carrying the most stops (the Grand-Orgue on
-    // the demo instrument); MIDI notes and key lights are routed here.
-    const auto& stops = organ_.stops();
-    std::array<int, ui::KeyStateSnapshot::kMaxDivisions> perDivision{};
-    for (const model::Stop& s : stops)
-        if (s.division().value < perDivision.size())
-            ++perDivision[s.division().value];
-
-    std::size_t best = 0;
-    for (std::size_t d = 1; d < perDivision.size(); ++d)
-        if (perDivision[d] > perDivision[best])
-            best = d;
-    playDivision_ = core::DivisionId{ static_cast<std::uint16_t>(best) };
-
-    // Draw a classic opening plenum on the primary manual: the whole principal
-    // chorus, its mixtures, and an 8' flute foundation for body.
-    for (const model::Stop& s : stops)
-    {
-        if (s.division() != playDivision_)
-            continue;
-        const bool principalChorus = s.family() == core::TonalFamily::Principal
-                                  || s.family() == core::TonalFamily::Mixture;
-        const bool fluteFoundation = s.family() == core::TonalFamily::Flute
-                                  && s.footage() == core::footage::kEight;
-        if (principalChorus || fluteFoundation)
-            engaged_[s.id().value] = true;
-    }
-
-    // Safety net: if the heuristic drew nothing, engage the first 8' stop found so
-    // the instrument is never silent out of the box.
-    if (std::none_of(engaged_.begin(), engaged_.end(), [](bool b) { return b; }))
-        for (const model::Stop& s : stops)
-            if (s.footage() == core::footage::kEight)
-            {
-                engaged_[s.id().value] = true;
-                break;
-            }
-}
-
 bool CaeciliaAudioProcessor::isStopEngaged(core::StopId stop) const noexcept
 {
-    return stop.value < engaged_.size() && engaged_[stop.value];
+    return stop.value < registration::StopSet::kMaskCapacity
+        && (registration_ & (std::uint64_t{1} << stop.value)) != 0;
 }
 
 void CaeciliaAudioProcessor::toggleStop(core::StopId stop)
 {
-    if (stop.value >= engaged_.size())
+    if (stop.value >= registration::StopSet::kMaskCapacity)
         return;
-    engaged_[stop.value] = ! engaged_[stop.value];
+    applyRegistration(registration_ ^ (std::uint64_t{1} << stop.value),
+                      RegistrationOrigin::Console);
+}
+
+void CaeciliaAudioProcessor::setDrawnStops(std::uint64_t bits)
+{
+    applyRegistration(bits, RegistrationOrigin::Console);
+}
+
+void CaeciliaAudioProcessor::setUiTremulant(bool on)
+{
+    // Through the PARAMETER, exactly as the master EQ's enable goes. The console
+    // pushing straight to the engine would leave the host's own Tremulant control
+    // showing something the instrument was not doing.
+    if (auto* p = parameters_.apvts().getParameter(ParameterLayout::kTremulantOn))
+        p->setValueNotifyingHost(on ? 1.0f : 0.0f);
+}
+
+void CaeciliaAudioProcessor::handleAsyncUpdate()
+{
+    // Message thread, and TWO producers share this one dispatch: the audio thread's
+    // per-block parameter diff, and a MIDI program change. Each carries its own
+    // "there is something here" flag and claims it, so neither consumes the other's
+    // work -- and neither is lost if both arrive in the same block.
+    if (pendingHostRegistrationValid_.exchange(false, std::memory_order_relaxed))
+        // HostParameters origin means it will NOT be written back to the
+        // parameters, which is what stops a redundant automation point per change.
+        applyRegistration(pendingHostRegistration_.load(std::memory_order_relaxed),
+                          RegistrationOrigin::HostParameters);
+
+    // The piston goes last. It is an explicit gesture, and any parameter diff it
+    // arrived alongside describes the registration it means to replace.
+    const int program = pendingProgram_.exchange(-1, std::memory_order_relaxed);
+    if (program >= 0)
+        recallGeneral(static_cast<std::size_t>(program));
+}
+
+CaeciliaAudioProcessor::~CaeciliaAudioProcessor()
+{
+    // Before any member dies. See the declaration.
+    cancelPendingUpdate();
+}
+
+std::uint64_t CaeciliaAudioProcessor::generalMask(std::size_t index) const noexcept
+{
+    return index < kNumGenerals && generalsSet_.test(index) ? generals_[index] : 0;
+}
+
+bool CaeciliaAudioProcessor::generalIsSet(std::size_t index) const noexcept
+{
+    return index < kNumGenerals && generalsSet_.test(index);
+}
+
+void CaeciliaAudioProcessor::captureGeneral(std::size_t index)
+{
+    if (index >= kNumGenerals)
+        return;
+    generals_[index] = registration_;
+    generalsSet_.set(index);
+}
+
+void CaeciliaAudioProcessor::recallGeneral(std::size_t index)
+{
+    if (index >= kNumGenerals || ! generalsSet_.test(index))
+        return;
+    applyRegistration(generals_[index], RegistrationOrigin::Console);
+    lastGeneral_.store(static_cast<int>(index), std::memory_order_relaxed);
+}
+
+void CaeciliaAudioProcessor::clearGeneral(std::size_t index)
+{
+    if (index >= kNumGenerals)
+        return;
+    generals_[index] = 0;
+    generalsSet_.reset(index);
+}
+
+int CaeciliaAudioProcessor::consumeLastGeneral() noexcept
+{
+    return lastGeneral_.exchange(-1, std::memory_order_relaxed);
+}
+
+void CaeciliaAudioProcessor::buildDefaultGenerals()
+{
+    // The table, the grammar and the cumulative rule all live in `registration`,
+    // where a test can reach them. This is the plugin binding them to the loaded
+    // organ, and nothing more.
+    const std::size_t written = registration::resolveFactoryGenerals(organ_, generals_);
+    (void) written;
+
+    for (std::size_t i = 0; i < kNumGenerals; ++i)
+        if (generals_[i] != 0)
+            generalsSet_.set(i);
+}
+
+void CaeciliaAudioProcessor::applyRegistration(std::uint64_t next, RegistrationOrigin origin)
+{
+    // Idempotence is the loop-breaker, and it is deliberately the first thing
+    // here. A console click writes the host parameters; the audio thread's
+    // per-block diff then sees them move and calls back with the SAME set; that
+    // second pass stops on this line. No flag to get out of sync, and no window in
+    // which a race could sustain the round trip.
+    if (next == registration_)
+        return;
+
+    registration_ = next;
+
+    // A change that CAME from the parameters must not be written back to them.
+    // Not for correctness -- the guard above already handles that -- but because
+    // it would put a redundant point into every automation lane it touched.
+    if (origin != RegistrationOrigin::HostParameters)
+        parameters_.writeStopBits(registration_);
 
     if (getSampleRate() <= 0.0)
-        return; // not prepared yet; the new state applies at the next prepareToPlay
+        return; // not prepared yet; prepareToPlay builds from registration_
 
-    swapVoicesFromComposite(compositeSpectrum());
+    // A drawstop click is now a table publication, not a re-voicing of the pool:
+    // the ranks that were already drawn keep their voices untouched, so held notes
+    // are not merely un-clicked but bit-identical.
+    publishEngagedRanks();
 }
 
 void CaeciliaAudioProcessor::setUiRegistration(const std::vector<model::RegistrationRank>& ranks)
 {
-    if (getSampleRate() <= 0.0)
-        return; // not prepared yet
-    swapVoicesFromComposite(model::buildCompositeFromRegistration(ranks));
+    // The console still speaks family+footage. Resolve it onto real stops of this
+    // instrument and go through the one writer, so the host parameters, the
+    // console and the sounding voices cannot disagree.
+    //
+    // A rank the instrument does not have resolves to nothing rather than to a
+    // substitute -- see model::resolveRanksToStops. Silence on one rank is better
+    // than a registration that does not exist sounding like one that does.
+    const auto ids = model::resolveRanksToStops(organ_, ranks);
+    std::uint64_t bits = 0;
+    for (const core::StopId id : ids)
+        if (id.value < registration::StopSet::kMaskCapacity)
+            bits |= (std::uint64_t{1} << id.value);
+
+    applyRegistration(bits, RegistrationOrigin::Console);
+}
+
+bool CaeciliaAudioProcessor::uiEqEnabled() const noexcept
+{
+    const std::atomic<float>* p = parameters_.rawParameter(ParameterLayout::kEqOn);
+    return p == nullptr || p->load(std::memory_order_relaxed) >= 0.5f;
+}
+
+float CaeciliaAudioProcessor::uiEqGain(int band) const noexcept
+{
+    if (band < 0 || band >= static_cast<int>(dsp::MasterEq::kBands))
+        return 0.0f;
+    const std::atomic<float>* p =
+        parameters_.rawParameter(ParameterLayout::kEqBandIds[static_cast<std::size_t>(band)]);
+    return p != nullptr ? p->load(std::memory_order_relaxed) : 0.0f;
+}
+
+void CaeciliaAudioProcessor::applyEqParameters() noexcept
+{
+    for (std::size_t b = 0; b < dsp::MasterEq::kBands; ++b)
+        if (std::atomic<float>* p = eqBandParam_[b])
+            masterEq_.setBandGain(b, p->load(std::memory_order_relaxed));
+
+    if (eqOnParam_ != nullptr)
+        masterEq_.setEnabled(eqOnParam_->load(std::memory_order_relaxed) >= 0.5f);
+}
+
+void CaeciliaAudioProcessor::publishConsoleReverb()
+{
+    const auto preset = static_cast<dsp::ReverbPreset>(reverbSpace_);
+    core::ReverbParams params = dsp::FdnReverb::presetParams(preset);
+    params.mix = reverbMix_;
+
+    // Published, not applied. See the member's comment: applying it here took the
+    // wrapper's callback lock from the message thread and bypassed the command
+    // ring. The audio thread reads this on its next block and sends it on.
+    uiReverb_.write(params);
+
+    // Seed the tail answer too, so a host asking between the click and the next
+    // audio block gets the new space rather than the old one.
+    tailDecaySec_.store(params.decaySec, std::memory_order_relaxed);
+    tailPreDelayMs_.store(params.preDelayMs, std::memory_order_relaxed);
 }
 
 void CaeciliaAudioProcessor::setUiReverb(int spaceIndex, float mix)
 {
-    const auto preset = static_cast<dsp::ReverbPreset>(juce::jlimit(0, 4, spaceIndex));
-    core::ReverbParams params = dsp::FdnReverb::presetParams(preset);
-    params.mix = juce::jlimit(0.0f, 1.0f, mix);
-    const juce::ScopedLock sl(getCallbackLock());
-    reverb_.setParams(params); // RT-safe snapshot swap
+    reverbSpace_ = juce::jlimit(0, 4, spaceIndex);
+    reverbMix_   = juce::jlimit(0.0f, 1.0f, mix);
+    publishConsoleReverb();
 }
 
 void CaeciliaAudioProcessor::setUiEqGain(int band, float gainDb)
 {
     if (band < 0 || band >= static_cast<int>(dsp::MasterEq::kBands))
         return;
-    const juce::ScopedLock sl(getCallbackLock());
-    masterEq_.setBandGain(static_cast<std::size_t>(band), gainDb);
+
+    // Through the parameter, not into the EQ. The console is now one more thing
+    // that moves a host parameter -- so the move is automatable, undoable, saved
+    // by the host, and visible in its generic editor, none of which was true when
+    // this reached past the parameter and wrote the DSP object directly.
+    if (auto* p = parameters_.apvts().getParameter(
+            ParameterLayout::kEqBandIds[static_cast<std::size_t>(band)]))
+        p->setValueNotifyingHost(p->convertTo0to1(gainDb));
+}
+
+void CaeciliaAudioProcessor::setUiEqGesture(int band, bool begin)
+{
+    if (band < 0 || band >= static_cast<int>(dsp::MasterEq::kBands))
+        return;
+    if (auto* p = parameters_.apvts().getParameter(
+            ParameterLayout::kEqBandIds[static_cast<std::size_t>(band)]))
+    {
+        if (begin)
+            p->beginChangeGesture();
+        else
+            p->endChangeGesture();
+    }
+}
+
+void CaeciliaAudioProcessor::setUiExpression(int division, float position)
+{
+    if (division < 0 || division > 255)
+        return;
+    // Through the command ring like every other message->audio change, and stamped
+    // at the top of the block: a console drag has no meaningful timestamp of its
+    // own. The engine glides to it, so a coarse arrival is not a coarse sound.
+    (void) uiExpression_.push(UiExpressionEvent{
+        core::DivisionId{ static_cast<std::uint16_t>(division) },
+        juce::jlimit(0.0f, 1.0f, position) });
 }
 
 void CaeciliaAudioProcessor::setUiEqEnabled(bool on)
 {
-    const juce::ScopedLock sl(getCallbackLock());
-    masterEq_.setEnabled(on);
-}
-
-void CaeciliaAudioProcessor::swapVoicesFromComposite(const synth::SpectralModel& composite)
-{
-    const double sr = getSampleRate();
-    if (sr <= 0.0)
-        return;
-
-    // Build the new voice bank off the audio thread, then swap it in under the
-    // processing lock so the audio thread never renders a half-rebuilt pool.
-    const auto frames = static_cast<std::size_t>(juce::jmax(1, getBlockSize()));
-    const std::size_t maxPartials = std::max<std::size_t>(composite.partials.size(), 16);
-
-    synth::VoiceContext ctx;
-    ctx.family  = core::TonalFamily::Principal;
-    ctx.footage = core::footage::kEight;
-
-    std::vector<std::unique_ptr<synth::AdditiveVoice>> newVoices;
-    std::vector<core::IVoice*>                          newPtrs;
-    newVoices.reserve(kPolyphony);
-    newPtrs.reserve(kPolyphony);
-    for (std::size_t i = 0; i < kPolyphony; ++i)
-    {
-        auto v = std::make_unique<synth::AdditiveVoice>();
-        v->bank().setMaxPartials(maxPartials);
-        v->prepare(sr, frames);
-        v->setContext(ctx);
-        v->seedFrom(composite);
-        newPtrs.push_back(v.get());
-        newVoices.push_back(std::move(v));
-    }
-
-    {
-        const juce::ScopedLock sl(getCallbackLock());
-        engine_.bindVoices(newPtrs.data(), newPtrs.size());
-        voices_.swap(newVoices);
-        voicePtrs_.swap(newPtrs);
-    }
-    // newVoices now holds the previous bank; it is freed here, after the lock is
-    // released and the engine has been rebound away from it. No use-after-free.
+    if (auto* p = parameters_.apvts().getParameter(ParameterLayout::kEqOn))
+        p->setValueNotifyingHost(on ? 1.0f : 0.0f);
 }
 
 void CaeciliaAudioProcessor::uiNote(core::DivisionId division, core::MidiNote note, bool down)
@@ -229,14 +422,78 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     const auto channels = static_cast<std::size_t>(juce::jmax(1, getTotalNumOutputChannels()));
 
     // The single allocation point: size every RT buffer from the host contract.
-    // TODO(phase0.1): windchest count comes from the loaded OrganSpec.
+    // TODO(phase0.1): windchest count comes from the loaded OrganSpec. Until then
+    // every windchest of the demo organ collapses onto bus 0, so per-chest metering
+    // and per-chest wind have nowhere to land.
+    // The wind, before the engine is given a pointer to it. Compiled from the
+    // organ's own chests, so the Récit's tremulant belongs to the Récit and a rank
+    // reads the pressure of the chest that actually feeds it.
+    //
+    // This is what makes the wind model audible at all. Every piece of it was
+    // implemented and unit-tested, and setWindSupply had no caller anywhere in the
+    // tree -- so RenderContext::wind was null, every partial's wind coupling read a
+    // deviation of exactly zero, and the tremulant had nothing to reach.
+    wind_.prepare(sampleRate, frames);
+    wind_.configure(wind::configFromOrgan(organ_));
+    wind_.reset();
+
     engine_.prepare(sampleRate, frames, channels, /*numWindchests*/ 1);
+    engine_.setWindSupply(&wind_);
+
+    // Which chests the tremulant parameter actually addresses.
+    {
+        std::vector<core::WindchestId> shaken;
+        for (const model::Windchest& chest : organ_.windchests())
+            if (chest.hasTremulant)
+                shaken.push_back(chest.id);
+        commandBridge_.setTremulantChests(shaken);
+    }
 
     // Bind the single-producer command path and the metering read path. Route
     // MIDI note-ons to the primary manual so they light the right keyboard.
     commandBridge_.connect(engine_.commandQueue());
     commandBridge_.setDefaultDivision(playDivision_);
+
+    // Console convention: channel 1 plays the primary manual (what a single
+    // keyboard sends), and channels 2 and 3 reach the other divisions, so a
+    // multi-manual controller or a sequencer can address the whole instrument.
+    // Anything unmapped still lands on the primary manual.
+    {
+        caecilia::midi::ChannelToDivisionMap map;
+
+        // Give every mapped channel the compass of the division it plays, so a
+        // note outside the instrument is dropped instead of sounding and taking a
+        // voice with it.
+        auto compassOf = [this](core::DivisionId id) {
+            for (const model::Division& d : organ_.divisions())
+                if (d.id() == id)
+                    return std::pair<core::MidiNote, core::MidiNote>{ d.lowNote(), d.highNote() };
+            // Explicitly typed: braced ints narrow to MidiNote and the fallback is
+            // the only place in this lambda where they are not already MidiNote.
+            return std::pair<core::MidiNote, core::MidiNote>{ core::MidiNote{ 0 },
+                                                              core::MidiNote{ 127 } };
+        };
+
+        map.mapChannel(0, playDivision_);
+        {
+            const auto c = compassOf(playDivision_);
+            map.setKeyRange(0, c.first, c.second);
+        }
+
+        std::uint8_t next = 1;
+        for (const model::Division& d : organ_.divisions())
+        {
+            if (d.id() == playDivision_ || next >= 16)
+                continue;
+            map.mapChannel(next, d.id());
+            map.setKeyRange(next, d.lowNote(), d.highNote());
+            ++next;
+        }
+        commandBridge_.setChannelMap(map);
+    }
+
     commandBridge_.resetChangeTracking();
+    commandBridge_.setSampleRate(sampleRate);
     meterBridge_.connect(engine_);
 
     // Equal-tempered A=440 tuning table (historical temperaments swap in here via
@@ -254,12 +511,28 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     reverb_.setPreset(dsp::ReverbPreset::Hall);
     engine_.setMasterReverb(&reverb_);
 
+    // Hand the console's current space to the audio thread so the first block
+    // sends it. Without this the bridge's freshly reset baseline is a
+    // default-constructed set, and its first message would overwrite the space's
+    // bass bloom -- which no host parameter covers -- with the default.
+    publishConsoleReverb();
+
     // Master tone-voicing EQ (post-reverb) and the brick-wall limiter (post-trim)
     // — the professional end of the chain. EQ defaults to the pipe-organ voicing;
     // the limiter holds the bus at -3 dBFS. The extra headroom (vs -1.5) leaves room
     // for the inter-sample overshoot that Windows' SHARED-mode mixer/resampler adds
     // downstream, which is what made the Standalone distort until users switched to
     // WASAPI Exclusive; -3 dBFS keeps it clean in shared mode too, at a hair less loudness.
+    // Resolve the EQ parameter pointers once, then push their values in BEFORE
+    // preparing: prepare() snaps the 30 ms glide onto the current targets, so a
+    // restored session starts on its own curve rather than gliding up from the
+    // factory one. Safe only because prepare() installs the band shapes
+    // unconditionally -- otherwise the snap would land on five 1 kHz sections.
+    for (std::size_t b = 0; b < dsp::MasterEq::kBands; ++b)
+        eqBandParam_[b] = parameters_.rawParameter(ParameterLayout::kEqBandIds[b]);
+    eqOnParam_ = parameters_.rawParameter(ParameterLayout::kEqOn);
+    applyEqParameters();
+
     masterEq_.prepare(sampleRate, frames, channels);
     limiter_.prepare(sampleRate, frames, channels);
     limiter_.setParams(/*ceilingDb*/ -3.0f, /*lookAheadMs*/ 2.5f, /*holdMs*/ 400.0f, /*releaseMs*/ 600.0f);
@@ -272,10 +545,21 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     hostScratch_.ensureSize(8192); // host MIDI minus swallowed page-turn keys
     keys_ = {};
 
+    navSwallowed_.reset();
+
     masterGain_.reset(sampleRate, 0.02); // 20 ms output-trim ramp
     masterGain_.setCurrentAndTargetValue(1.0f);
     polyGain_.reset(sampleRate, 0.05);   // 50 ms polyphony-compensation glide
     polyGain_.setCurrentAndTargetValue(1.0f);
+
+    // The console's Gain and Volume were read straight from their atomics into a
+    // whole-block gain, so every block boundary was a step: zipper noise while
+    // dragging a knob and a click on any large jump. 30 ms is short enough to feel
+    // immediate and long enough to be inaudible.
+    uiMasterSmooth_.reset(sampleRate, 0.03);
+    uiMasterSmooth_.setCurrentAndTargetValue(uiMaster_.load(std::memory_order_relaxed));
+    uiVolumeSmooth_.reset(sampleRate, 0.03);
+    uiVolumeSmooth_.setCurrentAndTargetValue(uiVolume_.load(std::memory_order_relaxed));
 
     updateLatency();
 }
@@ -284,6 +568,24 @@ void CaeciliaAudioProcessor::releaseResources()
 {
     // Engine buffers persist until the next prepare(); nothing to free here. The
     // no-allocation contract means there is no per-run scratch to release.
+}
+
+void CaeciliaAudioProcessor::reset()
+{
+    // Hosts call reset() between takes and expect no state to survive it. Without
+    // this the reverb tail from the previous run bled into the first block after
+    // the transport restarted, and an offline render was not reproducible between
+    // runs. juce::CriticalSection is recursive, so taking the callback lock is
+    // safe even when a host calls this from the audio thread.
+    const juce::ScopedLock sl(getCallbackLock());
+    engine_.reset();  // synchronous: voices stop dead, queued commands are dropped
+    reverb_.reset();
+    masterEq_.reset();
+    limiter_.reset();
+    keys_ = {};
+    navSwallowed_.reset();
+    uiMasterSmooth_.setCurrentAndTargetValue(uiMaster_.load(std::memory_order_relaxed));
+    uiVolumeSmooth_.setCurrentAndTargetValue(uiVolume_.load(std::memory_order_relaxed));
 }
 
 bool CaeciliaAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -304,7 +606,10 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 {
     juce::ScopedNoDenormals noDenormals; // per-thread FTZ/DAZ for the whole callback
 
-    const auto numChannels = static_cast<std::size_t>(getTotalNumOutputChannels());
+    // Take the SMALLER of the two. The bus layout is what we asked for; the buffer
+    // is what we were given, and reading past it would be out of bounds.
+    const auto numChannels = static_cast<std::size_t>(
+        std::min(getTotalNumOutputChannels(), buffer.getNumChannels()));
     const auto numFrames   = static_cast<std::size_t>(buffer.getNumSamples());
 
     // --- Sequencer page-turn: swallow the configured nav keys and turn them into
@@ -319,9 +624,22 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     for (const juce::MidiMessageMetadata meta : midi)
     {
         const juce::MidiMessage m = meta.getMessage();
+
+        // A program change is a piston, not a note. It is swallowed here -- nothing
+        // downstream has any use for it -- and handed to the message thread, which
+        // is the only place a registration may be written.
+        if (m.isProgramChange())
+        {
+            pendingProgram_.store(m.getProgramChangeNumber(), std::memory_order_relaxed);
+            triggerAsyncUpdate();
+            continue;
+        }
+
         if (m.isNoteOn() || m.isNoteOff())
         {
             const int note = m.getNoteNumber();
+            const auto slot = static_cast<std::size_t>(note & 0x7F);
+
             // MIDI-learn: the first note-on while armed becomes the binding and is
             // swallowed (it neither sounds nor steps the sequencer).
             if (navLearn != 0 && m.isNoteOn())
@@ -329,14 +647,29 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 seqLearnedNote_.store(navLearn * 256 + note, std::memory_order_relaxed);
                 seqLearn_.store(0, std::memory_order_relaxed);
                 navLearn = 0;
+                navSwallowed_.set(slot);
                 continue;
             }
-            if (navEnabled && (note == navPrev || note == navNext))
+
+            // Swallowing is decided on the NOTE-ON and remembered, so a note-off is
+            // only ever eaten when its note-on was. Deciding it afresh on the
+            // note-off meant that enabling the feature -- or re-binding it -- while
+            // one of the two notes was already sounding ate the note-off and left
+            // the note stuck until the next panic.
+            if (m.isNoteOn())
             {
-                if (m.isNoteOn())
+                if (navEnabled && (note == navPrev || note == navNext))
+                {
                     (void) seqNav_.push(note == navPrev ? static_cast<std::int8_t>(-1)
                                                         : static_cast<std::int8_t>(1));
-                continue; // swallow both the note-on and its note-off
+                    navSwallowed_.set(slot);
+                    continue;
+                }
+            }
+            else if (navSwallowed_.test(slot))
+            {
+                navSwallowed_.reset(slot);
+                continue;
             }
         }
         hostScratch_.addEvent(m, meta.samplePosition);
@@ -377,21 +710,47 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
     }
 
+    // Console swell shoe. Stamped at the top of the block: a pointer drag has no
+    // meaningful timestamp of its own, and the engine glides to the position
+    // anyway, so a coarse arrival is not a coarse sound.
+    for (UiExpressionEvent ev; uiExpression_.pop(ev); )
+        commandBridge_.pushExpression(ev.division, ev.position);
+
     // Console panic (stop demo / release keys): silence every sounding voice and
     // clear the lit-key display so nothing sticks.
     if (uiPanic_.exchange(false, std::memory_order_relaxed))
     {
         commandBridge_.pushPanic();
         keys_ = {};
+        navSwallowed_.reset();
     }
 
     // Single-producer encode of host intent onto the engine command ring, drained
     // by engine_.processBlock() below. Parameters first (cheap when unchanged),
     // then the host and on-screen note streams (both from THIS thread, so the ring
     // still has exactly one producer).
-    commandBridge_.pushChangedParameters(parameters_);
-    commandBridge_.pushMidi(hostScratch_); // host MIDI minus the swallowed nav keys
-    commandBridge_.pushMidi(uiScratch_);
+    // The console publishes a whole space preset, including the bass bloom that
+    // has no host parameter. Take it as the new baseline and force it out, so the
+    // APVTS values overlay it rather than the other way round.
+    const bool consoleFresh = uiReverb_.hasFresh();
+    if (consoleFresh)
+        commandBridge_.syncReverbBaseline(uiReverb_.read());
+    commandBridge_.pushChangedParameters(parameters_, consoleFresh);
+
+    // Republish what the host's tail-length question should answer from. Relaxed
+    // stores against relaxed loads on the message thread: at worst one block stale,
+    // and never a race on the reverb's own members.
+    {
+        const core::ReverbParams& sent = commandBridge_.lastReverbSent();
+        tailDecaySec_.store(sent.decaySec, std::memory_order_relaxed);
+        tailPreDelayMs_.store(sent.preDelayMs, std::memory_order_relaxed);
+    }
+    // Console FIRST. Its events carry no meaningful timestamp and are stamped at
+    // the top of the block, and the engine applies an offset earlier than its
+    // current position immediately rather than rewinding -- so a console keypress
+    // enqueued after a host event at frame 200 would be applied at frame 200.
+    commandBridge_.pushConsoleMidi(uiScratch_, static_cast<int>(numFrames));
+    commandBridge_.pushMidi(hostScratch_, static_cast<int>(numFrames)); // host MIDI minus swallowed nav keys
     midi.clear(); // this instrument produces no MIDI output
 
     // Wrap the host buffer as the JUCE-free AudioBlock — the only audio type that
@@ -399,8 +758,28 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     core::AudioBlock block(buffer.getArrayOfWritePointers(), numChannels, numFrames);
     engine_.processBlock(block);
 
+    // Did the host move a drawstop? Sixty-four relaxed loads and one compare.
+    //
+    // A parameter LISTENER would be the obvious answer and is the wrong one:
+    // juce::AudioProcessorValueTreeState calls its listeners under a
+    // CriticalSection, on whichever thread set the value, and for host automation
+    // that thread is this one. Registering a listener would take a lock on the
+    // audio thread inside JUCE, before any of our code ran.
+    //
+    // The rebuild itself allocates, so it is handed to the message thread rather
+    // than done here. Until it lands the instrument keeps sounding the previous
+    // registration, which is what a drawstop does anyway: it takes a moment.
+    if (const std::uint64_t hostBits = parameters_.stopBits(); hostBits != registration_)
+    {
+        pendingHostRegistration_.store(hostBits, std::memory_order_relaxed);
+        pendingHostRegistrationValid_.store(true, std::memory_order_relaxed);
+        triggerAsyncUpdate();
+    }
+
     // Post-reverb tone voicing (organ EQ). Linear, so its order vs the trims below
-    // is sonically irrelevant; only "before the limiter" matters.
+    // is sonically irrelevant; only "before the limiter" matters. The parameters
+    // are pushed in here, on this thread, because this thread owns the EQ.
+    applyEqParameters();
     masterEq_.process(block);
 
     // Publish one consistent frame (levels + lit keys) for the console to poll.
@@ -416,8 +795,10 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     masterGain_.setTargetValue(juce::Decibels::decibelsToGain(gainDb, -60.0f));
     masterGain_.applyGain(buffer, buffer.getNumSamples());
 
-    // Console master trim (Settings panel).
-    buffer.applyGain(uiMaster_.load(std::memory_order_relaxed));
+    // Console GAIN (pre-limiter drive), smoothed so a knob drag does not step the
+    // level at every block boundary.
+    uiMasterSmooth_.setTargetValue(uiMaster_.load(std::memory_order_relaxed));
+    uiMasterSmooth_.applyGain(buffer, buffer.getNumSamples());
 
     // NO polyphony compensation. A pipe organ is an open-loop, fixed-gain mixer: each
     // pipe adds acoustic energy, so more notes/stops must get LOUDER, never quieter.
@@ -428,17 +809,21 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // incoherently (~sqrt(N)) and stays under the ceiling without any dynamic trim —
     // exactly how Aeolus and GrandOrgue keep a full organ clean (no AGC anywhere).
 
-    // Master limiter: now a TRANSPARENT SAFETY NET (hold-based, no pumping) that only
+    // Master limiter: a TRANSPARENT SAFETY NET (hold-based, no pumping) that only
     // catches a pathological fff transient — not a bus compressor riding every chord.
-    // per-sample tanh (a waveshaper that flattened the Tutti into intermodulation
-    // distortion — the "explosion"). The Tutti now stays loud AND clean.
+    // It replaced a per-sample tanh (a waveshaper that flattened the Tutti into
+    // intermodulation distortion — the "explosion"). The Tutti stays loud AND clean.
     limiter_.process(block);
 
-    // Final safety clamp to +/-1 (the limiter already holds ~-1 dBFS, so this
+    // Console VOLUME (post-limiter output level), also smoothed. Applied across
+    // the whole buffer so both channels share one ramp and the image cannot shift.
+    uiVolumeSmooth_.setTargetValue(uiVolume_.load(std::memory_order_relaxed));
+    uiVolumeSmooth_.applyGain(buffer, buffer.getNumSamples());
+
+    // Final safety clamp to +/-1 (the limiter already holds -3 dBFS, so this
     // almost never fires) AND harvest the true mastered peak for the console VU.
-    const int   nSamp = buffer.getNumSamples();
-    const int   nCh   = buffer.getNumChannels();
-    const float vol   = uiVolume_.load(std::memory_order_relaxed); // post-limiter output level
+    const int nSamp = buffer.getNumSamples();
+    const int nCh   = buffer.getNumChannels();
     float peaks[2] = { 0.0f, 0.0f };
     for (int ch = 0; ch < nCh; ++ch)
     {
@@ -446,7 +831,7 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         float  pk = 0.0f;
         for (int i = 0; i < nSamp; ++i)
         {
-            float v = d[i] * vol;
+            float v = d[i];
             v = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
             d[i] = v;
             const float a = v < 0.0f ? -v : v;
@@ -475,31 +860,204 @@ juce::AudioProcessorEditor* CaeciliaAudioProcessor::createEditor()
 
 double CaeciliaAudioProcessor::getTailLengthSeconds() const
 {
-    // Report reverb decay + pre-delay so the host flushes a long enough tail.
-    auto read = [this](const char* id, float fallback)
-    {
-        if (std::atomic<float>* p = parameters_.rawParameter(id))
-            return p->load(std::memory_order_relaxed);
-        return fallback;
-    };
-    const float decay    = read(ParameterLayout::kReverbDecaySec, 2.5f);
-    const float preDelay = read(ParameterLayout::kReverbPreDelayMs, 12.0f) * 0.001f;
-    return static_cast<double>(decay + preDelay);
+    // From what was last SENT to the reverb, not the APVTS values: the console
+    // sets a whole space preset at once and never touches the parameters, so a
+    // host that trusted them could truncate a Cathedral tail to the default 2.5 s.
+    //
+    // And from atomics, not from reverb_.params(). This runs on the message
+    // thread; the reverb's members are plain floats owned by the audio thread, and
+    // reading them from here is a data race whatever the values happen to look
+    // like. Add the longest voice release too -- the pipes are still speaking
+    // after the last note-off.
+    constexpr double kLongestVoiceReleaseSec = 0.35;
+    return static_cast<double>(tailDecaySec_.load(std::memory_order_relaxed))
+         + static_cast<double>(tailPreDelayMs_.load(std::memory_order_relaxed)) * 0.001
+         + kLongestVoiceReleaseSec;
 }
 
 // ---------------------------------------------------------------------------
 // Persistence.
 // ---------------------------------------------------------------------------
 
+juce::ValueTree CaeciliaAudioProcessor::captureConsoleState() const
+{
+    juce::ValueTree state{ CaeciliaParameterMirror::kConsoleTreeId };
+
+    state.setProperty("master",   uiMaster_.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("volume",   uiVolume_.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("revSpace", reverbSpace_, nullptr);
+    state.setProperty("revMix",   reverbMix_,   nullptr);
+    // From the PARAMETERS, not from masterEq_. This runs on the message thread and
+    // the EQ's members are plain floats the audio thread writes every block --
+    // reading them here is a race whatever the numbers happen to look like.
+    //
+    // The APVTS already persists these, so this copy is redundant for anything
+    // that reads a v3 document. It stays so an older build can still open one.
+    if (const std::atomic<float>* on = parameters_.rawParameter(ParameterLayout::kEqOn))
+        state.setProperty("eqOn", on->load(std::memory_order_relaxed) >= 0.5f, nullptr);
+    for (std::size_t b = 0; b < dsp::MasterEq::kBands; ++b)
+        if (const std::atomic<float>* p = parameters_.rawParameter(ParameterLayout::kEqBandIds[b]))
+            state.setProperty(juce::Identifier("eq" + juce::String(static_cast<int>(b))),
+                              p->load(std::memory_order_relaxed), nullptr);
+    // The combination memory. Sparse -- "index:hex" for the slots that hold
+    // something -- so a document carries eight pairs rather than 128 fields, and so
+    // an ABSENT slot stays distinguishable from a cleared one.
+    {
+        juce::String packed;
+        for (std::size_t i = 0; i < kNumGenerals; ++i)
+        {
+            if (! generalsSet_.test(i))
+                continue;
+            if (packed.isNotEmpty())
+                packed << ',';
+            packed << static_cast<int>(i) << ':'
+                   << juce::String::toHexString(static_cast<juce::int64>(generals_[i]));
+        }
+        state.setProperty("generals", packed, nullptr);
+    }
+
+    state.setProperty("seqPrev", seqPrevNote_.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("seqNext", seqNextNote_.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("seqOn",   seqNavEnabled_.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("playDiv", static_cast<int>(playDivision_.value), nullptr);
+
+    // The drawn registration. From v4 the host parameters carry this -- one
+    // boolean per stop -- so what goes here is a COPY, written for the same reason
+    // the EQ's copy is written at v3: an older build opening this document has no
+    // stop parameters to read, and would otherwise come up on the factory plenum.
+    //
+    // Rank by rank rather than by StopId, because that is the shape the older
+    // build understands.
+    juce::ValueTree regs{ "RANKS" };
+    for (const model::Stop& s : organ_.stops())
+    {
+        if (! isStopEngaged(s.id()))
+            continue;
+        juce::ValueTree n{ "RANK" };
+        n.setProperty("fam",  static_cast<int>(s.family()), nullptr);
+        n.setProperty("num",  s.footage().num, nullptr);
+        n.setProperty("den",  s.footage().den, nullptr);
+        n.setProperty("comp", s.isCompound(), nullptr);
+        regs.appendChild(n, nullptr);
+    }
+    state.appendChild(regs, nullptr);
+    return state;
+}
+
+void CaeciliaAudioProcessor::applyConsoleState(const juce::ValueTree& state)
+{
+    if (! state.isValid())
+        return;
+
+    setUiMaster(static_cast<float>(state.getProperty("master", 1.0)));
+    setUiVolume(static_cast<float>(state.getProperty("volume", 1.0)));
+
+    // The combination memory, if the document has one. A document written before
+    // v5 has no opinion about the pistons, so the factory row built in the
+    // constructor stands -- restoring "nothing captured" from its silence would
+    // wipe a memory the user never asked to clear.
+    if (state.hasProperty("generals"))
+    {
+        generals_.fill(0);
+        generalsSet_.reset();
+
+        const juce::String packed = state.getProperty("generals").toString();
+        juce::StringArray  pairs;
+        pairs.addTokens(packed, ",", "");
+        for (const juce::String& pair : pairs)
+        {
+            const int colon = pair.indexOfChar(':');
+            if (colon <= 0)
+                continue;
+            const int index = pair.substring(0, colon).getIntValue();
+            if (index < 0 || static_cast<std::size_t>(index) >= kNumGenerals)
+                continue;
+            const auto bits = static_cast<std::uint64_t>(
+                pair.substring(colon + 1).getHexValue64());
+            if (bits == 0)
+                continue; // an empty slot is simply not stored
+            generals_[static_cast<std::size_t>(index)] = bits;
+            generalsSet_.set(static_cast<std::size_t>(index));
+        }
+    }
+
+    // The EQ keys in the console tree are the truth only for documents written
+    // before the EQ became a parameter. In a v3 document the APVTS carries it and
+    // this copy is a stale duplicate -- applying it would overwrite whatever the
+    // host has automated, on every single project load.
+    if (parameters_.lastDocumentVersion() < 3)
+    {
+        setUiEqEnabled(static_cast<bool>(state.getProperty("eqOn", true)));
+        for (std::size_t b = 0; b < dsp::MasterEq::kBands; ++b)
+        {
+            const juce::Identifier id("eq" + juce::String(static_cast<int>(b)));
+            if (state.hasProperty(id))
+                setUiEqGain(static_cast<int>(b), static_cast<float>(state.getProperty(id)));
+        }
+    }
+
+    setSeqNav(static_cast<int>(state.getProperty("seqPrev", 83)),
+              static_cast<int>(state.getProperty("seqNext", 84)),
+              static_cast<bool>(state.getProperty("seqOn", true)));
+
+    if (const int div = static_cast<int>(state.getProperty("playDiv", -1)); div >= 0)
+        playDivision_ = core::DivisionId{ static_cast<std::uint16_t>(div) };
+
+    // Registration last: it rebuilds the voice bank, so everything else should
+    // already be in place when it lands.
+    //
+    // ONLY for documents older than v4. From v4 the stops are host parameters, the
+    // APVTS has already restored them, and this child is a stale duplicate --
+    // applying it would overwrite what the host just put back, on every load.
+    const juce::ValueTree regs = state.getChildWithName("RANKS");
+    if (regs.isValid() && parameters_.lastDocumentVersion() < 4)
+    {
+        std::vector<model::RegistrationRank> ranks;
+        ranks.reserve(static_cast<std::size_t>(regs.getNumChildren()));
+        for (int i = 0; i < regs.getNumChildren(); ++i)
+        {
+            const juce::ValueTree n = regs.getChild(i);
+            model::RegistrationRank r;
+            r.family   = static_cast<core::TonalFamily>(
+                juce::jlimit(0, static_cast<int>(core::TonalFamily::Undefined),
+                             static_cast<int>(n.getProperty("fam", 0))));
+            const int num = juce::jmax(1, static_cast<int>(n.getProperty("num", 8)));
+            const int den = juce::jmax(1, static_cast<int>(n.getProperty("den", 1)));
+            r.footage  = core::Footage{ num, den };
+            r.compound = static_cast<bool>(n.getProperty("comp", false));
+            ranks.push_back(r);
+        }
+        setUiRegistration(ranks);
+    }
+
+    // The reverb space is a preset plus a mix, and setUiReverb applies both.
+    setUiReverb(static_cast<int>(state.getProperty("revSpace", 2)),
+                static_cast<float>(state.getProperty("revMix", 0.28)));
+}
+
 void CaeciliaAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    parameters_.writeState(destData);
+    // Everything the user set has to go in here. Saving only the APVTS meant the
+    // registration, the console trims, the reverb space and the master EQ were all
+    // silently discarded: reopening a project gave back the factory default organ.
+    parameters_.writeState(destData, captureConsoleState());
 }
 
 void CaeciliaAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    if (parameters_.readState(data, sizeInBytes))
+    juce::ValueTree console;
+    if (parameters_.readState(data, sizeInBytes, console))
     {
+        applyConsoleState(console);
+
+        // Re-derive from the parameters immediately, rather than waiting for the
+        // audio thread's next per-block diff. Two reasons: most hosts restore
+        // state before they call prepareToPlay, so there may be no next block for
+        // a while; and applyConsoleState may have written the parameters itself
+        // from a pre-v4 document, in which case this is what makes the instrument
+        // agree with them.
+        applyRegistration(parameters_.stopBits(), RegistrationOrigin::Restore);
+
         // Force the next block to re-send the restored parameter state to the engine.
         commandBridge_.resetChangeTracking();
         updateLatency();

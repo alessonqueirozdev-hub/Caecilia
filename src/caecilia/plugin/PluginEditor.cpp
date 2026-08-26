@@ -1,21 +1,15 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/plugin/PluginEditor.h"
 
 #include "BinaryData.h"
 
+#include "caecilia/model/Division.h"
+#include "caecilia/model/Stop.h"
+
 #include <cstdint>
 #include <cstdio>
-
-// Standalone-only: reach the app's audio device manager to prefer a clean output
-// mode on first run. Guarded so it is entirely absent from the VST3 build.
-#if JucePlugin_Build_Standalone
- #include <juce_audio_plugin_client/juce_audio_plugin_client.h>
-#endif
 
 namespace caecilia::plugin
 {
@@ -104,6 +98,48 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
         .withNativeIntegrationEnabled()
         .withResourceProvider([](const juce::String& url) { return provide(url); })
         // --- JS -> C++ : the mockup's drawstops and keys become engine commands.
+        // The page telling us it has finished parsing. Emitting the organ spec
+        // before that point drops it: emitEventIfBrowserIsVisible has no queue,
+        // and a listener that does not exist yet never hears anything.
+        .withNativeFunction("caeciliaReady",
+                            [this](const juce::Array<juce::var>&,
+                                   juce::WebBrowserComponent::NativeFunctionCompletion c)
+                            {
+                                pushOrganSpec();
+                                pushRegistration();
+                                c(juce::var());
+                            })
+
+        // A whole registration as StopIds. Replaces the family+footage rank list
+        // the console used to send and the processor used to guess its way back
+        // from -- the console knows the ids now, because we told it.
+        // The swell shoe. It has always moved on screen and done nothing.
+        .withNativeFunction("caeciliaSetExpression",
+                            [this](const juce::Array<juce::var>& a,
+                                   juce::WebBrowserComponent::NativeFunctionCompletion c)
+                            {
+                                if (a.size() >= 2)
+                                    processor_.setUiExpression(static_cast<int>(a[0]),
+                                                               static_cast<float>(a[1]));
+                                c(juce::var());
+                            })
+
+        .withNativeFunction("caeciliaSetDrawnStops",
+                            [this](const juce::Array<juce::var>& a,
+                                   juce::WebBrowserComponent::NativeFunctionCompletion c)
+                            {
+                                std::uint64_t bits = 0;
+                                if (a.size() >= 1 && a[0].isArray())
+                                    for (const juce::var& v : *a[0].getArray())
+                                    {
+                                        const int id = static_cast<int>(v);
+                                        if (id >= 0 && id < 64)
+                                            bits |= (std::uint64_t{1} << id);
+                                    }
+                                processor_.setDrawnStops(bits);
+                                c(juce::var());
+                            })
+
         .withNativeFunction("caeciliaToggleStop",
             [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {
@@ -166,6 +202,47 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                     proc.setUiReverb(static_cast<int>(args[0]), static_cast<float>(static_cast<double>(args[1])));
                 complete(juce::var());
             })
+        // --- Combination memory (general pistons) -------------------------------
+        // The processor owns these now. The page used to keep CAPTURED/GENERALS in
+        // JavaScript, which made a piston unreachable by a MIDI program change and
+        // meant closing the window threw the memory away.
+        .withNativeFunction("caeciliaCaptureGeneral",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (! args.isEmpty())
+                    proc.captureGeneral(static_cast<std::size_t>(static_cast<int>(args[0])));
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaRecallGeneral",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (! args.isEmpty())
+                    proc.recallGeneral(static_cast<std::size_t>(static_cast<int>(args[0])));
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaClearGeneral",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (! args.isEmpty())
+                    proc.clearGeneral(static_cast<std::size_t>(static_cast<int>(args[0])));
+                complete(juce::var());
+            })
+        // --- Tremulant ----------------------------------------------------------
+        // console.html has invoked this name since it was written, and it was never
+        // registered here: the call was silently dropped, so the tremulant switch
+        // has only ever moved on-screen state.
+        //
+        // @todo Registered, but not yet audible. The command reaches the engine and
+        // AudioEngine::applyCommand has SetTremulant as an unhandled case, because
+        // the engine's wind supply is null -- nothing calls setWindSupply anywhere
+        // in the tree, so the entire wind model (implemented and unit-tested) is
+        // inert. Binding it is what finishes this.
+        .withNativeFunction("caeciliaSetTremulant",
+            [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                proc.setUiTremulant(args.isEmpty() ? false : static_cast<bool>(args[0]));
+                complete(juce::var());
+            })
         // --- Master EQ: band gain (0..4) and enable, from the Settings panel -----
         .withNativeFunction("caeciliaSetEq",
             [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
@@ -174,6 +251,15 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                     proc.setUiEqGain(static_cast<int>(args[0]), static_cast<float>(static_cast<double>(args[1])));
                 complete(juce::var());
             })
+        .withNativeFunction("caeciliaEqGesture",
+                            [this](const juce::Array<juce::var>& a,
+                                   juce::WebBrowserComponent::NativeFunctionCompletion c)
+                            {
+                                if (a.size() >= 2)
+                                    processor_.setUiEqGesture(static_cast<int>(a[0]),
+                                                              static_cast<bool>(a[1]));
+                                c(juce::var());
+                            })
         .withNativeFunction("caeciliaSetEqEnabled",
             [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {
@@ -217,35 +303,22 @@ CaeciliaEditor::CaeciliaEditor(CaeciliaAudioProcessor& processor)
         "HKEY_CURRENT_USER\\Software\\Caecilia\\Language", juce::String());
    #endif
 
-    // First-run audio safety (Standalone, Windows): Windows' SHARED-mode mixer
-    // resamples and can distort the organ; WASAPI Exclusive (or Low-Latency) hands
-    // the audio straight to the card and stays clean. On the very first launch,
-    // prefer an exclusive device type; a registry flag makes this a ONE-TIME nudge
-    // so the user's later choice (e.g. shared mode to hear other apps) is honoured.
-   #if JucePlugin_Build_Standalone && JUCE_WINDOWS
-    if (auto* holder = juce::StandalonePluginHolder::getInstance())
-    {
-        const juce::String triedKey =
-            "HKEY_CURRENT_USER\\Software\\Caecilia\\AudioExclusiveTried";
-        if (juce::WindowsRegistry::getValue(triedKey, juce::String()).isEmpty())
-        {
-            auto& dm = holder->deviceManager;
-            auto preferType = [&dm](const char* needle) -> bool
-            {
-                for (auto* type : dm.getAvailableDeviceTypes())
-                    if (type->getTypeName().containsIgnoreCase(needle))
-                    {
-                        dm.setCurrentAudioDeviceType(type->getTypeName(), true);
-                        return true;
-                    }
-                return false;
-            };
-            if (! preferType("Exclusive"))
-                preferType("Latency"); // matches "Low Latency"/"Low-Latency" naming
-            juce::WindowsRegistry::setValue(triedKey, juce::String("1"));
-        }
-    }
-   #endif
+    // NOTE: there used to be a first-run block here that reached into
+    // juce::StandalonePluginHolder to switch the user's audio device type to
+    // WASAPI Exclusive, on the theory that Windows' shared-mode mixer was the
+    // cause of the distortion.
+    //
+    // It is gone for three reasons. It never compiled: StandalonePluginHolder is
+    // declared only in the Standalone wrapper translation unit, while this editor
+    // is part of the SHARED code target, so the Windows build failed outright on
+    // it. It was the wrong remedy: the distortion came from the master limiter
+    // reading its look-ahead ring at a wrapped offset (see Limiter::prepare),
+    // which shared mode had nothing to do with. And it was the wrong behaviour:
+    // silently changing which audio device a user's machine is on, behind their
+    // back, is not ours to do.
+    //
+    // The console already receives an `isStandalone` flag (see timerCallback) and
+    // can offer the WASAPI Exclusive hint as advice the user chooses to take.
 
     addAndMakeVisible(web_);
     web_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
@@ -262,10 +335,71 @@ CaeciliaEditor::~CaeciliaEditor()
     stopTimer();
 }
 
+void CaeciliaEditor::pushOrganSpec()
+{
+    // The instrument itself, so the console can lay out the jambs it really has
+    // rather than the ones it was drawn with. Every stop carries its StopId --
+    // which is also its host-parameter slot -- so a click, an automation move and
+    // a saved session all name the same thing.
+    const model::Organ& organ = processor_.organ();
+
+    juce::Array<juce::var> divisions;
+    for (const model::Division& d : organ.divisions())
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("id",       static_cast<int>(d.id().value));
+        o->setProperty("name",     juce::String(d.name()));
+        o->setProperty("pedal",    d.kind() == model::DivisionKind::Pedal);
+        o->setProperty("enclosed", d.isEnclosed());
+        o->setProperty("low",      static_cast<int>(d.lowNote()));
+        o->setProperty("high",     static_cast<int>(d.highNote()));
+        divisions.add(juce::var(o));
+    }
+
+    juce::Array<juce::var> stops;
+    for (const model::Stop& s : organ.stops())
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("id",       static_cast<int>(s.id().value));
+        o->setProperty("div",      static_cast<int>(s.division().value));
+        o->setProperty("name",     juce::String(s.name()));
+        o->setProperty("fam",      static_cast<int>(s.family()));
+        o->setProperty("num",      s.footage().num);
+        o->setProperty("den",      s.footage().den);
+        o->setProperty("role",     static_cast<int>(s.role()));
+        o->setProperty("pc",       static_cast<int>(s.pitchClass()));
+        o->setProperty("compound", s.isCompound());
+        stops.add(juce::var(o));
+    }
+
+    auto* spec = new juce::DynamicObject();
+    spec->setProperty("divisions", divisions);
+    spec->setProperty("stops",     stops);
+    spec->setProperty("playDiv",   static_cast<int>(processor_.playDivision().value));
+    web_.emitEventIfBrowserIsVisible("caeciliaOrgan", juce::var(spec));
+}
+
+void CaeciliaEditor::pushRegistration()
+{
+    const std::uint64_t drawn = processor_.drawnStops();
+
+    juce::Array<juce::var> ids;
+    for (int i = 0; i < 64; ++i)
+        if ((drawn & (std::uint64_t{1} << i)) != 0)
+            ids.add(i);
+
+    auto* o = new juce::DynamicObject();
+    o->setProperty("stops", ids);
+    web_.emitEventIfBrowserIsVisible("caeciliaRegistration", juce::var(o));
+}
+
 void CaeciliaEditor::timerCallback()
 {
-    // Push one consistent frame (lit keys + meters) to the page. The mockup listens
-    // for "caeciliaState" and updates its key lights, VU and wind gauges.
+    // Push one consistent frame (lit keys + meters) to the page. The console listens
+    // for "caeciliaState" and updates its key lights and VU from it. The wind field
+    // is sent too but is always zero (AudioEngine::stepWind() is an empty stub, and
+    // captureMeters never fills the wind members), so the console's wind gauges are
+    // animated by its own JS curve from the voice count.
     const ui::ConsoleFrame frame = processor_.stateMirror().read();
 
     auto* obj = new juce::DynamicObject();
@@ -296,6 +430,39 @@ void CaeciliaEditor::timerCallback()
             lit.add(n);
     obj->setProperty("litDiv", static_cast<int>(div));
     obj->setProperty("lit", lit);
+
+    // The EQ, as the PARAMETERS hold it. The console keeps a localStorage copy and
+    // used to push it at the plugin shortly after every open -- which, now that a
+    // host can automate and save these, would overwrite the session's own values
+    // with a browser cache every time the window was shown. It adopts these
+    // instead, and its copy becomes what it always should have been: a cache.
+    juce::Array<juce::var> eq;
+    for (int b = 0; b < static_cast<int>(dsp::MasterEq::kBands); ++b)
+        eq.add(processor_.uiEqGain(b));
+    obj->setProperty("eq", eq);
+    obj->setProperty("eqOn", processor_.uiEqEnabled());
+
+    // The drawn registration, as two 32-bit halves because a JS number cannot
+    // carry 64 bits of integer precision. This is what lets a host automating a
+    // drawstop light that drawstop on the console within a frame, rather than the
+    // console and the instrument quietly disagreeing until somebody clicks.
+    const std::uint64_t drawn = processor_.drawnStops();
+    obj->setProperty("regLo", static_cast<int>(static_cast<std::uint32_t>(drawn & 0xFFFFFFFFu)));
+    obj->setProperty("regHi", static_cast<int>(static_cast<std::uint32_t>(drawn >> 32)));
+
+    // Which pistons hold something, so the jamb can show an empty one as empty.
+    // Only the eight the console draws: sending 128 bits per frame to light eight
+    // buttons is a frame's worth of traffic for nothing.
+    int stored = 0;
+    for (int i = 0; i < 8; ++i)
+        if (processor_.generalIsSet(static_cast<std::size_t>(i)))
+            stored |= (1 << i);
+    obj->setProperty("genSet", stored);
+
+    // The piston a MIDI program change just fired, so the console can flash it. It
+    // is CONSUMED by reading, so the flash happens once rather than for as long as
+    // the registration stands.
+    obj->setProperty("genFired", processor_.consumeLastGeneral());
 
     web_.emitEventIfBrowserIsVisible("caeciliaState", juce::var(obj));
 
