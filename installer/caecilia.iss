@@ -1,5 +1,5 @@
-; Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-; Caecilia is proprietary and confidential; see LICENSE.
+; SPDX-License-Identifier: Apache-2.0
+; Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 ;
 ; Inno Setup script for the Caecilia Windows installer (VST3 + Standalone).
 ; Build:  iscc /DMyAppVersion=0.1.0 installer\caecilia.iss
@@ -32,7 +32,7 @@ AppUpdatesURL={#MyAppURL}
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} pipe organ instrument installer
-VersionInfoCopyright=Copyright (c) 2026 {#MyAppPublisher}. All rights reserved.
+VersionInfoCopyright=Copyright (c) 2026 {#MyAppPublisher} and the Caecilia contributors. Apache-2.0.
 
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}

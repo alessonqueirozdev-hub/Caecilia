@@ -1,0 +1,94 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 22, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "core",
+      "displayName": "Pure engine + tests (no JUCE)",
+      "description": "The fastest loop for DSP work: caecilia_core and the Catch2 suite, with no JUCE fetched at all.",
+      "binaryDir": "${sourceDir}/build-core",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CAECILIA_CORE_ONLY": "ON",
+        "CAECILIA_BUILD_TESTS": "ON",
+        "CAECILIA_BUILD_TOOLS": "ON"
+      }
+    },
+    {
+      "name": "plugin",
+      "displayName": "VST3 + Standalone",
+      "description": "The full plugin. On Windows this needs the WebView2 SDK; see CONTRIBUTING.md.",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CAECILIA_BUILD_TESTS": "OFF",
+        "CAECILIA_BUILD_TOOLS": "OFF"
+      }
+    },
+    {
+      "name": "asan-ubsan",
+      "displayName": "AddressSanitizer + UndefinedBehaviorSanitizer",
+      "description": "Clang/GCC only. Catches out-of-bounds access, use-after-free, and the integer and float UB that -Wconversion cannot see. Run the test suite under it.",
+      "binaryDir": "${sourceDir}/build-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CAECILIA_CORE_ONLY": "ON",
+        "CAECILIA_BUILD_TESTS": "ON",
+        "CAECILIA_BUILD_TOOLS": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "description": "Clang/GCC only. The audio thread and the UI thread meet at the SPSC ring and the TripleBuffer snapshots; this is what proves those handoffs are really race-free.",
+      "binaryDir": "${sourceDir}/build-tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CAECILIA_CORE_ONLY": "ON",
+        "CAECILIA_BUILD_TESTS": "ON",
+        "CAECILIA_BUILD_TOOLS": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "strict",
+      "displayName": "Warnings as errors",
+      "description": "Clang/GCC only. -Wconversion and -Wfloat-equal in particular have real things to say about DSP code.",
+      "binaryDir": "${sourceDir}/build-strict",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CAECILIA_CORE_ONLY": "ON",
+        "CAECILIA_BUILD_TESTS": "ON",
+        "CAECILIA_BUILD_TOOLS": "ON",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wnull-dereference -Wdouble-promotion -Wformat=2"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "core",       "configurePreset": "core" },
+    { "name": "plugin",     "configurePreset": "plugin" },
+    { "name": "asan-ubsan", "configurePreset": "asan-ubsan" },
+    { "name": "tsan",       "configurePreset": "tsan" },
+    { "name": "strict",     "configurePreset": "strict" }
+  ],
+  "testPresets": [
+    {
+      "name": "core",
+      "configurePreset": "core",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan-ubsan",
+      "configurePreset": "asan-ubsan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

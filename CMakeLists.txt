@@ -1,12 +1,11 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential; unauthorized copying,
-# distribution, or use of any part is prohibited. See LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 cmake_minimum_required(VERSION 3.22)
 
 project(Caecilia
     VERSION 0.0.1
-    DESCRIPTION "Caecilia - proprietary hybrid pipe-organ virtual instrument"
+    DESCRIPTION "Caecilia - open-source hybrid pipe-organ virtual instrument"
     LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
@@ -106,9 +105,11 @@ if(NOT CAECILIA_CORE_ONLY AND CAECILIA_BUILD_PLUGIN)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/caecilia/plugin/CMakeLists.txt")
         add_subdirectory("src/caecilia/plugin")
     endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/caecilia/ui/CMakeLists.txt")
-        add_subdirectory("src/caecilia/ui")
-    endif()
+    # NOTE: src/caecilia/ui is header-only now. The JUCE console that used to live
+    # there (ConsoleView, PhotorealConsole, FlatConsole and their widgets) was
+    # compiled into every build and never instantiated -- the editor is a
+    # WebBrowserComponent serving docs/mockups/console.html. Only StateMirror.h
+    # survived, and a header needs no target.
 endif()
 
 # ---------------------------------------------------------------------------

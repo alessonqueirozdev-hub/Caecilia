@@ -1,19 +1,97 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential; see LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 #
-# Builds the native Caecilia plugin (VST3 + Standalone) on Windows, macOS and
-# Linux and uploads the artefacts. JUCE is pulled by CMake FetchContent, so the
-# only prerequisite is a C/C++ toolchain and CMake, already present on the
-# GitHub-hosted runners.
+# Runs the headless Catch2 suite on all three platforms, then builds the native
+# Caecilia plugin on Windows, macOS and Linux and uploads the artefacts. macOS
+# also builds the Audio Unit and puts it through auval; the other two assert, at
+# configure time, that no AU target appeared where JUCE says it cannot. JUCE is pulled by CMake FetchContent, so the only prerequisite
+# is a C/C++ toolchain and CMake, already present on the GitHub-hosted runners.
+#
+# The plugin builds depend on `tests` and on `console`, so neither a red suite nor
+# a console whose JavaScript will not parse can reach an artefact.
 
 name: Build Caecilia
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
+  tests:
+    name: Unit tests (Catch2, JUCE-free)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (pure core + tests, no JUCE)
+        run: >
+          cmake -B build-tests -DCMAKE_BUILD_TYPE=Release
+          -DCAECILIA_CORE_ONLY=ON -DCAECILIA_BUILD_TESTS=ON -DCAECILIA_BUILD_TOOLS=OFF
+      - name: Build the test suite
+        run: cmake --build build-tests --config Release --parallel 4
+      - name: Run ctest
+        run: ctest --test-dir build-tests --build-config Release --output-on-failure
+
+  sanitizers:
+    name: Sanitizers (ASan+UBSan, TSan)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [asan-ubsan, tsan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} --parallel 4
+      - name: Run the suite under the sanitizer
+        # UBSan is configured with -fno-sanitize-recover, so any finding aborts.
+        # TSan reports data races on the audio/UI handoffs -- the SPSC ring and
+        # the TripleBuffer snapshots -- which is exactly what we want it watching.
+        run: ctest --preset ${{ matrix.preset }}
+
+  strict:
+    name: Strict warnings + clang-tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-tidy
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy
+      - name: Configure with aggressive warnings
+        run: cmake --preset strict -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: Build
+        run: cmake --build --preset strict --parallel 4
+      - name: clang-tidy over our own sources
+        # Advisory for now: the WarningsAsErrors list in .clang-tidy is what
+        # actually fails the job, and it is deliberately a short list of checks
+        # that only ever fire on real defects.
+        run: |
+          FILES=$(git ls-files 'src/caecilia/**/*.cpp' | grep -v '/ui/' | grep -v '/plugin/')
+          clang-tidy -p build-strict $FILES
+
+  console:
+    name: Console UI (inline JavaScript parses)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # The console is one HTML file compiled verbatim into the plugin's
+      # BinaryData, so nothing in the C++ build ever looks inside it. A syntax
+      # error there does not degrade the interface, it deletes it -- the script
+      # never runs and the panel comes up blank. That has already happened once,
+      # when a licence sweep wrote a real newline inside a translated string.
+      - name: Parse every inline <script>
+        run: python3 tools/dev/check_console_js.py
+
   verify:
     name: Registration audio checks (JUCE-free)
     runs-on: ubuntu-latest
@@ -26,8 +104,35 @@ jobs:
       - name: Run registration audio checks
         run: ./build-verify/tools/caecilia-verify-registration
 
+  backends:
+    name: SIMD backends render identically
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (core + tools, no plugin/JUCE)
+        run: cmake -B build-simd -DCMAKE_BUILD_TYPE=Release -DCAECILIA_BUILD_PLUGIN=OFF -DCAECILIA_BUILD_TESTS=OFF -DCAECILIA_BUILD_TOOLS=ON
+      - name: Build the fingerprint tool
+        run: cmake --build build-simd --config Release --target caecilia-fingerprint --parallel 4
+      # The gate is a DIFF OF THE FINGERPRINT, not sample equality. The vector path
+      # advances each partial's phasor in strides, so the rounding trajectories
+      # separate by design -- one block agrees to -96 dB of peak and four seconds
+      # later the difference is around -67 dB, all of it inaudible and none of it a
+      # bug. A sample-equality gate would fail on arithmetic that is working
+      # correctly, and the first person to see it fail would delete it.
+      #
+      # The fingerprint is quantised far coarser than that divergence and is
+      # byte-deterministic, so it catches a real difference and ignores the
+      # inevitable one.
+      - name: Render through the scalar reference
+        run: ./build-simd/tools/caecilia-fingerprint --backend scalar --seconds 6 > fp-scalar.txt
+      - name: Render through the vector backend
+        run: ./build-simd/tools/caecilia-fingerprint --backend sse2 --seconds 6 > fp-vector.txt
+      - name: They must agree
+        run: diff fp-scalar.txt fp-vector.txt
+
   windows:
     name: Windows (VST3 + Standalone, MSVC)
+    needs: [tests, console]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +147,15 @@ jobs:
           "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=${{ github.workspace }}\packages"
       - name: Build plugin
         run: cmake --build build --config Release --target Caecilia_Standalone Caecilia_VST3 --parallel 4
+      # /arch:AVX2 is a per-TRANSLATION-UNIT flag. Anything that ends up in the AVX2
+      # unit -- an inline function from a header, a container's growth path -- is
+      # compiled with AVX2 instructions too, and COMDAT folding may splice that copy
+      # into a caller in another unit that never ran the CPU probe. The failure is an
+      # illegal instruction on a pre-Haswell machine, in unrelated-looking code, and
+      # it cannot reproduce on any machine new enough to have built it.
+      - name: AVX2 is confined to its own object
+        shell: pwsh
+        run: python tools/dev/check_avx2_containment.py build
       - name: Upload Windows artefacts
         uses: actions/upload-artifact@v4
         with:
@@ -51,6 +165,7 @@ jobs:
 
   linux:
     name: Linux (VST3 + Standalone)
+    needs: [tests, console]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,14 +188,49 @@ jobs:
           if-no-files-found: warn
 
   macos:
-    name: macOS (VST3 + AU + Standalone)
+    # AU is built here and validated with auval. Until this job has been green on
+    # a real runner, treat that as a claim rather than a fact -- the audit finding
+    # VST-002 was created precisely by documentation that ran ahead of the build.
+    name: macOS (AU + VST3 + Standalone)
+    needs: [tests, console]
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Configure (Release)
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCAECILIA_BUILD_TESTS=OFF -DCAECILIA_BUILD_TOOLS=OFF
       - name: Build plugin
-        run: cmake --build build --config Release --target Caecilia_Standalone Caecilia_VST3 --parallel 4
+        run: >
+          cmake --build build --config Release
+          --target Caecilia_Standalone Caecilia_VST3 Caecilia_AU --parallel 4
+
+      # JUCE only signs the AU bundle as part of COPY_PLUGIN_AFTER_BUILD, which is
+      # deliberately FALSE here -- TRUE would install the VST3 into system folders
+      # on every contributor's machine. arm64 macOS will not load a component whose
+      # signature does not verify, and it reports that as "FATAL ERROR:
+      # OpenAComponent", which says nothing about signing. So sign it explicitly.
+      - name: Ad-hoc sign the component
+        run: >
+          codesign --force --sign -
+          "build/src/caecilia/plugin/Caecilia_artefacts/Release/AU/Caecilia.component"
+
+      - name: Install the component where auval looks
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "build/src/caecilia/plugin/Caecilia_artefacts/Release/AU/Caecilia.component" \
+                ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+
+      # aumu = kAudioUnitType_MusicDevice, then PLUGIN_CODE and
+      # PLUGIN_MANUFACTURER_CODE as declared in src/caecilia/plugin/CMakeLists.txt.
+      #
+      # If this ever hangs rather than fails, suspect the CocoaUI section trying to
+      # instantiate the WKWebView console on a headless runner. The fix is
+      # continue-on-error on THIS STEP with a TODO -- never dropping the step, and
+      # never dropping the AU build.
+      - name: Validate with auval
+        run: auval -v aumu Ceci Alqz
+
       - name: Upload macOS artefacts
         uses: actions/upload-artifact@v4
         with:

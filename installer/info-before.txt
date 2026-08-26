@@ -1,5 +1,6 @@
 CAECILIA — Hybrid Pipe-Organ Virtual Instrument
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+Free and open source under the Apache License 2.0.
 
 Thank you for installing Caecilia.
 
@@ -22,4 +23,6 @@ AFTER INSTALLING
      Windows 10/11. If the console looks blank, install the free "Evergreen
      WebView2 Runtime" from Microsoft and relaunch.
 
-This is proprietary software. See the license agreement on the next page.
+Caecilia is open-source software licensed under the Apache License 2.0.
+See the license on the next page, or read it any time at
+https://www.apache.org/licenses/LICENSE-2.0

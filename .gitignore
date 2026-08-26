@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential. See LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # ---- Build output ---------------------------------------------------------
 /build/
@@ -67,3 +67,6 @@ scratch-*
 
 # Local audio render artifacts (dev harnesses)
 tools/dev/*.wav
+
+# WebView2 SDK, fetched by NuGet for the Windows plugin build (see CONTRIBUTING.md)
+packages/
