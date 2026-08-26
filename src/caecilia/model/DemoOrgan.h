@@ -152,9 +152,10 @@ struct RegistrationRank
  * three between a Gambe and a Trompette -- and they are most of what makes a
  * registration sound like separate stops rather than one synthesised timbre.
  *
- * @note @c PartialBank::setSpeechProfile has no callers today, so every rank runs
- *       the struct's defaults and the instrument's speech is per-PITCH only.
- *       Consuming this changes how the organ sounds; that happens in 8.2.
+ * Consumed by @c AdditiveVoice::adoptRank, so a rank's speech is its FAMILY's as
+ * well as its pitch: a tongue starts as soon as there is wind and a narrow string
+ * is the hardest thing on the instrument to get going, where before every rank ran
+ * the struct's defaults and a Gambe spoke at the same instant as a Trompette.
  */
 [[nodiscard]] synth::SpeechProfile speechProfileFor(core::TonalFamily family,
                                                     core::Footage     footage) noexcept;

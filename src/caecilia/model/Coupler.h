@@ -36,11 +36,19 @@ enum class CouplerKind : std::uint8_t
  * A unison coupler has @c octaveShift == 0; a super-octave is +12, a sub-octave
  * is -12. Intra-manual octave couplers set @c from == @c to.
  *
- * @todo Nothing applies a coupler yet. This type is pure spec (immutable) and
- * @ref mapNote is the only behaviour it has; @c RegistrationState can hold
- * engaged couplers, but @c RegistrationState::engagedCouplers() has no readers,
- * so no key expansion ever reaches @c Organ::collectPipesForKey and a drawn
- * coupler is silent.
+ * Applied by the ENGINE, in the same fan-out that turns one key into one voice
+ * per drawn rank: @c AudioEngine::expandKey adds the ranks of every division a
+ * drawn coupler lends this one. That keeps the producer dumb -- a key press is one
+ * command whatever is drawn -- and is why a coupler costs no extra MIDI traffic.
+ *
+ * Couplers do NOT chain. This organ declares Récit/Pédale separately from
+ * Récit/Grand-Orgue plus Grand-Orgue/Pédale, which is what an instrument does when
+ * the two are not the same thing.
+ *
+ * @todo @c RegistrationState::engagedCouplers() still has no readers: the plugin
+ *       holds the drawn set as its own mask over the host's coupler parameters,
+ *       the same way it holds the registration, and the semantic registration
+ *       state is not yet the thing the audio path is built from.
  * Aliased as @c CouplerSpec.
  */
 class Coupler

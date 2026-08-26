@@ -30,10 +30,10 @@ enum class DivisionKind : std::uint8_t
  * apply) and whether it carries its own tremulant. It is pure spec; aliased as
  * @c DivisionSpec.
  *
- * @todo Outside this module only the compass is read (the plugin uses it to
- * bound each mapped MIDI channel). @ref isEnclosed, @ref hasTremulant, @ref stops
- * and @ref windchests have no callers: there is no swell box and no per-division
- * tremulant on the render path.
+ * @ref isEnclosed and @ref windchests are what tell the engine which accumulation
+ * buses sit inside a swell box and whose shoe closes them, and @ref hasTremulant
+ * (on the chest) is what gives the Récit a tremulant the Grand-Orgue does not
+ * have. The compass bounds each mapped MIDI channel.
  */
 class Division
 {
