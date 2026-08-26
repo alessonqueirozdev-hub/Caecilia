@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/wind/WindModel.h"
 
@@ -153,6 +150,35 @@ void WindModel::setTremulantEnabled(std::size_t tremulantIndex, bool shouldBeEna
 {
     if (tremulantIndex < tremulants_.size())
         tremulants_[tremulantIndex].setEnabled(shouldBeEnabled);
+}
+
+void WindModel::setChestTremulantShape(core::WindchestId chest, float rateHz,
+                                       float depthFraction) noexcept
+{
+    const std::ptrdiff_t index = indexForChest(chest);
+    if (index < 0)
+        return;
+
+    const Windchest&   c         = chests_[static_cast<std::size_t>(index)];
+    const std::int32_t tremulant = c.tremulantIndex();
+    if (tremulant >= 0 && static_cast<std::size_t>(tremulant) < tremulants_.size())
+        tremulants_[static_cast<std::size_t>(tremulant)]
+            .setShape(rateHz, depthFraction, c.nominalPressurePa());
+}
+
+void WindModel::setChestTremulantEnabled(core::WindchestId chest,
+                                         bool              shouldBeEnabled) noexcept
+{
+    const std::ptrdiff_t index = indexForChest(chest);
+    if (index < 0)
+        return;
+
+    // A chest without a tremulant carries -1, and asking it to shake is a no-op
+    // rather than an error: an organist reaching for a tremulant the division does
+    // not have gets the same nothing a real console gives them.
+    const std::int32_t tremulant = chests_[static_cast<std::size_t>(index)].tremulantIndex();
+    if (tremulant >= 0)
+        setTremulantEnabled(static_cast<std::size_t>(tremulant), shouldBeEnabled);
 }
 
 std::ptrdiff_t WindModel::indexForChest(core::WindchestId chest) const noexcept

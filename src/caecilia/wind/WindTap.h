@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -17,10 +14,13 @@ namespace caecilia::wind
 /**
  * @brief A lightweight, non-owning binding of one windchest to a wind supply.
  *
- * A voice acquires a WindTap for its pipe's chest in prepare()/noteOn() and then
- * samples pressure sample-accurately while rendering, without repeating the
- * chest lookup or holding the whole IWindSupply surface. It is a trivially
- * copyable value: a pointer plus an id.
+ * A voice is meant to acquire a WindTap for its pipe's chest in prepare() or
+ * noteOn() and then sample pressure sample-accurately while rendering, without
+ * repeating the chest lookup or holding the whole IWindSupply surface. It is a
+ * trivially copyable value: a pointer plus an id.
+ *
+ * @todo No voice uses this yet: PartialBank::setWindCoupling() stores a raw
+ *       core::IWindSupply pointer plus a core::WindchestId of its own.
  *
  * ## Real-time contract
  * Every method is @c noexcept, allocation-free and lock-free. The tap only

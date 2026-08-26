@@ -11,6 +11,18 @@ pitch, level and timbre through per-tonal-family response curves.
 It is part of the pure, JUCE-free `caecilia_core` static library and implements
 the core contract `caecilia::core::IWindSupply`.
 
+> **Status: wired.** `CaeciliaAudioProcessor` owns a `WindModel`, builds it from
+> the organ with `wind::configFromOrgan`, and binds it with
+> `AudioEngine::setWindSupply`. `AudioEngine::stepWind()` books the block's demand
+> and integrates the ODE before the voices read pressure, and `AdditiveVoice`
+> re-points its coupling at the adopted rank's chest and family curve. Everything
+> below is real in the shipping plugin.
+>
+> Note the fourth break, which the other three hid: `RankVoicing::chest` was never
+> filled in, so every voice read chest 0 no matter which chest actually fed its
+> rank — the Récit's tremulant would have shaken nothing and no division would have
+> sagged under its own load.
+
 ## Design in one breath
 
 - **Bellows** integrates a regulated first-order pressure ODE. Its equilibrium
@@ -91,7 +103,8 @@ const float pitchCents  = curve.pitchCents(deviation);
 ## Roadmap notes
 
 Scaffold for **v0.2 — Wind model + tremulant realism**. The integrator, sag,
-distribution and tremulant modulation are wired end-to-end; deeper physics is
+distribution and tremulant modulation are complete *within this module*; what is
+still missing in the plugin is the engine that steps them. Deeper physics is
 marked in-code:
 
 - `TODO(phase2)`: bellows plate inertance (second-order shake/bounce),

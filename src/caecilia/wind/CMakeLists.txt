@@ -1,6 +1,5 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential; unauthorized copying,
-# distribution, or use of any part is prohibited. See LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # ---------------------------------------------------------------------------
 # wind module : the shared wind supply.
@@ -17,7 +16,8 @@ target_sources(caecilia_core PRIVATE
     Windchest.cpp
     Tremulant.cpp
     WindResponseCurve.cpp
-    WindModel.cpp)
+    WindModel.cpp
+    OrganWind.cpp)
 
 # Public headers carry the module's contract. Listed for IDE discoverability
 # and consumed via the project-wide include root (<root>/src):

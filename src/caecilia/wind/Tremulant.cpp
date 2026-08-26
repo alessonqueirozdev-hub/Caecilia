@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #include "caecilia/wind/Tremulant.h"
 
@@ -25,13 +22,24 @@ constexpr double kTwoPi = 6.283185307179586476925286766559;
 
 void Tremulant::configure(const TremulantConfig& config, float chestNominalPa) noexcept
 {
-    config_  = config;
-    depthPa_ = config.depthFraction * chestNominalPa;
+    config_        = config;
+    depthTargetPa_ = config.depthFraction * chestNominalPa;
+    nominalPa_     = chestNominalPa;
     reset();
+}
+
+void Tremulant::setShape(float rateHz, float depthFraction,
+                         float chestNominalPa) noexcept
+{
+    config_.rateHz        = rateHz;
+    config_.depthFraction = depthFraction;
+    nominalPa_            = chestNominalPa;
+    depthTargetPa_        = depthFraction * chestNominalPa;
 }
 
 void Tremulant::reset() noexcept
 {
+    depthPa_    = depthTargetPa_;
     phase_      = 0.0;
     phaseStart_ = 0.0;
     phaseInc_   = 0.0;
@@ -55,6 +63,10 @@ void Tremulant::advanceBlock(std::size_t numFrames, core::SampleRate sampleRate)
     // TODO(phase2): make the ramp time constant sample-rate/tempo aware.
     const float target = enabled_ ? 1.0f : 0.0f;
     gain_ += (target - gain_) * 0.25f;
+
+    // The depth follows the same per-block ramp, so a knob turn or an automation
+    // jump is a glide rather than a step in chest pressure.
+    depthPa_ += (depthTargetPa_ - depthPa_) * 0.25f;
 }
 
 float Tremulant::pressureDeltaPa(std::size_t frameInBlock) const noexcept

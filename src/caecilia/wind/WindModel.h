@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -24,8 +21,8 @@ namespace caecilia::wind
  * @brief The shared wind supply for a loaded organ, implementing core::IWindSupply.
  *
  * WindModel owns the reservoirs (Bellows), the distribution nodes (Windchest),
- * the tremulants, and the rank→chest routing. Once per audio block the engine
- * calls step(), which:
+ * the tremulants, and the rank→chest routing. Its owner is expected to call
+ * step() once per audio block, which:
  *   1. sums each chest's registered demand into its feeding bellows,
  *   2. integrates every bellows' regulated pressure ODE (producing sag),
  *   3. advances each tremulant's phase for the block,
@@ -78,7 +75,7 @@ public:
      *
      * RT-safe: no allocation, no locks, no exceptions.
      */
-    void step(std::size_t numFrames) noexcept;
+    void step(std::size_t numFrames) noexcept override;
 
     // --- core::IWindSupply ------------------------------------------------
     [[nodiscard]] float nominalPressurePa(core::WindchestId chest) const noexcept override;
@@ -104,6 +101,15 @@ public:
 
     /// Engage / disengage a tremulant by index. Ignored if out of range. RT-safe.
     void setTremulantEnabled(std::size_t tremulantIndex, bool shouldBeEnabled) noexcept;
+
+    /// Engage / disengage the tremulant belonging to @p chest. A chest without one
+    /// is ignored. RT-safe.
+    void setChestTremulantEnabled(core::WindchestId chest,
+                                  bool              shouldBeEnabled) noexcept override;
+
+    /// Set a chest tremulant's rate and depth while it runs. RT-safe.
+    void setChestTremulantShape(core::WindchestId chest, float rateHz,
+                                float depthFraction) noexcept override;
 
 private:
     /// Resolve a WindchestId to a chest index, or -1 if unknown. RT-safe.

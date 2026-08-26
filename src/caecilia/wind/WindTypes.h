@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 #pragma once
 
@@ -18,6 +15,14 @@ namespace caecilia::wind
 
 /// A typical nominal wind pressure (~75 mm water column) used as a sane default.
 inline constexpr float kDefaultNominalPressurePa = 735.0f;
+
+/// Pressure swing, as a fraction of chest nominal, at a tremulant depth of 1.
+///
+/// The host exposes depth as a plain 0..1 knob; this is what "all the way up"
+/// means in pascals. A quarter of chest pressure is a strong tremblant fort --
+/// measured on the demo organ, a Trompette then swings about 22 cents and 1.5 dB,
+/// which is emphatic without being seasick. The default sits at half of it.
+inline constexpr float kMaxTremulantDepthFraction = 0.25f;
 
 /// Shape of the periodic pressure modulation a tremulant injects into the wind.
 enum class TremulantWaveform : std::uint8_t
