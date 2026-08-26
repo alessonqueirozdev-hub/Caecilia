@@ -10,6 +10,7 @@
 #include "caecilia/core/IVoice.h"
 #include "caecilia/core/IWindSupply.h"
 #include "caecilia/core/TripleBuffer.h"
+#include "caecilia/dsp/OnePole.h"
 #include "caecilia/engine/DeadlineBudget.h"
 #include "caecilia/engine/EngagedRankTable.h"
 #include "caecilia/engine/EngineCommand.h"
@@ -23,6 +24,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 // Namespace note: unlike the sibling domain modules (each mapped to a single
@@ -47,6 +49,20 @@ inline constexpr std::size_t kCommandQueueCapacity = 4096;
 
 /// Upper bound on windchest accumulation buses.
 inline constexpr std::size_t kMaxWindchests = 64;
+
+/**
+ * @brief A windchest that sits inside a swell box, and whose shoe closes it.
+ *
+ * Enclosure is a property of the DIVISION and the accumulation buses are per
+ * WINDCHEST, so something has to say which shoe governs which bus. On a real
+ * instrument the answer is unambiguous because the box encloses the chest: an
+ * enclosed division has its own.
+ */
+struct ChestEnclosure
+{
+    WindchestId chest{};    ///< The bus to filter.
+    DivisionId  division{}; ///< Whose expression shoe closes it.
+};
 
 /**
  * @brief The single, narrow seam the JUCE layer sees — the entire pure engine
@@ -107,6 +123,14 @@ public:
     /// for pipe->chest routing and the wind meters, but never advanced: see
     /// AudioEngine::stepWind().
     void setWindSupply(IWindSupply* wind) noexcept { wind_ = wind; }
+
+    /**
+     * @brief Declare which windchests are inside a swell box. Off-thread.
+     *
+     * A chest not named here is never filtered and costs nothing. Chests past
+     * @ref kMaxWindchests are dropped rather than allocated for.
+     */
+    void setEnclosedChests(std::span<const ChestEnclosure> enclosed) noexcept;
 
     /// Bind the per-pipe tuning table (read-only on the audio thread).
     void setTuning(const ITuning* tuning) noexcept { tuning_ = tuning; }
@@ -281,6 +305,23 @@ private:
     static constexpr std::size_t kExpressionDivisions =
         RenderContext::kMaxExpressionDivisions;
     std::array<float, kExpressionDivisions> expressionTarget_{};
+
+    /// Which division's shoe closes each chest's bus; -1 for an open chest.
+    ///
+    /// A plain index rather than a DivisionId so "not enclosed" has a
+    /// representation, and so the per-block loop is a compare against -1 rather
+    /// than a lookup.
+    std::array<std::int16_t, kMaxWindchests> shoeForChest_{};
+
+    /// The shutter, one pole per chest per channel. Sized at prepare.
+    ///
+    /// Per CHEST, not per voice: a biquad per note is a cost the instrument pays
+    /// forever, where this is three filters running whether one pipe is sounding
+    /// or two hundred.
+    std::vector<dsp::OnePole> shutters_;
+
+    /// Roll the swell shutters over the enclosed chests' buses.
+    void applyShutters(std::size_t numFrames) noexcept;
     std::array<float, kExpressionDivisions> expressionCurrent_{};
     std::array<RenderContext::ExpressionRamp, kExpressionDivisions> expressionRamp_{};
 

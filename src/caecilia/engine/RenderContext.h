@@ -61,12 +61,15 @@ struct RenderContext
     /// of two floats is half a cache line; there is nothing to save by being
     /// cleverer.
     ///
-    /// The gain is FLAT across the spectrum, and that is a known simplification,
-    /// not an oversight: real shutters attenuate treble far more than bass, so
-    /// this reads as a volume pedal rather than as a box. Do NOT fix that with a
-    /// filter per voice — that is a biquad on the hot path, per note, forever. The
-    /// shutter low-pass belongs on a per-division BUS, which is work for after the
-    /// one-voice-per-rank migration gives us those buses.
+    /// The gain here is FLAT across the spectrum, and it is only half a shutter.
+    /// The other half — the treble loss that is what the ear actually reads as a
+    /// lid — is @c AudioEngine::applyShutters, on the per-chest bus, exactly where
+    /// this note used to say it belonged. Never put it in the voices: that is a
+    /// filter on the hot path, per note, forever, where on the bus it is one pole
+    /// per chest whether one pipe is sounding or two hundred.
+    ///
+    /// Measured on the demo organ's Récit: closing the shoe costs 14 dB at the
+    /// bottom of the spectrum and 24 dB at the top.
     struct ExpressionRamp
     {
         float start = 1.0f;

@@ -454,8 +454,32 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     wind_.configure(wind::configFromOrgan(organ_));
     wind_.reset();
 
-    engine_.prepare(sampleRate, frames, channels, /*numWindchests*/ 1);
+    // The organ's REAL chest count, not one. The scheduler already routes each
+    // voice to its chest's bus through IWindSupply::chestForPipe; asking for a
+    // single chest meant every voice of the instrument landed on bus 0 whatever
+    // fed it, so that routing had nowhere to route to and anything per-chest --
+    // metering, and the swell box below -- was inert by construction.
+    const auto chestCount = std::max<std::size_t>(organ_.windchests().size(), 1);
+    engine_.prepare(sampleRate, frames, channels, chestCount);
     engine_.setWindSupply(&wind_);
+
+    // Which chests sit inside a swell box, and whose shoe closes them. Enclosure is
+    // a property of the division and the buses are per chest, so the mapping has to
+    // be stated -- and on a real instrument it is unambiguous, because the box
+    // encloses the chest.
+    {
+        std::vector<core::engine::ChestEnclosure> enclosed;
+        for (const model::Division& d : organ_.divisions())
+        {
+            if (! d.isEnclosed())
+                continue;
+            // A division may draw from more than one chest, and the box encloses
+            // all of them -- so its shoe closes each.
+            for (const core::WindchestId chest : d.windchests())
+                enclosed.push_back(core::engine::ChestEnclosure{ chest, d.id() });
+        }
+        engine_.setEnclosedChests(enclosed);
+    }
 
     // Which chests the tremulant parameter actually addresses.
     {

@@ -11,6 +11,28 @@
 namespace caecilia::core::engine
 {
 
+namespace
+{
+/// Gain a fully shut swell box leaves: -13 dB.
+///
+/// The FLAT half of a shutter. The spectral half is applyShutters, and the two
+/// together are what makes a closed box read as a lid rather than as a fader.
+constexpr float kShutGainConst = 0.2239f;
+
+/// Corner of the shutter low-pass with the box wide open -- high enough to be
+/// transparent, rather than bypassed, so a shoe leaving the top of its travel
+/// glides instead of switching.
+constexpr float kShutterOpenHz = 18000.0f;
+
+/// Corner with the box shut. About fourteen decibels of extra treble loss at
+/// 4 kHz, on top of the thirteen the flat gain already takes -- which is the
+/// shape a real box has: a closed swell does not get quieter so much as dull.
+constexpr float kShutterClosedHz = 800.0f;
+
+/// Octaves between the two, precomputed so the per-block sweep is one exp2.
+constexpr float kShutterOctaveSpan = 4.4918531f; // log2(18000 / 800)
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Off-thread setup.
 // ---------------------------------------------------------------------------
@@ -55,6 +77,17 @@ void AudioEngine::prepare(SampleRate  sampleRate,
     expressionTarget_.fill(1.0f);
     expressionCurrent_.fill(1.0f);
     expressionRamp_.fill(RenderContext::ExpressionRamp{});
+
+    // One pole per chest per channel, and they start open: a chest nobody declared
+    // enclosed is never touched, and one that is starts transparent rather than
+    // muffling the first block.
+    shutters_.assign(numWindchests_ * numChannels_, dsp::OnePole{});
+    for (dsp::OnePole& f : shutters_)
+    {
+        f.prepare(sampleRate_);
+        f.setLowpass(kShutterOpenHz);
+        f.reset();
+    }
     pendingMeters_ = MeterSnapshot{};
     meterSumSq_    = 0.0;
     meterSamples_  = 0;
@@ -72,6 +105,14 @@ void AudioEngine::reset() noexcept
         for (std::size_t ch = 0; ch < numChannels_; ++ch)
             if (float* p = busChannelPtrs_[c * numChannels_ + ch])
                 std::fill(p, p + maxBlockFrames_, 0.0f);
+
+    // The swell shutters hold state, and zeroing the buses they filter is not the
+    // same as clearing them: a one-pole with energy in it keeps outputting a decay
+    // from a silent input. Short, but "immediately" is the contract a host reset
+    // makes, and "A host reset silences the instrument immediately" caught this the
+    // moment the shutters existed.
+    for (dsp::OnePole& f : shutters_)
+        f.reset();
 
     // Commands queued for a block that will never be rendered would otherwise
     // arrive after the reset and un-silence the instrument.
@@ -165,6 +206,9 @@ void AudioEngine::renderSlice(AudioBlock& output) noexcept
 
     pool_.refresh();
     scheduler_.renderActive(pool_.view(), ctx);
+
+    // The spectral half of the swell box, on the bus rather than in the voices.
+    applyShutters(numFrames);
 
     mixBusesToOutput(output, numFrames);
     applyMasterChain(output);
@@ -630,9 +674,58 @@ void AudioEngine::handleExpression(const EngineCommand::ExpressionPayload& p) no
     // Shut is not silent. A real swell box at its tightest still passes a good
     // deal of sound -- around -13 dB, which is where this ratio comes from -- and
     // a box that went to zero would read as a mute rather than as an enclosure.
-    constexpr float kShutGain = 0.2239f; // -13 dB
+    // Shared with applyShutters, which inverts it to recover the shoe position.
+    constexpr float kShutGain = kShutGainConst;
     const float position = p.position < 0.0f ? 0.0f : (p.position > 1.0f ? 1.0f : p.position);
     expressionTarget_[div] = kShutGain + (1.0f - kShutGain) * position;
+}
+
+void AudioEngine::setEnclosedChests(std::span<const ChestEnclosure> enclosed) noexcept
+{
+    shoeForChest_.fill(-1);
+    for (const ChestEnclosure& e : enclosed)
+        if (e.chest.value < shoeForChest_.size()
+            && e.division.value < kExpressionDivisions)
+            shoeForChest_[e.chest.value] = static_cast<std::int16_t>(e.division.value);
+}
+
+void AudioEngine::applyShutters(std::size_t numFrames) noexcept
+{
+    if (numFrames == 0 || shutters_.empty())
+        return;
+
+    for (std::size_t c = 0; c < numWindchests_; ++c)
+    {
+        const std::int16_t shoe = shoeForChest_[c];
+        if (shoe < 0)
+            continue; // an open chest is never filtered and costs nothing
+
+        // Back out the shoe's POSITION from the gain the ramp already carries.
+        // Inverting rather than storing it twice: the gain is what glides, so the
+        // position derived from it glides in exactly the same way, and there is no
+        // second piece of state to keep in step.
+        const float gain     = expressionCurrent_[static_cast<std::size_t>(shoe)];
+        const float position = std::clamp(
+            (gain - kShutGainConst) / (1.0f - kShutGainConst), 0.0f, 1.0f);
+
+        // Geometric in frequency, because pitch is. Halfway down the shoe should
+        // sound halfway shut, and a linear sweep of hertz would spend almost the
+        // whole travel up where nothing is audible anyway.
+        const float cutoff = kShutterClosedHz
+                           * std::exp2(position * kShutterOctaveSpan);
+
+        for (std::size_t ch = 0; ch < numChannels_; ++ch)
+        {
+            float* p = busChannelPtrs_[c * numChannels_ + ch];
+            if (p == nullptr)
+                continue;
+
+            dsp::OnePole& f = shutters_[c * numChannels_ + ch];
+            f.setLowpass(cutoff);
+            for (std::size_t n = 0; n < numFrames; ++n)
+                p[n] = f.process(p[n]);
+        }
+    }
 }
 
 void AudioEngine::stepExpression(std::size_t numFrames) noexcept

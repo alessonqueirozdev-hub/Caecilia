@@ -61,10 +61,11 @@ std::size_t VoiceScheduler::renderBatch(const VoiceBatchView& batch, RenderConte
             continue;
         }
 
-        // The swell shoe of the division this pipe belongs to. Per voice rather
-        // than per bus because the buses are per WINDCHEST, and enclosure is a
-        // property of the division -- see RenderContext::expression for why the
-        // spectral half of a real shutter is deliberately not here.
+        // The swell shoe's FLAT gain, per voice rather than per bus because the
+        // buses are per WINDCHEST and enclosure is a property of the division. The
+        // spectral half is deliberately not here: it lives on the bus, in
+        // AudioEngine::applyShutters, where it costs one pole per chest instead of
+        // a filter per note.
         const auto ramp = ctx.expressionFor(core::DivisionId{ batch.pipe(i).divisionId });
         voice->setExpression(ramp.start, ramp.inc);
 
