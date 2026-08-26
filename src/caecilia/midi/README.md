@@ -18,17 +18,26 @@ headless-unit-testable, though no test suite covers it yet. No `juce::` MIDI typ
 ever reaches it: the design is for the `plugin` module to translate
 `juce::MidiMessage` into [`MidiEvent`](MidiEvent.h) at the seam.
 
-> **Status: not wired into the plugin.** Only
-> [`ChannelToDivisionMap`](ChannelToDivisionMap.h) is used by the shipping
-> VST3/Standalone: `plugin::CommandBridge` reads it while walking
-> `juce::MidiMessage`s directly and builds no `MidiEvent`. `MidiRouter`,
-> `MidiMap`, `MidiLearn`, `CombinationStore`, `Sequencer`, `VelocityCurve` and
-> `ProgramChangeMap` are never instantiated outside this directory. What the
-> plugin handles today is note on/off with channel→division routing,
-> all-notes-off and sustain (CC 64); expression (CC 11), program change,
-> aftertouch and pitch bend are not handled at all. The console's si5/do6
-> page-turn is a separate implementation on raw juce MIDI inside
-> `plugin::CaeciliaAudioProcessor`, not this module's `Sequencer`.
+> **Status: this module is not wired into the plugin — but most of what it
+> describes now happens anyway, somewhere else.** The shipping VST3/Standalone
+> uses only [`ChannelToDivisionMap`](ChannelToDivisionMap.h) from here:
+> `plugin::CommandBridge` reads it while walking `juce::MidiMessage`s directly
+> and builds no `MidiEvent`. `MidiRouter`, `MidiMap`, `MidiLearn`,
+> `CombinationStore`, `Sequencer`, `VelocityCurve` and `ProgramChangeMap` are
+> never instantiated outside this directory.
+>
+> What the plugin does handle, through that second implementation: note on/off
+> with channel→division routing and per-division compass limits, all-notes-off,
+> sustain (CC 64), **expression (CC 11)** onto the division's swell shoe, and
+> **program change** onto the general pistons. Aftertouch and pitch bend are
+> ignored, which is right for an organ — a pipe is on or off, and its pitch is
+> the instrument's. The console's si5/do6 page-turn is likewise a separate
+> implementation on raw juce MIDI inside `plugin::CaeciliaAudioProcessor`, not
+> this module's `Sequencer`.
+>
+> So the honest gap is narrower than "the MIDI layer is missing": it is
+> **MIDI learn** — binding a physical control to a drawstop or a piston — and the
+> duplication of everything else across two implementations.
 
 ## Design in one paragraph
 
@@ -41,7 +50,12 @@ voice-allocation logic — that keeps the strict layering intact. Notes still ne
 per-division pipe expansion (engine-side, against the live registration), and
 registration actions are to be resolved **off the audio thread** into a
 `StateDelta` that becomes an `ApplyStateDelta` engine command — that bridge is
-unwritten, and `AudioEngine`'s `ApplyStateDelta` case is still an empty body.
+unwritten, and it is now unlikely to be written as described: registration
+changes reach the audio thread as a published `EngagedRankTable`, read once per
+block and reconciled against the keys already down, and that is the path a
+drawstop, a piston, a coupler and a host automation move all travel by.
+`AudioEngine`'s `ApplyStateDelta` case is an empty body because nothing
+constructs one, not because something is missing from the working path.
 Every registration action the
 router emits is a [`RegistrationCommandTemplate`](RegistrationCommandTemplate.h)
 whose selector text is the shared grammar (`family:reed & div:swell`), so a

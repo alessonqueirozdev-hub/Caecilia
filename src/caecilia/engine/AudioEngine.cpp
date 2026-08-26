@@ -326,8 +326,17 @@ void AudioEngine::applyCommand(const EngineCommand& cmd) noexcept
             break;
 
         case EngineCommandType::ApplyStateDelta:
-            // TODO(phase0.7): apply the registration StateDelta as a
-            // click-free, wind-modeled stop crossfade.
+            // Deliberately nothing, and not a gap any more: a registration change
+            // reaches the audio thread as a published EngagedRankTable, read once
+            // per block at the top of processBlock and reconciled against the keys
+            // already down. That path is what a drawstop, a piston, a coupler and a
+            // host automation move all travel by, and it is click-free because the
+            // banks it re-voices glide to the new spectrum rather than restart.
+            //
+            // This command type and its StateDelta were the earlier design for the
+            // same job. Nothing anywhere constructs one; the type is kept because
+            // midi::CombinationStore and midi::Sequencer still describe their output
+            // in its terms, and removing it would leave those pointing at nothing.
             break;
         case EngineCommandType::SetTremulant:
             // Addressed by chest: the supply owns the chest-to-tremulant mapping,
@@ -360,7 +369,9 @@ void AudioEngine::applyCommand(const EngineCommand& cmd) noexcept
             break;
         case EngineCommandType::StopEngage:
         case EngineCommandType::StopDisengage:
-            // Informational; the audible change arrives via ApplyStateDelta.
+            // Informational. The audible change arrives with the EngagedRankTable,
+            // not through here -- and not through ApplyStateDelta either, which is
+            // what this used to say.
             break;
         case EngineCommandType::None:
         default:
