@@ -29,13 +29,15 @@ bool containsNoCase(const std::string& haystack, const std::string& needle)
 
 bool StopQuery::isUniversal() const noexcept
 {
-    return !family && !role && !pitchClass && !footage && !division
+    return !id && !family && !role && !pitchClass && !footage && !division
            && divisionName.empty() && nameContains.empty()
            && engaged == Engaged::Any && !mutationsOnly && !excludeMutations;
 }
 
 bool StopQuery::matches(const model::Stop& stop, bool isEngaged) const
 {
+    if (id && stop.id().value != *id)
+        return false;
     if (family && stop.family() != *family)
         return false;
     if (role && stop.role() != *role)

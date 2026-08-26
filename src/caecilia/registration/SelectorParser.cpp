@@ -3,6 +3,7 @@
 
 #include "caecilia/registration/SelectorParser.h"
 
+#include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <optional>
@@ -315,7 +316,21 @@ private:
         const std::string key = toLower(rawKey);
         StopQuery         q;
 
-        if (key == "family")
+        if (key == "id")
+        {
+            // Digits only, and bounded: a selector is user text, and an id that
+            // does not parse is a typo the user should hear about rather than a
+            // query that silently matches everything.
+            if (value.empty() || value.size() > 5
+                || !std::all_of(value.begin(), value.end(),
+                                [](unsigned char c) { return c >= '0' && c <= '9'; }))
+            {
+                error("expected a stop id after 'id:', got '" + value + "'");
+                return false;
+            }
+            q.id = static_cast<std::uint16_t>(std::stoul(value));
+        }
+        else if (key == "family")
         {
             if (const auto f = parseFamily(value)) q.family = *f;
             else { error("unknown family '" + value + "'"); return false; }

@@ -15,6 +15,8 @@
 #include "caecilia/registration/RegistrationState.h"
 #include "caecilia/registration/Selector.h"
 #include "caecilia/registration/SelectorParser.h"
+
+#include <string>
 #include "caecilia/registration/StateDelta.h"
 #include "caecilia/registration/StopQuery.h"
 #include "caecilia/registration/StopSet.h"
@@ -132,6 +134,51 @@ TEST_CASE("Selectors resolve registration intent by family", "[registration][sel
     CHECK(resolve("div:great")
           == setOf({tests::stops::principal8, tests::stops::octave4,
                     tests::stops::twelfth, tests::stops::trumpet8}));
+}
+
+TEST_CASE("A selector can name one stop, by the id everything else names it by",
+          "[registration][selector]")
+{
+    // The grammar could say "the reeds on the Swell" and could not say "that one".
+    // Every other surface in this instrument identifies a stop by id -- the host
+    // parameters, the console, the saved session, the coupler jamb -- so a binding
+    // that means THAT drawstop had to go through a name substring, which is
+    // ambiguous by construction: this organ has a Trumpet and an Oboe, and a real
+    // one has the same Trompette 8 on two divisions.
+    const caecilia::model::Organ organ = tests::buildTestOrgan();
+    const reg::RegistrationState state;
+    const reg::SelectorParser    parser;
+
+    const auto resolve = [&](const std::string& text)
+    {
+        const reg::SelectorParser::Result r = parser.parse(text);
+        REQUIRE(r.ok);
+        return r.selector.resolve(organ, state);
+    };
+
+    // One stop, exactly.
+    for (const caecilia::model::Stop& s : organ.stops())
+    {
+        const reg::StopSet one = resolve("id:" + std::to_string(s.id().value));
+        INFO("id:" << s.id().value << " (" << s.name() << ")");
+        CHECK(one == setOf({s.id()}));
+    }
+
+    // It composes with the rest of the algebra like any other term.
+    CHECK(resolve("id:" + std::to_string(tests::stops::trumpet8.value) + " | family:flute")
+          == setOf({tests::stops::twelfth, tests::stops::trumpet8, tests::stops::gedackt8}));
+    CHECK(resolve("!id:" + std::to_string(tests::stops::trumpet8.value)).size()
+          == tests::stops::count - 1);
+
+    // An id no stop carries resolves to nothing rather than to everything.
+    CHECK(resolve("id:60000").empty());
+
+    // And a malformed id is an error the user hears about, not a term that
+    // quietly constrains nothing and matches the whole organ.
+    CHECK_FALSE(parser.parse("id:").ok);
+    CHECK_FALSE(parser.parse("id:reed").ok);
+    CHECK_FALSE(parser.parse("id:12x").ok);
+    CHECK_FALSE(parser.parse("id:1234567").ok);
 }
 
 TEST_CASE("SelectorParser handles the empty query and rejects bad input", "[registration][parser]")

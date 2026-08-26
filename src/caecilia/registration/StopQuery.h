@@ -43,6 +43,13 @@ struct StopQuery
         Exclude   ///< Match only currently-disengaged stops.
     };
 
+    /// One specific stop, by the id every other surface identifies it with.
+    ///
+    /// `id:12` is what a MIDI-learned drawstop, a saved binding or a script means
+    /// when it means THAT stop. A name substring cannot: this organ has a
+    /// Trompette 8 on two divisions.
+    std::optional<std::uint16_t>     id;          ///< Exact stop id.
+
     std::optional<core::TonalFamily> family;      ///< e.g. Reed.
     std::optional<core::ChorusRole>  role;        ///< e.g. Foundation.
     std::optional<core::PitchClass>  pitchClass;  ///< e.g. Unison.
