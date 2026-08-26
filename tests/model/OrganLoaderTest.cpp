@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 //
 // Model / loader tests. OrganLoader::compile turns a hand-authored (or parsed)
@@ -17,6 +14,7 @@
 
 #include "caecilia/core/EngineTypes.h"
 #include "caecilia/model/Coupler.h"
+#include "caecilia/model/DemoOrgan.h"
 #include "caecilia/model/Organ.h"
 #include "caecilia/model/OrganDefinition.h"
 #include "caecilia/model/OrganLoader.h"
@@ -130,6 +128,74 @@ TEST_CASE("collectPipesForKey activates the pipes an engaged stop sounds", "[mod
     CHECK(none == 0);
 }
 
+TEST_CASE("the same key in two divisions yields distinct PipeIds", "[model][activation]")
+{
+    const model::Organ organ = tests::buildTestOrgan();
+
+    // Middle C, once on the Great and once on the Swell.
+    const std::array<core::StopId, 1> greatStop{tests::stops::principal8};
+    const std::array<core::StopId, 1> swellStop{tests::stops::gedackt8};
+    std::array<core::PipeId, 4>       greatPipes{};
+    std::array<core::PipeId, 4>       swellPipes{};
+
+    REQUIRE(organ.collectPipesForKey(tests::divisions::great, /*note*/ 60,
+                                     std::span<const core::StopId>{greatStop},
+                                     std::span<core::PipeId>{greatPipes}) == 1);
+    REQUIRE(organ.collectPipesForKey(tests::divisions::swell, /*note*/ 60,
+                                     std::span<const core::StopId>{swellStop},
+                                     std::span<core::PipeId>{swellPipes}) == 1);
+
+    // Same note, two divisions: the ids must not collide, or a note-off on one
+    // manual would release the note on the other.
+    CHECK(greatPipes[0].midiNote == swellPipes[0].midiNote);
+    CHECK(greatPipes[0].divisionId
+          == static_cast<std::uint8_t>(tests::divisions::great.value));
+    CHECK(swellPipes[0].divisionId
+          == static_cast<std::uint8_t>(tests::divisions::swell.value));
+    CHECK_FALSE(greatPipes[0] == swellPipes[0]);
+
+    // The stamp reaches the whole model, not just the two stops probed above:
+    // every rank agrees with the division of the stop that draws it.
+    bool everyPipeStamped = true;
+    for (const model::Stop& s : organ.stops())
+    {
+        const model::Rank* r = organ.rank(s.rank());
+        REQUIRE(r != nullptr);
+        const auto expected = static_cast<std::uint8_t>(s.division().value);
+        for (const model::Pipe& p : r->pipes())
+            everyPipeStamped = everyPipeStamped && p.id.divisionId == expected;
+    }
+    CHECK(everyPipeStamped);
+}
+
+TEST_CASE("the demo organ stamps every rank with its division", "[model][demoorgan]")
+{
+    const model::Organ organ = model::buildCaeciliaDemoOrgan();
+
+    // Pedale, Grand-Orgue and Recit each carry a "Trompette 8", and note 60 is
+    // inside all three compasses -- the collision the divisionId byte prevents.
+    std::array<core::PipeId, 3> trumpets{};
+    std::size_t                 found = 0;
+
+    for (const model::Stop& s : organ.stops())
+    {
+        if (s.name() != "Trompette 8")
+            continue;
+
+        const model::Pipe* p = organ.pipeForKey(s.id(), /*note*/ 60);
+        REQUIRE(p != nullptr);
+        CHECK(p->id.divisionId == static_cast<std::uint8_t>(s.division().value));
+
+        REQUIRE(found < trumpets.size());
+        trumpets[found++] = p->id;
+    }
+
+    REQUIRE(found == 3);
+    CHECK_FALSE(trumpets[0] == trumpets[1]);
+    CHECK_FALSE(trumpets[1] == trumpets[2]);
+    CHECK_FALSE(trumpets[0] == trumpets[2]);
+}
+
 TEST_CASE("compile rejects a definition with dangling references", "[model][loader]")
 {
     model::OrganDefinition def = tests::buildTestDefinition();
@@ -153,7 +219,7 @@ TEST_CASE("A well-formed definition validates cleanly", "[model][loader]")
 
 TEST_CASE("parse and serialize are stubs that fail loudly", "[model][loader]")
 {
-    // The proprietary reader is not implemented yet; it must report an error
+    // The document reader is not implemented yet; it must report an error
     // rather than silently return an empty organ.
     const model::ParseResult parsed = model::OrganLoader::parse("{ \"organ\": true }");
     CHECK_FALSE(parsed.ok());

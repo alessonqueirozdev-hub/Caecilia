@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 //
 // Core vocabulary + RT-plumbing tests.
@@ -122,4 +119,61 @@ TEST_CASE("Version reports the scaffold revision", "[core][version]")
     CHECK(core::Version::major == 0);
     CHECK(core::Version::minor == 0);
     CHECK(core::Version::patch == 1);
+}
+
+
+TEST_CASE("SpscRing::peek reads without consuming, and drop consumes without reading",
+          "[core][spsc]")
+{
+    // The audio thread needs to read an event's timestamp, decide it belongs to a
+    // later slice of the block, and leave it queued. pop() cannot express that,
+    // and getting the pair wrong is the kind of bug that hands the engine the same
+    // command forever or silently loses one.
+    caecilia::core::engine::SpscRing<int, 4> ring; // usable capacity == 3
+
+    CHECK(ring.peek() == nullptr);   // nothing to look at
+    CHECK_FALSE(ring.drop());        // and dropping is a no-op, not a corruption
+    CHECK(ring.empty());
+
+    REQUIRE(ring.push(11));
+    REQUIRE(ring.push(22));
+
+    // Two consecutive peeks must agree: a peek that consumed would return 22 here.
+    const int* a = ring.peek();
+    const int* b = ring.peek();
+    REQUIRE(a != nullptr);
+    REQUIRE(b != nullptr);
+    CHECK(*a == 11);
+    CHECK(*b == 11);
+    CHECK(a == b);
+    CHECK_FALSE(ring.empty());
+
+    CHECK(ring.drop());
+    const int* c = ring.peek();
+    REQUIRE(c != nullptr);
+    CHECK(*c == 22);
+
+    CHECK(ring.drop());
+    CHECK(ring.peek() == nullptr);
+    CHECK(ring.empty());
+
+    // An unpaired drop on an empty ring must not advance the read index past the
+    // write index. If it did, the ring would report Capacity-1 phantom items and
+    // hand out stale commands from then on.
+    CHECK_FALSE(ring.drop());
+    CHECK(ring.empty());
+
+    // Usable capacity is unchanged after a peek/drop drain.
+    CHECK(ring.push(1));
+    CHECK(ring.push(2));
+    CHECK(ring.push(3));
+    CHECK_FALSE(ring.push(4));       // still exactly Capacity - 1
+
+    // peek and pop agree on what is next.
+    const int* front = ring.peek();
+    REQUIRE(front != nullptr);
+    int popped = 0;
+    REQUIRE(ring.pop(popped));
+    CHECK(popped == 1);
+    CHECK(*front == 1);              // the slot is producer-unreachable until now
 }

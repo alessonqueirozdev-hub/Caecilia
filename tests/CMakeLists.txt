@@ -1,6 +1,5 @@
-# Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-# Caecilia is proprietary and confidential; unauthorized copying,
-# distribution, or use of any part is prohibited. See LICENSE.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # ---------------------------------------------------------------------------
 # tests : the headless Catch2 unit suite for the pure caecilia_core library.
@@ -27,12 +26,31 @@ endif()
 
 add_executable(caecilia_tests
     core/CoreTypesTest.cpp
+    core/ParameterIdHashTest.cpp
+    core/ReverbSendGateTest.cpp
+    core/TripleBufferTest.cpp
+    engine/AudioEngineTest.cpp
+    engine/AuFormatContractTest.cpp
+    engine/ExpressionTest.cpp
+    engine/RegistrationUnderHeldNotesTest.cpp
     dsp/ReverbTest.cpp
+    dsp/PartialOscillatorTest.cpp
+    dsp/LimiterTest.cpp
+    dsp/MasterEqTest.cpp
+    dsp/OnePoleTest.cpp
+    dsp/DspMathTest.cpp
+    synthesis/PartialBankTest.cpp
+    synthesis/RankVoiceTest.cpp
     dsp/ResamplerTest.cpp
     tuning/TemperamentTest.cpp
     registration/RegistrationTest.cpp
+    registration/HostRegistrationTest.cpp
+    registration/FactoryGeneralsTest.cpp
     model/OrganLoaderTest.cpp
-    wind/WindModelTest.cpp)
+    model/RegistrationDynamicsTest.cpp
+    model/PerRankDynamicsTest.cpp
+    wind/WindModelTest.cpp
+    wind/OrganWindTest.cpp)
 
 target_link_libraries(caecilia_tests PRIVATE
     caecilia::core

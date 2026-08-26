@@ -1,8 +1,5 @@
-/*
- * Copyright (c) 2026 Alesson Queiroz. All rights reserved.
- * Caecilia is proprietary and confidential; unauthorized copying,
- * distribution, or use of any part is prohibited. See LICENSE.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 //
 // Wind-model tests: the realism moat. Wind is an audio-rate control signal, not
@@ -37,13 +34,15 @@ constexpr core::WindchestId kChest{0};
 constexpr float kFeedConductance  = 4.0f;
 constexpr float kTrunkConductance = 50.0f;
 
-/// Build a single-bellows / single-chest model ready to step.
-wind::WindModel makeModel()
+/// Prepare a single-bellows / single-chest model in place, ready to step.
+///
+/// WindModel deletes its copy constructor (which also suppresses the implicit
+/// move constructor), so it can never be returned by value — it is configured
+/// through a reference instead.
+void makeModel(wind::WindModel& model)
 {
-    wind::WindModel model;
     model.prepare(kSampleRate, kBlock);
     model.configure(wind::makeSingleChestConfig(kNominalPa));
-    return model;
 }
 
 /// Advance @p blocks blocks, re-registering @p demand before each so the load is
@@ -61,7 +60,8 @@ void run(wind::WindModel& model, float demand, int blocks)
 
 TEST_CASE("Wind snapshot sits at nominal with no demand", "[wind][baseline]")
 {
-    wind::WindModel model = makeModel();
+    wind::WindModel model;
+    makeModel(model);
     CHECK(model.numChests() == 1);
     CHECK(model.numTremulants() == 1);
     CHECK(model.nominalPressurePa(kChest) == Approx(kNominalPa));
@@ -74,7 +74,8 @@ TEST_CASE("Wind snapshot sits at nominal with no demand", "[wind][baseline]")
 
 TEST_CASE("Pressure sags toward the demand-dependent equilibrium", "[wind][sag]")
 {
-    wind::WindModel model = makeModel();
+    wind::WindModel model;
+    makeModel(model);
 
     constexpr float demand = 40.0f;
     run(model, demand, 600); // fully converged for the default time constant
@@ -89,8 +90,10 @@ TEST_CASE("Pressure sags toward the demand-dependent equilibrium", "[wind][sag]"
 
 TEST_CASE("Sag increases monotonically with demand", "[wind][sag]")
 {
-    wind::WindModel light = makeModel();
-    wind::WindModel heavy = makeModel();
+    wind::WindModel light;
+    makeModel(light);
+    wind::WindModel heavy;
+    makeModel(heavy);
 
     run(light, 40.0f, 600);
     run(heavy, 120.0f, 600);
@@ -104,7 +107,8 @@ TEST_CASE("Sag increases monotonically with demand", "[wind][sag]")
 
 TEST_CASE("Wind recovers to nominal once the load is removed", "[wind][recovery]")
 {
-    wind::WindModel model = makeModel();
+    wind::WindModel model;
+    makeModel(model);
 
     run(model, 40.0f, 600);
     const float loaded = model.pressureAt(kChest, 0);
@@ -119,14 +123,16 @@ TEST_CASE("Wind recovers to nominal once the load is removed", "[wind][recovery]
 
 TEST_CASE("Unbound pipes resolve to the first windchest", "[wind][routing]")
 {
-    wind::WindModel model = makeModel();
+    wind::WindModel model;
+    makeModel(model);
     // No pipe bindings were configured, so any pipe defaults to chest 0.
     CHECK(model.chestForPipe(core::PipeId{7, 60}) == kChest);
 }
 
 TEST_CASE("Tremulant modulates the wind pressure itself", "[wind][tremulant]")
 {
-    wind::WindModel model = makeModel();
+    wind::WindModel model;
+    makeModel(model);
 
     // Disabled by default: the per-block snapshot is flat at nominal.
     run(model, 0.0f, 5);
