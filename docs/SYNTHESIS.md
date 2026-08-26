@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — Synthesis Design
@@ -65,7 +64,7 @@ isActive() const noexcept
 Two specialisations refine it:
 
 - **`ISampleSource`** — a read-only provider of recorded material in Caecilia's
-  **own** proprietary format (`channelCount`, `sourceSampleRate`,
+  **own** sample-set format (`channelCount`, `sourceSampleRate`,
   `rootFrequencyHz`, `frameCount`, `loopStart`, `loopEnd`, `sampleAt`).
   Caecilia prefers a loop-free modeled sustain, so `loopEnd == 0` signals a
   one-shot recording whose tail hands off to a modeled sustain. Streaming/loading
@@ -80,7 +79,7 @@ Two specialisations refine it:
 
 ## 3. The analysis bridge (`SpectralModel`)
 
-The proprietary **offline analysis toolchain** (partial tracking / formant /
+The **offline analysis toolchain** (partial tracking / formant /
 wind-sensitivity estimation, built on the same core but *not* shipped in the RT
 path) produces a `SpectralModel` per pipe:
 

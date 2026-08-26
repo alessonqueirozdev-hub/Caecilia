@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — Tuning Design
@@ -31,9 +30,9 @@ double frequencyForNote(MidiNote note) const noexcept;              // note as a
 double frequencyForPipe(PipeId pipe, Footage footage) const noexcept; // scaled EXACTLY by Footage
 ```
 
-Everything is precomputed off the audio thread (in `prepare()` and on
-temperament-change commands delivered over the ring); the query methods never
-mutate live state and are safe to call while rendering.
+Everything is precomputed off the audio thread (in `prepare()`, and — once the
+ring's `SetTemperament` command is actually handled — on temperament change); the
+query methods never mutate live state and are safe to call while rendering.
 
 ---
 
@@ -191,6 +190,12 @@ mutations out of a diapason chorus (see [`REGISTRATION.md`](REGISTRATION.md)).
 
 Temperament and A-reference are **never mutated mid-render**; the rebuild happens
 off-thread and the new table is swapped in at a block boundary.
+
+> Not wired yet: the plugin binds its `TuningModel` into the engine, so whatever
+> the model holds does reach the voices — but `prepareToPlay` only ever sets equal
+> temperament at A=440, and `EngineCommandType::SetTemperament` is an unhandled
+> case in `AudioEngine::drainCommands`. The host's Temperament and Tuning A4
+> parameters therefore change nothing today.
 
 ---
 

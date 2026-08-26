@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — Roadmap
@@ -26,7 +25,7 @@ always a working instrument.
   `process()` / `render()` / `step()` path; a CI allocator/lock trap enforces it.
 - **License boundary stays clean.** Only `plugin` / `ui` include JUCE (no-JUCE
   lint on `core`); no GPL source ingested; `THIRD_PARTY_NOTICES.md` documents
-  JUCE/Catch2 separately from Caecilia's proprietary license.
+  JUCE/Catch2 separately from Caecilia's own Apache-2.0 license.
 - **Numerical parity.** Every SIMD backend is bit/ULP-compared against a scalar
   reference in CI.
 
@@ -49,16 +48,21 @@ always a working instrument.
 | v0.95   | Convolution reverb + hardening     | second reverb; worst-case degradation proofs           |
 | v1      | Release                            | full hybrid voice + all pillars, gates green            |
 
+> Where the tree actually is: v0 and v0.1 are done, and much of v0.3 (FDN reverb,
+> filters, sinc interpolation, plus a master EQ and limiter) landed early
+> alongside the web console. **v0.2 is not done** — `WindModel` is written and
+> unit-tested, but `AudioEngine::stepWind()` is empty, so nothing breathes yet.
+
 ---
 
-## v0 — Scaffold & contract  *(current)*
+## v0 — Scaffold & contract  *(done)*
 
 Create the `C:\Caecilia` CMake tree: `caecilia_core` STATIC lib (std-lib only) +
 `Caecilia` JUCE target via FetchContent + Catch2. Write the core vocabulary and
 interfaces as headers with coherent stub bodies — `Footage` (exact rational),
 `TonalFamily`/`ChorusRole`/`PitchClass`, `PipeId`/`StopId`, `IVoice`/`IVoiceLayer`,
 `RenderContext`, `WindState`/`IWindSupply`, `SpscRing`, `VoiceHandle`,
-`DeadlineBudget`, the `AudioEngine` seam. Proprietary header on every file;
+`DeadlineBudget`, the `AudioEngine` seam. Apache-2.0 SPDX header on every file;
 no-JUCE lint on `core`.
 
 **Exit criteria:** Catch2 tests for `Footage` math and `SpscRing` pass; core
@@ -105,7 +109,7 @@ ULP-bounded CI harness. Master chain in `AudioEngine`. See
 
 ## v0.4 — Sample layer + per-pipe voicing
 
-`ISampleSource` streaming from the proprietary sample format (off-thread loading
+`ISampleSource` streaming from Caecilia's own sample format (off-thread loading
 in `model`), multi-stage release-by-hold-time (`ReleaseSpec`), `PerPipeVoicer`
 deterministic variance keyed to `PipeId`.
 
@@ -194,8 +198,8 @@ semantic registration with portability, OSC/JSON-RPC/MIDI-learn control surface,
 historical tunings.
 
 **Ship gates (all green):** RT-safety trap, no-JUCE-in-core lint, SIMD ULP
-parity, license-boundary check, `THIRD_PARTY_NOTICES.md` current. Proprietary,
-closed-source.
+parity, license-boundary check, `THIRD_PARTY_NOTICES.md` current. Apache-2.0,
+Apache-2.0.
 
 ---
 

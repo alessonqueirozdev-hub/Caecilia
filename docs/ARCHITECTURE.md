@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — Architecture
@@ -11,8 +10,14 @@ responsibilities, the four load-bearing design decisions (hybrid voice, wind,
 RT contract, semantic registration), the end-to-end data flow, and the
 real-time safety rules every module must obey.
 
-> Status: early scaffold. The contract types in `src/caecilia/core` are real;
-> the downstream modules described here are planned per the roadmap.
+> Status: this document is the DESIGN target and the tree has only partly reached
+> it. Live and audible today: `core`, `engine` (voice pool, scheduler, command
+> ring, meters), `dsp` (FDN reverb, master EQ, limiter), `model`, `tuning` and the
+> additive half of `synthesis`, driven by the JUCE `plugin` and its embedded web
+> console. Written and unit-tested but NOT reached from the plugin: `wind`
+> (`AudioEngine::stepWind()` is an empty stub), `registration`, `control`, and all
+> of `midi` except the channel→division map. Read the sections on those as intent,
+> not as behaviour you can hear.
 
 ---
 
@@ -22,8 +27,8 @@ Caecilia is split into a **pure core** and a thin **JUCE shell**.
 
 ```
                         ┌───────────────────────────────────────────┐
-   JUCE SHELL           │  plugin  (VST3/AU/Standalone AudioProcessor)│
-   (may include JUCE)   │  ui      (dual-mode console, skins, gauges) │
+   JUCE SHELL           │ plugin (VST3/AU/Standalone AudioProcessor)  │
+   (may include JUCE)   │  ui      (StateMirror + web console page)   │
                         └───────────────┬───────────────────────────┘
                                         │  SPSC command rings (write)
                                         │  lock-free snapshots (read)

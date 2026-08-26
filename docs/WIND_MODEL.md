@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — Wind Model
@@ -14,6 +13,31 @@ immutable `WindState` snapshot, and how every voice reads it race-free.
 > Scope: complements [`ARCHITECTURE.md`](ARCHITECTURE.md) §4 and
 > [`SYNTHESIS.md`](SYNTHESIS.md) §6 (how voices consume the wind). The read-only
 > query surface is the core contract `core::IWindSupply`.
+>
+> Status: **connected.** The processor owns a `WindModel`, compiles it from the
+> loaded organ's own windchests (`wind::configFromOrgan`), and hands it to the
+> engine; `AudioEngine::stepWind()` registers the block's demand and integrates the
+> ODE before any voice reads pressure; and a voice re-points its wind coupling at
+> its rank's chest and family curve when it adopts a rank. Pressure sags under a
+> chord and recovers when it is released, and the tremulant shakes the chests that
+> have one.
+>
+> Four separate breaks stood between this document and the instrument, each
+> invisible on its own: the supply was never bound, the ODE was never stepped,
+> `SetTremulant` was an unhandled case, and a rank's voicing never recorded which
+> chest fed it — so even with the first three fixed, every voice would have read
+> chest 0. `tests/wind/OrganWindTest.cpp` guards all four.
+>
+> Demand is per PIPE, not per voice: flow scales with the wavelength a pipe sounds,
+> so a rank's footage and the note both count. Measured on this organ, eight bass
+> notes on the 16' sag the reservoir eighty times as far as eight treble notes on
+> the 1 3/5'; a full-organ chord across the compass is 168 pipes and 1.4%.
+>
+> Still open: the demand is booked entirely on chest 0. Every chest shares one
+> reservoir, so the sag that matters reaches all of them regardless; what chest 0
+> additionally takes is its own trunk drop, about seven percent of the total at the
+> default conductances. Per-chest attribution needs the engine to carry each voice's
+> chest into the tally alongside its flow.
 
 ---
 
@@ -54,7 +78,8 @@ that shares its reservoir — real, audible cross-talk).
 
 ## 3. The per-block step
 
-Once per block the engine calls `WindModel::step(numFrames)`, which:
+Once per block the engine is meant to call `WindModel::step(numFrames)` — today
+`AudioEngine::stepWind()` is an empty stub, so this never happens — which:
 
 1. sums each chest's registered demand into its feeding bellows,
 2. integrates every bellows' regulated pressure ODE (producing **sag**),

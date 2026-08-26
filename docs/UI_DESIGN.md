@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — UI Design
@@ -140,9 +139,13 @@ the illumination colour exactly as a real console does:
 | `Coupled`      | red     | sounded via a coupler from another division    |
 | `Combination`  | purple  | driven by a combination / sequencer action     |
 
+Today only `PlayedDirect` and `Off` are ever published: couplers are defined in
+the model but never applied, so red and purple never appear.
+
 The metering feed carries `windPressurePa`, `windSagNorm` and `tremulantPhase`
-(from [`WIND_MODEL.md`](WIND_MODEL.md)), which is what makes the wind physics
-**visible** — see §7.
+(from [`WIND_MODEL.md`](WIND_MODEL.md)), which is what would make the wind physics
+**visible** — see §7. They are published as zeros until the engine steps the wind
+model, so the console's gauges are driven by its own JS curve instead.
 
 ---
 
@@ -259,10 +262,12 @@ every listener (`ConsoleView`, `CaeciliaLookAndFeel`, open panels), with built-i
 
 ## 10. Accessibility
 
-The pillar-5 `SemanticId` is the single source for the
+In the design, the pillar-5 `SemanticId` is the single source for the
 `ConsoleAccessibilityHandler` screen-reader label, so assistive tech reads
 "Great Principal 8', drawn" from the same fact that feeds the tooltip and the OSC
-address. Because registration is fully scriptable through the shared grammar
+address. Today there is no such handler and the console is a WebView, which is
+opaque to the host's accessibility layer; the only screen-reader surface is the
+page's own `aria-label` / `aria-pressed` markup on each drawstop. Because registration is fully scriptable through the shared grammar
 (omnibar + control API), the whole instrument is operable without pixel-precise
 mouse control — an accessibility win no mainstream organ VST offers.
 

@@ -1,7 +1,6 @@
 <!--
-Copyright (c) 2026 Alesson Queiroz. All rights reserved.
-Caecilia is proprietary and confidential; unauthorized copying,
-distribution, or use of any part is prohibited. See LICENSE.
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
 # Caecilia — DSP Design
@@ -51,14 +50,19 @@ The master chain is owned and driven by `core::engine::AudioEngine::processBlock
   └───────────────────────┘                    └──────────────────────────────┘
 ```
 
-- **Per-pipe** spatialization (`dsp::Spatializer`) turns each voice's mono
-  output into a stereo pair with equal-power pan, distance attenuation and a
-  case-depth pre-delay that seeds early reflections *ahead* of the shared tail.
+- **Per-pipe** spatialization (`dsp::Spatializer`) is designed to turn each
+  voice's mono output into a stereo pair with equal-power pan, distance
+  attenuation and a case-depth pre-delay that seeds early reflections *ahead* of
+  the shared tail. Nothing instantiates it yet: `AudioEngine::applyMasterChain`
+  is the reverb send and nothing else.
 - **Per-instrument** reverb (`core::IReverb`, bound via
   `AudioEngine::setMasterReverb`) processes the summed stereo bus in place.
 
-`AudioEngine` reports total added latency (oversampler group delay + convolution
-first-partition delay) to the host for plugin delay compensation (PDC).
+Plugin delay compensation is reported by the plugin, not the engine:
+`CaeciliaAudioProcessor::updateLatency` reports the master limiter's look-ahead,
+which is the only added latency in the shipping chain. The oversampler group
+delay and the convolution first-partition delay join it when those stages are
+wired in.
 
 ---
 
@@ -162,7 +166,7 @@ source end.
 
 ### 4.3 `PolyphaseResampler` — fixed rational L/M conversion
 
-For a *fixed, known* integer ratio (bringing proprietary sample material recorded
+For a *fixed, known* integer ratio (bringing sample material recorded
 at one rate onto the host rate) the efficient structure is a single windowed-sinc
 prototype split into `L` polyphase sub-filters — upsample by `L`, decimate by `M`
 without materialising the zero-stuffed intermediate. `prepare(interpFactor,
