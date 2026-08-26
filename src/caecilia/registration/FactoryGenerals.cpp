@@ -61,8 +61,20 @@ std::uint64_t resolveSelectorMask(const model::Organ& organ, std::string_view ex
     // time it fired.
     const RegistrationState nothingDrawn;
 
+    // The StopSet is BOUND, not iterated through a temporary. ids() returns a span
+    // into the set's own storage, and in C++20 a range-for does not extend the life
+    // of a temporary the range expression was drawn from -- so
+    //
+    //     for (id : selector.resolve(...).ids())
+    //
+    // destroys the set before the first iteration and walks freed memory. C++23
+    // fixed that (P2718R0); this is C++20. MSVC happened to leave the vector's
+    // memory intact and every expression resolved correctly on Windows; libc++ did
+    // not, and on macOS every factory piston came out empty.
+    const StopSet resolved = parsed.selector.resolve(organ, nothingDrawn);
+
     std::uint64_t bits = 0;
-    for (const core::StopId id : parsed.selector.resolve(organ, nothingDrawn).ids())
+    for (const core::StopId id : resolved.ids())
         if (id.value < StopSet::kMaskCapacity)
             bits |= (std::uint64_t{ 1 } << id.value);
     return bits;
