@@ -3,6 +3,8 @@
 
 #include "caecilia/midi/MidiLearn.h"
 
+#include "caecilia/midi/LearnedControls.h"
+
 namespace caecilia::midi
 {
 
@@ -25,12 +27,12 @@ bool MidiLearn::observe(const MidiEvent& ev) noexcept
     if (state_ != State::Armed)
         return false;
 
-    // Only capture on a deliberate actuation edge.
-    const bool actuated =
-        ev.isNoteOn()
-        || ev.type == MidiMessageType::ProgramChange
-        || (ev.type == MidiMessageType::ControlChange && ev.data2 > 0);
-    if (!actuated)
+    // Only capture on a deliberate actuation edge, and from the ONE definition of
+    // what that is. The audio thread has to make the same judgement a block
+    // earlier, to decide whether to swallow the event or let it sound; when the two
+    // were separate copies, an event one accepted and the other rejected was a
+    // learn that silently did not happen.
+    if (! LearnedControls::isActuation(ev))
         return false;
 
     MidiLearnBinding binding;

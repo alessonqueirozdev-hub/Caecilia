@@ -19,7 +19,8 @@ target_sources(caecilia_core PRIVATE
     MidiRouter.cpp
     Sequencer.cpp
     CombinationStore.cpp
-    MidiLearn.cpp)
+    MidiLearn.cpp
+    LearnedControls.cpp)
 
 # Public headers carry the module's contract. Listed for IDE discoverability
 # and consumed via the project-wide include root (<root>/src):
@@ -38,7 +39,8 @@ set(CAECILIA_MIDI_PUBLIC_HEADERS
     MidiRouter.h
     Sequencer.h
     CombinationStore.h
-    MidiLearn.h)
+    MidiLearn.h
+    LearnedControls.h)
 
 target_sources(caecilia_core PUBLIC
     FILE_SET caecilia_midi_headers

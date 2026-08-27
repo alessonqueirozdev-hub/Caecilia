@@ -11,6 +11,7 @@
 #include "caecilia/engine/AudioEngine.h"
 #include "caecilia/wind/WindModel.h"
 #include "caecilia/engine/SpscRing.h"
+#include "caecilia/midi/LearnedControls.h"
 #include "caecilia/midi/MidiLearn.h"
 #include "caecilia/midi/MidiMap.h"
 #include "caecilia/model/DemoOrgan.h"
@@ -603,43 +604,20 @@ private:
     midi::MidiMap   midiMap_{};
     midi::MidiLearn midiLearn_{};
 
-    /// Which physical controls have a binding, as a bitset the audio thread can
-    /// test with one load.
+    /// The audio thread's half: one bit per control, and the verdict it turns an
+    /// incoming event into. It is core code, and deliberately so -- written here it
+    /// was the one piece of a learned drawstop the headless suite could not reach,
+    /// because the suite links caecilia::core and there is no plugin harness.
     ///
-    /// The audio thread does NOT get the map. It has exactly two decisions to make
-    /// -- swallow this event, and tell the message thread about it -- and both
-    /// need only "is anything bound to this control", which is one bit. The exact
-    /// match, the selector and the action all happen on the message thread, which
-    /// already owns the map. 512 bytes instead of thirty kilobytes through the
-    /// triple buffer, and no question about whether a MidiMap is safe to copy.
-    struct BoundControls
-    {
-        /// One bit per (channel, number), for notes and for CCs.
-        std::array<std::uint32_t, 64> notes{};
-        std::array<std::uint32_t, 64> ccs{};
-
-        [[nodiscard]] static constexpr std::size_t bit(int channel, int number) noexcept
-        {
-            return static_cast<std::size_t>((channel & 0x0F) * 128 + (number & 0x7F));
-        }
-        [[nodiscard]] constexpr bool test(const std::array<std::uint32_t, 64>& w,
-                                          int channel, int number) const noexcept
-        {
-            const std::size_t b = bit(channel, number);
-            return (w[b >> 5] & (std::uint32_t{ 1 } << (b & 31))) != 0;
-        }
-        constexpr void set(std::array<std::uint32_t, 64>& w, int channel, int number) noexcept
-        {
-            const std::size_t b = bit(channel, number);
-            w[b >> 5] |= (std::uint32_t{ 1 } << (b & 31));
-        }
-    };
-    core::TripleBuffer<BoundControls> boundControls_{};
+    /// Published rather than shared: 512 bytes across a triple buffer, instead of
+    /// the thirty kilobytes a MidiMap occupies and the question of whether it is
+    /// safe to copy there.
+    core::TripleBuffer<midi::LearnedControls> boundControls_{};
 
     /// The audio thread's own copy, refreshed only when the message thread has
-    /// published a new one. Read per event; a triple-buffer read per event would be
-    /// an atomic exchange per note.
-    BoundControls boundSnapshot_{};
+    /// published a new one. A triple-buffer read per EVENT would be an atomic
+    /// exchange per note.
+    midi::LearnedControls boundSnapshot_{};
 
     /// Set while a learn is pending, so the audio thread knows to capture rather
     /// than to play.
@@ -648,11 +626,6 @@ private:
     /// Audio -> message: packed MidiEvents that either hit a binding or completed
     /// a learn. One producer (the audio thread), one consumer (handleAsyncUpdate).
     core::engine::SpscRing<std::uint32_t, 64> midiActions_{};
-
-    /// Note-ons this swallowed, so their note-offs go the same way. Deciding on the
-    /// note-off instead would eat one whose note-on had sounded -- the same bug the
-    /// sequencer navigation already learned once, and for the same reason.
-    std::bitset<2048> boundSwallowed_{};
 
     /// Recompute @ref boundControls_ from @ref midiMap_ and publish it. Message
     /// thread; called after every binding edit.

@@ -294,16 +294,6 @@ namespace
     return ev; // anything else stays MidiMessageType::Other
 }
 
-/// The actuation edges MidiLearn accepts, restated where the audio thread can see
-/// them. Kept in step with MidiLearn::observe: an event this lets through and that
-/// rejects is one the organist actuated and nothing bound, which is a learn that
-/// silently did not happen.
-[[nodiscard]] bool isActuation(const caecilia::midi::MidiEvent& ev) noexcept
-{
-    return ev.isNoteOn()
-        || ev.type == caecilia::midi::MidiMessageType::ProgramChange
-        || (ev.type == caecilia::midi::MidiMessageType::ControlChange && ev.data2 > 0);
-}
 } // namespace
 
 void CaeciliaAudioProcessor::armMidiLearn(const midi::RegistrationCommandTemplate& target)
@@ -366,29 +356,15 @@ void CaeciliaAudioProcessor::clearMidiBindingForGeneral(std::size_t index)
 
 void CaeciliaAudioProcessor::publishBoundControls()
 {
-    BoundControls bound;
-    for (std::size_t i = 0; i < midiMap_.bindingCount(); ++i)
-    {
-        const midi::MidiSource& src = midiMap_.bindingAt(i).source;
-        const int number = static_cast<int>(src.data1);
-
-        // A wildcard channel has to light every channel's bit, or the audio thread
-        // would pass the event through on fifteen of the sixteen.
-        const int first = src.channel == midi::kAnyChannel ? 0  : static_cast<int>(src.channel);
-        const int last  = src.channel == midi::kAnyChannel ? 15 : static_cast<int>(src.channel);
-
-        for (int ch = first; ch <= last; ++ch)
-        {
-            if (src.kind == midi::MidiSource::Kind::Note)
-                bound.set(bound.notes, ch, number);
-            else if (src.kind == midi::MidiSource::Kind::ControlChange)
-                bound.set(bound.ccs, ch, number);
-            // Program change is not here: it already has its own path to the
-            // generals, and a learned program-change binding rides that instead of
-            // being swallowed here.
-        }
-    }
-    boundControls_.write(bound);
+    // Rebuilt from scratch rather than patched, because a binding edit is rare and
+    // a bitset of 512 bytes is cheaper to fill than to reason about incrementally.
+    //
+    // The published copy carries the audio thread's pending note-offs with it,
+    // which is why adopt() does not clear them: a key that is DOWN when the
+    // organist rebinds something still owes a note-off.
+    midi::LearnedControls next = boundControls_.read();
+    next.adopt(midiMap_);
+    boundControls_.write(next);
 }
 
 void CaeciliaAudioProcessor::applyMidiBinding(const midi::MidiLearnBinding& binding)
@@ -923,6 +899,8 @@ void CaeciliaAudioProcessor::reset()
     limiter_.reset();
     keys_ = {};
     navSwallowed_.reset();
+    // The note-offs the swallowed keys owed are never coming after a reset.
+    boundSnapshot_.reset();
     uiMasterSmooth_.setCurrentAndTargetValue(uiMaster_.load(std::memory_order_relaxed));
     uiVolumeSmooth_.setCurrentAndTargetValue(uiVolume_.load(std::memory_order_relaxed));
 }
@@ -980,57 +958,23 @@ void CaeciliaAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         // --- learned controls ------------------------------------------------
         //
-        // Two questions, both answerable from one bit, which is why the audio
-        // thread has a bitset and not the map: is a learn waiting for a control,
-        // and does this control have a binding. Everything that follows from
-        // either -- the exact match, the selector, the registration change -- is
-        // the message thread's, reached through a ring and one async wake.
+        // The whole decision is midi::LearnedControls', which is core code with a
+        // test suite; here it is one call and a switch. Everything that follows
+        // from a Capture or a Fire -- the exact match, the selector, the
+        // registration change -- is the message thread's, reached through a ring
+        // and one async wake.
         {
             const midi::MidiEvent ev = toMidiEvent(m);
-            const bool isNote = ev.type == midi::MidiMessageType::NoteOn
-                             || ev.type == midi::MidiMessageType::NoteOff;
-            const bool isCc   = ev.type == midi::MidiMessageType::ControlChange;
+            const auto verdict = boundSnapshot_.inspect(ev, learnArmed);
 
-            const std::size_t slot =
-                BoundControls::bit(static_cast<int>(ev.channel), static_cast<int>(ev.data1));
-
-            if (learnArmed && isActuation(ev))
+            if (verdict != midi::LearnedControls::Verdict::Play)
             {
-                // Capturing, not playing. The note is swallowed so binding a tab
-                // does not also sound the pipe it is being bound to.
-                (void) midiActions_.push(ev.pack());
-                triggerAsyncUpdate();
-                if (ev.type == midi::MidiMessageType::NoteOn)
-                    boundSwallowed_.set(slot);
-                continue;
-            }
-
-            const bool bound =
-                (isNote && boundSnapshot_.test(boundSnapshot_.notes,
-                                               static_cast<int>(ev.channel),
-                                               static_cast<int>(ev.data1)))
-             || (isCc   && boundSnapshot_.test(boundSnapshot_.ccs,
-                                               static_cast<int>(ev.channel),
-                                               static_cast<int>(ev.data1)));
-
-            if (bound)
-            {
-                // Swallowed on the way in, and the paired note-off swallowed with
-                // it -- decided on the note-ON and remembered, because deciding it
-                // afresh on the note-off eats one whose note-on had sounded. The
-                // sequencer navigation right below learned that the hard way.
-                if (ev.type == midi::MidiMessageType::NoteOn)
-                    boundSwallowed_.set(slot);
-
-                (void) midiActions_.push(ev.pack());
-                triggerAsyncUpdate();
-                continue;
-            }
-
-            if (ev.type == midi::MidiMessageType::NoteOff && boundSwallowed_.test(slot))
-            {
-                boundSwallowed_.reset(slot);
-                continue;
+                if (verdict != midi::LearnedControls::Verdict::Swallow)
+                {
+                    (void) midiActions_.push(ev.pack());
+                    triggerAsyncUpdate();
+                }
+                continue; // swallowed either way: a bound tab must not sound a pipe
             }
         }
 
