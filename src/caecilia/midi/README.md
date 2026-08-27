@@ -13,10 +13,12 @@ mapping, and **MIDI-learn** bindings that carry the *same* selector-grammar
 identity the OSC and JSON-RPC surfaces carry. (The console omnibar is not part of
 that: it matches with its own, simpler grammar written in JavaScript.)
 
-It is part of the pure, JUCE-free `caecilia_core` static library. The learn
-table, the binding predicates and the event packing are covered by
-`tests/midi/MidiLearnTest.cpp`; the router, the sequencer and the combination
-store are not, and nothing instantiates them either. No `juce::` MIDI type
+It is part of the pure, JUCE-free `caecilia_core` static library. The learn table,
+the binding predicates and the event packing are covered by
+`tests/midi/MidiLearnTest.cpp`; the audio thread's swallow decision by
+`tests/midi/LearnedControlsTest.cpp`; the router by
+`tests/midi/MidiRouterTest.cpp`. The sequencer and the combination store are not
+covered, and nothing instantiates them either. No `juce::` MIDI type
 ever reaches it: the design is for the `plugin` module to translate
 `juce::MidiMessage` into [`MidiEvent`](MidiEvent.h) at the seam.
 
@@ -33,6 +35,13 @@ ever reaches it: the design is for the `plugin` module to translate
 > `CombinationStore`, `Sequencer`, `VelocityCurve`, `ProgramChangeMap`. The note
 > path continues to be decoded on `juce::MidiMessage`s inside
 > `plugin::CommandBridge`, so the duplication below is reduced, not ended.
+>
+> [`MidiRouter`](MidiRouter.h) is now covered by `tests/midi/MidiRouterTest.cpp`,
+> which is the groundwork for ending it. One difference has to be settled first:
+> `CommandBridge` falls back to a **default division** for a channel no manual
+> claims, so a single-keyboard controller plays without being configured, and the
+> router ignores such a channel outright. Switching without that would silence
+> every controller that has not been mapped.
 >
 > What the plugin does handle, through that second implementation: note on/off
 > with channel→division routing and per-division compass limits, all-notes-off,
@@ -78,7 +87,11 @@ MIDI-learned drawstop is indistinguishable from one toggled anywhere else.
   immutable table and swapped in wholesale, never mutated in place under the
   audio thread.
 - **On the audio thread:** [`MidiRouter::route`](MidiRouter.h) is `noexcept`,
-  allocation-free and lock-free; it only *reads* the connected map. The
+  allocation-free and lock-free; it only *reads* the connected map. It is not
+  `const`, and deliberately: it remembers the note-ons it swallowed
+  ([`SwallowedNotes`](SwallowedNotes.h)) so their note-offs go the same way.
+  Deciding that on the note-off instead — by asking whether the note is mapped
+  *now* — eats the release of a key whose press already sounded. The
   sequencer's pointer-moving operations (`next`/`previous`/`goTo`) are likewise
   `noexcept` and fixed-capacity, so the registration bridge may call them when a
   page-turn intent arrives.
