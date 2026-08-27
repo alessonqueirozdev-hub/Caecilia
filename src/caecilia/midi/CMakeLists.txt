@@ -40,7 +40,8 @@ set(CAECILIA_MIDI_PUBLIC_HEADERS
     Sequencer.h
     CombinationStore.h
     MidiLearn.h
-    LearnedControls.h)
+    LearnedControls.h
+    SwallowedNotes.h)
 
 target_sources(caecilia_core PUBLIC
     FILE_SET caecilia_midi_headers

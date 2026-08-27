@@ -4,6 +4,7 @@
 #pragma once
 
 #include "caecilia/midi/MidiEvent.h"
+#include "caecilia/midi/SwallowedNotes.h"
 
 #include <array>
 #include <bitset>
@@ -92,6 +93,12 @@ public:
     /// the note-offs those keys would have sent are never coming.
     void reset() noexcept { swallowed_.reset(); }
 
+    /// @return How many keys were swallowed and still owe a release. Diagnostic.
+    [[nodiscard]] std::size_t pendingReleases() const noexcept
+    {
+        return swallowed_.pendingCount();
+    }
+
     /// @return true if a note on this channel has a binding. Diagnostic/test.
     [[nodiscard]] bool isNoteBound(MidiChannel channel, std::uint8_t note) const noexcept
     {
@@ -149,9 +156,9 @@ private:
         m[b >> 5] |= (std::uint32_t{ 1 } << (b & 31));
     }
 
-    Mask               notes_{};
-    Mask               ccs_{};
-    std::bitset<kBits> swallowed_{};
+    Mask           notes_{};
+    Mask           ccs_{};
+    SwallowedNotes swallowed_{};
 };
 
 } // namespace caecilia::midi

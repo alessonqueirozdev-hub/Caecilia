@@ -6,7 +6,7 @@
 namespace caecilia::midi
 {
 
-MidiRouteResult MidiRouter::route(const MidiEvent& ev) const noexcept
+MidiRouteResult MidiRouter::route(const MidiEvent& ev) noexcept
 {
     if (map_ == nullptr)
         return MidiRouteResult::ignored(ev.sampleOffset);
@@ -33,27 +33,34 @@ MidiRouteResult MidiRouter::route(const MidiEvent& ev) const noexcept
     }
 }
 
-MidiRouteResult MidiRouter::routeNote(const MidiEvent& ev) const noexcept
+MidiRouteResult MidiRouter::routeNote(const MidiEvent& ev) noexcept
 {
+    // 0) A key coming up. Whether to swallow it was decided when it went DOWN and
+    //    remembered; asking "is this note a page-turn key / is it bound" here
+    //    instead eats the release of a key whose press already sounded, and the
+    //    pipe then speaks until the next panic. Both of the swallow paths below
+    //    used to decide it here. See SwallowedNotes.
+    if (ev.isNoteOff() && swallowed_.take(ev))
+        return MidiRouteResult::ignored(ev.sampleOffset);
+
     // 1) Sequencer navigation keys (e.g. si5/do6) fire on the on-edge and their
     //    note-off is swallowed so the page-turn key never sounds a pipe.
     const SequencerDirection dir = map_->sequencerNav().lookup(ev.channel, ev.data1);
-    if (dir != SequencerDirection::None)
+    if (dir != SequencerDirection::None && ev.isNoteOn())
     {
-        if (ev.isNoteOn())
-            return MidiRouteResult::makeRegistration(
-                RegistrationCommandTemplate::sequencer(dir), ev.sampleOffset);
-        return MidiRouteResult::ignored(ev.sampleOffset);
+        swallowed_.remember(ev);
+        return MidiRouteResult::makeRegistration(
+            RegistrationCommandTemplate::sequencer(dir), ev.sampleOffset);
     }
 
     // 2) A note learned as a registration control (piston-on-a-key). Fire on the
-    //    note-on edge; swallow the paired note-off so it never sounds a pipe.
-    if (const MidiLearnBinding* b = map_->findBinding(ev))
-    {
-        if (ev.isNoteOn())
+    //    note-on edge; the paired note-off is swallowed by (0) above.
+    if (ev.isNoteOn())
+        if (const MidiLearnBinding* b = map_->findBinding(ev))
+        {
+            swallowed_.remember(ev);
             return MidiRouteResult::makeRegistration(b->command, ev.sampleOffset);
-        return MidiRouteResult::ignored(ev.sampleOffset);
-    }
+        }
 
     // 3) Ordinary keyboard note -> the channel's division.
     const auto& channels = map_->channels();
@@ -68,7 +75,7 @@ MidiRouteResult MidiRouter::routeNote(const MidiEvent& ev) const noexcept
     return MidiRouteResult::makeNote(n, ev.sampleOffset);
 }
 
-MidiRouteResult MidiRouter::routeControlChange(const MidiEvent& ev) const noexcept
+MidiRouteResult MidiRouter::routeControlChange(const MidiEvent& ev) noexcept
 {
     // All-sound-off / all-notes-off take precedence over any learned mapping.
     if (ev.data1 == cc::kAllSoundOff || ev.data1 == cc::kAllNotesOff)
@@ -106,7 +113,7 @@ MidiRouteResult MidiRouter::routeControlChange(const MidiEvent& ev) const noexce
     return MidiRouteResult::ignored(ev.sampleOffset);
 }
 
-MidiRouteResult MidiRouter::routeProgramChange(const MidiEvent& ev) const noexcept
+MidiRouteResult MidiRouter::routeProgramChange(const MidiEvent& ev) noexcept
 {
     // A learned program-change binding wins over the generic PC->generals map.
     if (const MidiLearnBinding* b = map_->findBinding(ev))

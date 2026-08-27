@@ -7,6 +7,7 @@
 #include "caecilia/midi/MidiEvent.h"
 #include "caecilia/midi/MidiMap.h"
 #include "caecilia/midi/MidiRouteResult.h"
+#include "caecilia/midi/SwallowedNotes.h"
 
 namespace caecilia::midi
 {
@@ -64,7 +65,21 @@ public:
      *
      * Real-time safe: @c noexcept, no allocation, no locking.
      */
-    [[nodiscard]] MidiRouteResult route(const MidiEvent& ev) const noexcept;
+    [[nodiscard]] MidiRouteResult route(const MidiEvent& ev) noexcept;
+
+    /**
+     * @brief Forget every key whose release the router still owes.
+     *
+     * For a host reset or a panic: those releases are never coming, and holding
+     * them would swallow the next press of the same key.
+     */
+    void reset() noexcept { swallowed_.reset(); }
+
+    /// @return How many keys were swallowed and still owe a release. Diagnostic.
+    [[nodiscard]] std::size_t pendingReleases() const noexcept
+    {
+        return swallowed_.pendingCount();
+    }
 
     /**
      * @brief Convenience bridge: encode a routed result as an @ref EngineCommand
@@ -82,11 +97,14 @@ public:
                                               core::engine::EngineCommand& out) noexcept;
 
 private:
-    [[nodiscard]] MidiRouteResult routeNote(const MidiEvent& ev) const noexcept;
-    [[nodiscard]] MidiRouteResult routeControlChange(const MidiEvent& ev) const noexcept;
-    [[nodiscard]] MidiRouteResult routeProgramChange(const MidiEvent& ev) const noexcept;
+    [[nodiscard]] MidiRouteResult routeNote(const MidiEvent& ev) noexcept;
+    [[nodiscard]] MidiRouteResult routeControlChange(const MidiEvent& ev) noexcept;
+    [[nodiscard]] MidiRouteResult routeProgramChange(const MidiEvent& ev) noexcept;
 
     const MidiMap* map_ = nullptr;
+
+    /// The keys whose press this router ate, so their release goes with it.
+    SwallowedNotes swallowed_{};
 };
 
 } // namespace caecilia::midi
