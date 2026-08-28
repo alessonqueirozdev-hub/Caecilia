@@ -20,6 +20,7 @@ target_sources(caecilia_core PRIVATE
     Division.cpp
     Organ.cpp
     OrganDefinition.cpp
+    Json.cpp
     OrganLoader.cpp
     DemoOrgan.cpp)
 
@@ -39,6 +40,7 @@ set(CAECILIA_MODEL_PUBLIC_HEADERS
     Organ.h
     Diagnostics.h
     OrganDefinition.h
+    Json.h
     OrganLoader.h
     DemoOrgan.h)
 
