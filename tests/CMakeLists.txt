@@ -49,6 +49,7 @@ add_executable(caecilia_tests
     synthesis/RankVoiceTest.cpp
     dsp/ResamplerTest.cpp
     tuning/TemperamentTest.cpp
+    tuning/TemperamentConstructionTest.cpp
     tuning/LiveTuningTest.cpp
     registration/RegistrationTest.cpp
     registration/HostRegistrationTest.cpp
