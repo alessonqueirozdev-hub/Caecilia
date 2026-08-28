@@ -75,6 +75,14 @@ caecilia_add_tool(caecilia-ir-tool
 caecilia_add_tool(caecilia-verify-registration
     verify-registration/Main.cpp)
 
+# 5) Organ documents: export the shipping instrument as one, or check a file
+#    someone has written. The export is a starting point -- Caecilia's organ
+#    format has no examples in the world, and the fastest way to learn one is to
+#    read a real instrument written in it.
+caecilia_add_tool(caecilia-organ-file
+    organ-file/Main.cpp)
+
 message(STATUS "Caecilia: offline tools enabled "
                "(caecilia-sampleset-analyzer, caecilia-partial-extractor, "
-               "caecilia-ir-tool, caecilia-verify-registration)")
+               "caecilia-ir-tool, caecilia-verify-registration, "
+               "caecilia-organ-file)")

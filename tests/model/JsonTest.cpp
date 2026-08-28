@@ -252,6 +252,29 @@ TEST_CASE("A whole number is written as one", "[model][json]")
     CHECK(ok(json::write(json::Value(0.0625), 0)).asNumber() == Approx(0.0625));
 }
 
+TEST_CASE("A float is written the way a float reads", "[model][json]")
+{
+    // Most numbers in an organ document are floats -- pressures, voicing, pan --
+    // and widening one to a double before writing it produces the shortest text
+    // that round-trips the DOUBLE. For 0.15f that is 0.15000000596046448: correct,
+    // and unreadable in a file a person edits.
+    CHECK(json::write(json::Value(0.15f), 0) == "0.15");
+    CHECK(json::write(json::Value(0.65f), 0) == "0.65");
+    CHECK(json::write(json::Value(812.0f), 0) == "812");
+    CHECK(json::write(json::Value(-0.4f), 0) == "-0.4");
+
+    // Nothing is lost: the field is read back into a float, and the short text and
+    // the long one are the same float.
+    CHECK(static_cast<float>(ok(json::write(json::Value(0.15f), 0)).asNumber()) == 0.15f);
+    CHECK(static_cast<float>(ok(json::write(json::Value(0.0625f), 0)).asNumber()) == 0.0625f);
+    CHECK(static_cast<float>(ok(json::write(json::Value(1.0f / 3.0f), 0)).asNumber())
+          == 1.0f / 3.0f);
+
+    // A double that really is one keeps its full precision.
+    const double third = 1.0 / 3.0;
+    CHECK(ok(json::write(json::Value(third), 0)).asNumber() == third);
+}
+
 TEST_CASE("Reading the wrong type gives the fallback, not a surprise",
           "[model][json]")
 {

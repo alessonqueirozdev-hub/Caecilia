@@ -699,6 +699,14 @@ void put(json::Value& obj, const char* key, double v)
     obj.members().emplace_back(key, json::Value(v));
 }
 
+/// Most numbers in an organ document are floats -- pressures, voicing, pan --
+/// and they must be written the way a float reads, not the way its widened double
+/// does. See json::Value(float).
+void put(json::Value& obj, const char* key, float v)
+{
+    obj.members().emplace_back(key, json::Value(v));
+}
+
 void put(json::Value& obj, const char* key, bool v)
 {
     obj.members().emplace_back(key, json::Value(v));

@@ -50,6 +50,27 @@ void appendUtf8(std::string& out, std::uint32_t cp)
 }
 } // namespace
 
+Value::Value(float f) : kind_(Kind::Number)
+{
+    // The shortest text that round-trips the FLOAT, read back as a double. Both
+    // steps matter: to_chars on the float gives "0.15" where the widened double
+    // would give "0.15000000596046448", and from_chars puts the value back in the
+    // double this class stores, so writing it out again produces the same "0.15".
+    char       buf[40];
+    const auto printed = std::to_chars(buf, buf + sizeof(buf), f);
+    if (printed.ec != std::errc{})
+    {
+        number_ = static_cast<double>(f);
+        return;
+    }
+
+    double parsed = 0.0;
+    if (std::from_chars(buf, printed.ptr, parsed).ec == std::errc{})
+        number_ = parsed;
+    else
+        number_ = static_cast<double>(f);
+}
+
 std::string Error::describe() const
 {
     return "line " + std::to_string(where.line) + ", column "

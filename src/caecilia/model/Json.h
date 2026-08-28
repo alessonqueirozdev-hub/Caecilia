@@ -73,6 +73,18 @@ public:
     Value() = default;
     explicit Value(bool b) : kind_(Kind::Bool), bool_(b) {}
     explicit Value(double d) : kind_(Kind::Number), number_(d) {}
+
+    /**
+     * @brief A number that came from a @c float, stored as the double a reader
+     *        would get from the shortest text that round-trips the float.
+     *
+     * Without this a voicing parameter of 0.15f is written as
+     * 0.15000000596046448 -- the shortest text that round-trips the DOUBLE the
+     * float widened to. It is correct and it is unreadable, and an organ file is
+     * a document a person edits. Storing 0.15 instead loses nothing: the field is
+     * read back into a float, and 0.15 and 0.15000000596046448 are the same float.
+     */
+    explicit Value(float f);
     explicit Value(std::string s) : kind_(Kind::String), string_(std::move(s)) {}
 
     [[nodiscard]] static Value array() { Value v; v.kind_ = Kind::Array;  return v; }
