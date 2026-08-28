@@ -110,9 +110,15 @@ private:
 
     void fail(std::string message)
     {
-        // The FIRST failure wins. A parser that overwrites its error as the stack
+        // The FIRST failure wins: a parser that overwrites its error as the stack
         // unwinds reports the outermost construct rather than the character that
-        // actually went wrong, which is the least useful of the two.
+        // actually went wrong, which is the less useful of the two.
+        //
+        // Today no path calls this twice -- every caller returns as soon as a
+        // callee fails, and the negative verification confirms nothing observes
+        // the guard. It is here because the property is easy to lose in a
+        // refactor and expensive to notice: a diagnostic pointing at the closing
+        // brace of a file is not obviously wrong, it is just useless.
         if (!failed_)
         {
             error_.message = std::move(message);
@@ -519,15 +525,15 @@ void writeString(std::string& out, const std::string& s)
 
 void writeNumber(std::string& out, double d)
 {
-    // An integral value is written without a decimal point, because most numbers
-    // in an organ file are counts and note numbers and "36.0" in place of "36"
-    // makes a hand-edited file look machine-mangled.
-    if (std::isfinite(d) && d == std::floor(d) && std::abs(d) < 1.0e15)
-    {
-        out += std::to_string(static_cast<long long>(d));
-        return;
-    }
-
+    // std::to_chars, and nothing else.
+    //
+    // Its shortest-round-trip form is already what an organ file wants: 36.0
+    // comes out as "36", not "36.0", so a hand-edited file does not look
+    // machine-mangled the first time it is saved. There WAS a special case here
+    // that wrote integral values through std::to_string, and the negative
+    // verification showed it to be dead -- every assertion about whole numbers
+    // passed with it removed. A printf-family formatter would need it; this does
+    // not, and JsonTest pins the behaviour so a future swap has to notice.
     char       buf[40];
     const auto res = std::to_chars(buf, buf + sizeof(buf), d);
     if (res.ec == std::errc{})
