@@ -25,9 +25,21 @@ the core contract `caecilia::core::IWindSupply`.
 
 ## Design in one breath
 
-- **Bellows** integrates a regulated first-order pressure ODE. Its equilibrium
-  **sags below nominal in proportion to instantaneous flow demand**, then relaxes
-  toward it with an exact (unconditionally stable) exponential step.
+- **Bellows** integrates a regulated pressure ODE. Its equilibrium **sags below
+  nominal in proportion to instantaneous flow demand**; how it gets there depends
+  on whether the top plate has been given mass.
+  - Without (`plateResonanceHz == 0`, the default): a first-order relaxation, an
+    exact exponential step, monotone — it approaches the new pressure and stops.
+  - With (the demo organ asks for 4.5 Hz): a second-order plate on its air spring,
+    so a chord landing on the reservoir drops it **past** the new pressure and
+    back, a few times, before it settles. Measured on the demo organ, a full chord
+    sags it 13.2 Pa and the plate passes that by 2.7 on the way down. That bounce
+    is what an organist means by the wind breathing, and a first-order model cannot
+    produce it at any setting.
+  - Both are solved in closed form over the block, so the step is unconditionally
+    stable at any buffer size a host hands us. `compliance` sets the first-order
+    rate and has no effect once the plate is enabled: there, the speed is
+    `plateResonanceHz` and `plateDamping`, which is what a voicer would state.
 - **Windchest** distributes a bellows' wind to a group of pipes, imposing an
   extra local trunk drop from its own demand and holding the per-block sag
   trajectory that callers sample.

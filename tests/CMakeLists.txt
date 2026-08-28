@@ -59,6 +59,7 @@ add_executable(caecilia_tests
     model/OrganLoaderTest.cpp
     model/RegistrationDynamicsTest.cpp
     model/PerRankDynamicsTest.cpp
+    wind/BellowsPlateTest.cpp
     wind/WindModelTest.cpp
     wind/OrganWindTest.cpp)
 

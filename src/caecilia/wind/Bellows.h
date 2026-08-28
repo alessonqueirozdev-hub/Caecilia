@@ -13,7 +13,10 @@ namespace caecilia::wind
 /**
  * @brief A single reservoir / bellows: the pressure vessel that regulates wind.
  *
- * The bellows integrates a first-order regulated pressure ODE once per block.
+ * The bellows integrates its regulated pressure ODE once per block -- first order
+ * by default, second order when the top plate is given mass
+ * (@ref BellowsConfig::plateResonanceHz), which is what makes a reservoir shake
+ * rather than merely sag.
  * Its equilibrium pressure sags below nominal in proportion to the summed flow
  * demand drawn from it during the block; it then relaxes toward that
  * equilibrium at a time constant of @c compliance / @c feedConductance. Over a
@@ -68,8 +71,14 @@ public:
     }
 
 private:
+    /// The second-order path: the plate with mass, solved exactly over the step.
+    void integratePlate(float equilibriumPa, double dtSeconds) noexcept;
+
     BellowsConfig config_{};
     float pressurePa_  = kDefaultNominalPressurePa; ///< Live integrator state.
+    /// Rate of change of pressure, in Pa per second. The second state variable a
+    /// plate with mass needs; unused and zero while the plate is disabled.
+    float dPdt_        = 0.0f;
     float startPa_     = kDefaultNominalPressurePa; ///< Pressure at block start.
     float endPa_       = kDefaultNominalPressurePa; ///< Pressure at block end.
     float demandAccum_ = 0.0f;                      ///< Summed demand for the current block.

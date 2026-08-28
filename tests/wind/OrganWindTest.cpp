@@ -263,6 +263,73 @@ TEST_CASE("A full chord loads the wind and releasing it lets the wind recover",
     CHECK(sagPercent < 12.0);
 }
 
+TEST_CASE("A chord lands on the wind rather than merely lowering it",
+          "[wind][organ][regression]")
+{
+    // The reservoir plate has mass, so the instrument does not slide to a new
+    // pressure -- it drops past and comes back, a few times, at about four hertz.
+    // Every pipe on that reservoir goes flat, quiet and dull in time with the
+    // bounce, because pitch, level, brightness and speech all track the deviation.
+    //
+    // A first-order bellows can sag convincingly and can never do this, and that is
+    // the difference between an organ that gives under the hands and one that fades.
+    const model::Organ organ = model::buildCaeciliaDemoOrgan();
+    Rig                rig{ organ, /*bindWind*/ true };
+    rig.drawAll();
+    rig.run(40); // settle at nominal
+
+    const float restingPa = rig.wind.pressureAt(core::WindchestId{ 0 }, 0);
+    REQUIRE(restingPa > 0.0f);
+
+    // A full chord, landing all at once, and then held while the plate settles.
+    for (int note = 36; note <= 84; note += 4)
+        rig.send(engine::EngineCommand::makeNoteOn(
+            core::PipeId{ 0, static_cast<std::uint8_t>(note), 1 }, 100,
+            core::DivisionId{ 1 }, 0));
+
+    std::vector<float> trace;
+    trace.reserve(600);
+    for (int i = 0; i < 600; ++i)
+    {
+        rig.run(1);
+        trace.push_back(rig.wind.pressureAt(core::WindchestId{ 0 }, 0));
+    }
+
+    const float lowest  = *std::min_element(trace.begin(), trace.end());
+    const float settled = trace.back();
+
+    // It went BELOW where it settles -- that is the whole claim, and a first-order
+    // reservoir cannot produce it: monotone approach never passes its target.
+    INFO("resting " << restingPa << " Pa, trough " << lowest << " Pa, settled "
+                    << settled << " Pa");
+    CHECK(lowest < settled);
+
+    // And came back up past the trough, which is the bounce rather than a drift.
+    const auto troughAt = static_cast<std::size_t>(
+        std::min_element(trace.begin(), trace.end()) - trace.begin());
+    REQUIRE(troughAt + 1 < trace.size());
+    const float reboundPeak = *std::max_element(trace.begin() + static_cast<long>(troughAt),
+                                                trace.end());
+    CHECK(reboundPeak > lowest);
+
+    // The overshoot is a real fraction of the sag, not a rounding wobble: at the
+    // demo organ's damping of 0.45 the plate passes its target by about a fifth of
+    // the step.
+    const float step = settled - lowest;
+    const float sag  = restingPa - settled;
+    //
+    // Measured on the demo organ: it rests at 980 Pa, a full chord settles it at
+    // 966.8, and the plate passes that on the way down to 964.1 -- 2.70 Pa beyond
+    // a 13.18 Pa sag, which is the 20.5% the theory gives for a damping of 0.45.
+    INFO("sag " << sag << " Pa, overshoot past it " << step << " Pa");
+    REQUIRE(sag > 0.0f);
+    CHECK(step > sag * 0.05f);
+
+    // Still a well-winded instrument: the bounce must not take it somewhere a
+    // reservoir would never go.
+    CHECK(lowest > restingPa * 0.85f);
+}
+
 TEST_CASE("The tremulant reaches the pipes", "[wind][organ][tremulant]")
 {
     // The console has been calling caeciliaSetTremulant since the page was written.

@@ -26,6 +26,21 @@ WindModelConfig configFromOrgan(const model::Organ& organ)
         bellows.nominalPressurePa = c.nominalPressurePa > bellows.nominalPressurePa
                                   ? c.nominalPressurePa
                                   : bellows.nominalPressurePa;
+    // The plate has mass. A chord landing on this reservoir drops it, past the
+    // new pressure and back, a few times before it settles -- and every pipe on it
+    // goes flat, quiet and dull in time with the bounce, because pitch, level,
+    // brightness and speech all track the deviation.
+    //
+    // Four and a half hertz for a reservoir of this size, and a damping that lets
+    // it ring for about two cycles: enough that a full chord is heard to land on
+    // the wind rather than merely to lower it, and not so much that the instrument
+    // sounds out of regulation. A real organ's number is a property of the
+    // reservoir, so this belongs to the instrument and not to the class default --
+    // which stays at zero, i.e. the first-order behaviour, for every caller that
+    // has not thought about it.
+    bellows.plateResonanceHz = 4.5f;
+    bellows.plateDamping     = 0.45f;
+
     cfg.bellows.push_back(bellows);
 
     for (const model::Windchest& c : chests)

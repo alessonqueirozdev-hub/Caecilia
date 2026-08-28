@@ -47,6 +47,28 @@ struct BellowsConfig
     float compliance        = 1.0f;  ///< Reservoir volume compliance (consistent units); larger = slower.
     float feedConductance   = 4.0f;  ///< Regulator/valve stiffness: flow per Pa of deficit. Larger = stiffer wind.
     float leak              = 0.0f;  ///< Passive leak conductance (reserved for phase-2 refinement).
+
+    /// Natural frequency of the top plate on its air spring, in hertz.
+    ///
+    /// The plate has mass, so the reservoir is a second-order system: a chord
+    /// landing on it does not slide to the new pressure, it drops past and comes
+    /// back. Two to eight hertz covers what real reservoirs do -- a large
+    /// Cavaillé-Coll one is slow and heavy, a small chest-mounted one is quick.
+    ///
+    /// ZERO disables the plate entirely and the bellows is the first-order
+    /// relaxation it always was, bit for bit. That is the default so that every
+    /// caller which has not thought about it is unaffected; an instrument that
+    /// wants a living reservoir asks for one.
+    float plateResonanceHz  = 0.0f;
+
+    /// Damping ratio of that plate. Below 1 it rings; at 1 it is critical.
+    ///
+    /// A well-regulated organ barely moves (0.6 and up); a lively one rings for a
+    /// couple of cycles (0.2 to 0.4). Values at or above 1 are clamped just under
+    /// it -- an overdamped reservoir is indistinguishable from a critically damped
+    /// one at these frequencies, and the exact solution below is the underdamped
+    /// one.
+    float plateDamping      = 0.45f;
 };
 
 /**
