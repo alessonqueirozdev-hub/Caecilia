@@ -102,6 +102,23 @@ public:
      */
     [[nodiscard]] static std::string serialize(const OrganDefinition& definition,
                                                OrganFileFormat format = OrganFileFormat::Json);
+
+    /**
+     * @brief The inverse of @ref compile: an organ back to an editable definition.
+     * @return A definition that compiles to an equivalent organ.
+     *
+     * What it is for: the shipping instrument is built in C++ by DemoOrgan.cpp, so
+     * without this it could not be exported and the file format had never been
+     * shown able to express it. A format that cannot describe the one organ that
+     * exists is a format nobody should be asked to write against.
+     *
+     * It recovers the DOCUMENT, not the organ: dense ids become the names they
+     * were resolved from, and generated pipes are dropped because the document
+     * never had them -- a rank's compass and voicing are what produce them.
+     *
+     * Not real-time safe.
+     */
+    [[nodiscard]] static OrganDefinition definitionFrom(const Organ& organ);
 };
 
 } // namespace caecilia::model

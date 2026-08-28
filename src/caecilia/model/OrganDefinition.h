@@ -92,7 +92,16 @@ struct StopDef
     std::string  pitchClass = "Unison";    ///< Parsed via @ref pitchClassFromString.
     std::string  role       = "Foundation";///< Parsed via @ref chorusRoleFromString.
     std::string  division;                 ///< Name reference into @c divisions.
-    std::string  rank;                     ///< Name reference into @c ranks.
+
+    /// Reference into @c ranks: a bare rank name, or "windchest/rank" when the
+    /// bare name is ambiguous.
+    ///
+    /// Rank names are NOT unique, because on a real organ they are not: the same
+    /// Trompette 8 appears on two manuals as two different ranks of pipes, and
+    /// this instrument's own demo organ has five such pairs. Qualifying by the
+    /// windchest is what tells them apart, and it is only needed where the bare
+    /// name would be ambiguous -- most of a document uses bare names.
+    std::string  rank;
     /// Constituent footages for a compound stop; empty for a single-rank stop.
     std::vector<std::pair<std::int32_t, std::int32_t>> mixture;
 };
@@ -158,6 +167,29 @@ struct OrganDefinition
 [[nodiscard]] std::optional<core::PitchClass>  pitchClassFromString(std::string_view s);
 [[nodiscard]] std::optional<DivisionKind>      divisionKindFromString(std::string_view s);
 [[nodiscard]] std::optional<CouplerKind>       couplerKindFromString(std::string_view s);
+
+/**
+ * @brief Resolve a rank reference against a definition's ranks.
+ * @param ranks     The definition's ranks.
+ * @param reference A bare rank name, or "windchest/rank".
+ * @return The index into @p ranks, or nullopt when nothing matches or more than
+ *         one does. The two failures are different and the caller should say so.
+ */
+[[nodiscard]] std::optional<std::size_t> findRank(const std::vector<RankDef>& ranks,
+                                                  std::string_view reference);
+
+/// @return How many ranks a bare-or-qualified reference matches.
+[[nodiscard]] std::size_t countRankMatches(const std::vector<RankDef>& ranks,
+                                           std::string_view reference);
+
+/**
+ * @brief The shortest reference that names @p index unambiguously.
+ *
+ * The bare name when it is unique, "windchest/rank" when it is not. What an
+ * exporter should write, and what keeps a document readable.
+ */
+[[nodiscard]] std::string rankReference(const std::vector<RankDef>& ranks,
+                                        std::size_t index);
 
 [[nodiscard]] std::string toString(core::TonalFamily f);
 [[nodiscard]] std::string toString(core::EngineKind e);

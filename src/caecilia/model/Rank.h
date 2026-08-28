@@ -84,6 +84,9 @@ public:
     void setSampleSet(SampleSetDescriptor s) { sampleSet_ = std::move(s); }
     void setBaseSpatial(const PipeSpatial& s) { baseSpatial_ = s; }
 
+    /// @return Where this rank sits in the case, before the per-pipe scatter.
+    [[nodiscard]] const PipeSpatial& baseSpatial() const noexcept { return baseSpatial_; }
+
     /**
      * @brief Materialise one @c Pipe per note in the compass.
      * @param referenceA4Hz A-reference used for the nominal equal-temperament

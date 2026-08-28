@@ -5,6 +5,7 @@
 
 #include "caecilia/model/Json.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <cstdint>
@@ -540,7 +541,16 @@ CompileResult OrganLoader::compile(const OrganDefinition& definition)
         d.setHasTremulant(dd.tremulant);
         d.setCompass(static_cast<core::MidiNote>(dd.lowNote), static_cast<core::MidiNote>(dd.highNote));
 
-        if (kind == DivisionKind::Manual)
+        // A keyboard for anything an organist plays with, which includes the
+        // PEDALBOARD: it has a compass, it has a MIDI channel, and without one the
+        // channel-to-division map has no entry for it and the pedals cannot be
+        // played at all. Only a Floating division has no keyboard of its own --
+        // that is what floating means.
+        //
+        // compile() built one for DivisionKind::Manual alone, so an organ loaded
+        // from a document came back with one fewer keyboard than the same organ
+        // built in C++. Caught by round-tripping the demo organ through the format.
+        if (kind == DivisionKind::Manual || kind == DivisionKind::Pedal)
         {
             Manual m;
             m.division    = core::DivisionId{id};
@@ -554,6 +564,21 @@ CompileResult OrganLoader::compile(const OrganDefinition& definition)
         divisionIndex.emplace(dd.name, id);
         divisions.push_back(std::move(d));
     }
+
+    // Keyboards in STACKING order, lowest first, which is the order an organist
+    // sees them and the order the console draws them. Compiling them in division
+    // order instead made the vector's meaning depend on the order the document
+    // happened to declare its divisions in -- so the same organ built in C++ and
+    // loaded from a file came back with its keyboards in different positions,
+    // while carrying the same manualIndex on each. The index is the truth; this
+    // makes the vector agree with it.
+    std::sort(manuals.begin(), manuals.end(),
+              [](const Manual& a, const Manual& b)
+              {
+                  if (a.manualIndex != b.manualIndex)
+                      return a.manualIndex < b.manualIndex;
+                  return a.division.value < b.division.value; // stable for a tie
+              });
 
     // --- Stops: id == index; resolve division + rank; register on division --
     std::vector<Stop> stops;
@@ -574,8 +599,8 @@ CompileResult OrganLoader::compile(const OrganDefinition& definition)
             s.setDivision(core::DivisionId{*div});
             divisions[*div].addStop(core::StopId{id});
         }
-        if (const auto rk = indexOf(rankIndex, sd.rank))
-            s.setRank(core::RankId{*rk});
+        if (const auto rk = findRank(definition.ranks, sd.rank))
+            s.setRank(core::RankId{ static_cast<std::uint16_t>(*rk) });
 
         if (!sd.mixture.empty())
         {
@@ -860,6 +885,141 @@ std::string OrganLoader::serialize(const OrganDefinition& definition,
         root.members().emplace_back("couplers", std::move(couplers));
 
     return json::write(root);
+}
+
+OrganDefinition OrganLoader::definitionFrom(const Organ& organ)
+{
+    OrganDefinition def;
+    def.name    = organ.name();
+    def.builder = organ.builder();
+    def.year    = organ.year();
+
+    // Ids are dense indices into these vectors, which is exactly the invariant
+    // compile() established, so resolving one back to a name is a lookup and not
+    // a search.
+    const auto chestName = [&organ](core::WindchestId id) -> std::string
+    {
+        return id.value < organ.windchests().size() ? organ.windchests()[id.value].name
+                                                    : std::string{};
+    };
+    // A stop's rank reference is the SHORTEST unambiguous one -- the bare name
+    // where it is unique, "windchest/rank" where it is not. Most of a document
+    // therefore reads as bare names, and the qualified ones are exactly the places
+    // a reader would otherwise have to guess.
+    const auto rankRef = [&def](core::RankId id) -> std::string
+    {
+        return id.value < def.ranks.size()
+                 ? rankReference(def.ranks, static_cast<std::size_t>(id.value))
+                 : std::string{};
+    };
+    const auto divisionName = [&organ](core::DivisionId id) -> std::string
+    {
+        return id.value < organ.divisions().size() ? organ.divisions()[id.value].name()
+                                                   : std::string{};
+    };
+
+    for (const Windchest& w : organ.windchests())
+    {
+        WindchestDef d;
+        d.name       = w.name;
+        d.pressurePa = w.nominalPressurePa;
+        d.tremulant  = w.hasTremulant;
+        def.windchests.push_back(std::move(d));
+    }
+
+    for (const Rank& r : organ.ranks())
+    {
+        RankDef d;
+        d.name       = r.name();
+        d.family     = toString(r.family());
+        d.engine     = toString(r.engine());
+        d.footageNum = r.footage().num;
+        d.footageDen = r.footage().den;
+        d.windchest  = chestName(r.windchest());
+        d.lowNote    = r.lowNote();
+        d.highNote   = r.highNote();
+        d.pan        = r.baseSpatial().panNorm;
+        d.distanceM  = r.baseSpatial().distanceMeters;
+
+        const RankVoicingSpec& v = r.voicing();
+        d.voicing.chiff               = v.chiffAmount;
+        d.voicing.harmonicDevelopment = v.harmonicDevelopment;
+        d.voicing.brightness          = v.brightness;
+        d.voicing.windSensitivity     = v.windSensitivity;
+        d.voicing.detuneScatterCents  = v.detuneScatterCents;
+        d.voicing.levelScatterDb      = v.levelScatterDb;
+        d.voicing.brightnessScatter   = v.brightnessScatter;
+        d.voicing.attackScatterMs     = v.attackScatterMs;
+
+        if (r.hasSamples())
+        {
+            const SampleSetDescriptor& s = r.sampleSet();
+            SampleSetDef sd;
+            sd.resourceToken    = s.resourceToken;
+            sd.sourceSampleRate = s.sourceSampleRateHz;
+            sd.channels         = s.channelCount;
+            sd.baseNote         = s.baseNote;
+            sd.streaming        = s.streaming;
+            sd.loopStartFrame   = s.loopStartFrame;
+            sd.loopEndFrame     = s.loopEndFrame;
+            d.sampleSet         = sd;
+        }
+
+        def.ranks.push_back(std::move(d));
+    }
+
+    for (const Division& v : organ.divisions())
+    {
+        DivisionDef d;
+        d.name      = v.name();
+        d.kind      = toString(v.kind());
+        d.lowNote   = v.lowNote();
+        d.highNote  = v.highNote();
+        d.enclosed  = v.isEnclosed();
+        d.tremulant = v.hasTremulant();
+
+        // The manual keyboard is a separate object in the compiled organ and a
+        // pair of fields on the division in the document, which is where a person
+        // would expect to write them.
+        for (const Manual& m : organ.manuals())
+            if (m.division.value == v.id().value)
+            {
+                d.manualIndex = m.manualIndex;
+                d.midiChannel = m.midiChannel;
+                break;
+            }
+
+        def.divisions.push_back(std::move(d));
+    }
+
+    for (const Stop& s : organ.stops())
+    {
+        StopDef d;
+        d.name       = s.name();
+        d.family     = toString(s.family());
+        d.footageNum = s.footage().num;
+        d.footageDen = s.footage().den;
+        d.pitchClass = toString(s.pitchClass());
+        d.role       = toString(s.role());
+        d.division   = divisionName(s.division());
+        d.rank       = rankRef(s.rank());
+        for (const core::Footage f : s.mixtureComposition())
+            d.mixture.emplace_back(f.num, f.den);
+        def.stops.push_back(std::move(d));
+    }
+
+    for (const Coupler& c : organ.couplers())
+    {
+        CouplerDef d;
+        d.name        = c.name();
+        d.from        = divisionName(c.from());
+        d.to          = divisionName(c.to());
+        d.octaveShift = c.octaveShiftSemitones();
+        d.kind        = toString(c.kind());
+        def.couplers.push_back(std::move(d));
+    }
+
+    return def;
 }
 
 } // namespace caecilia::model

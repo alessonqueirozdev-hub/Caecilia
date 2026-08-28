@@ -19,6 +19,7 @@
 // names the field and the line is most of what makes it fixable.
 //
 
+#include "caecilia/model/DemoOrgan.h"
 #include "caecilia/model/Organ.h"
 #include "caecilia/model/OrganDefinition.h"
 #include "caecilia/model/OrganLoader.h"
@@ -336,6 +337,127 @@ TEST_CASE("A format with no reader says so rather than guessing",
     model::OrganDefinition def;
     def.name = "X";
     CHECK(model::OrganLoader::serialize(def, model::OrganFileFormat::Yaml).empty());
+}
+
+TEST_CASE("The format can express the organ this instrument actually ships",
+          "[model][organfile][regression]")
+{
+    // The strongest thing that can be said about a file format: the one organ
+    // that exists survives a round trip through it.
+    //
+    // The demo organ is built in C++ by DemoOrgan.cpp -- three divisions,
+    // twenty-six stops, mixtures with their compositions, an enclosed Récit with
+    // a tremulant, couplers. If the document schema could not carry all of that,
+    // then it is a format for toy organs and nobody should be asked to write
+    // against it. This is the test that says otherwise, and it is the reason
+    // definitionFrom exists at all.
+    const model::Organ           original = model::buildCaeciliaDemoOrgan();
+    const model::OrganDefinition def      = model::OrganLoader::definitionFrom(original);
+
+    const std::string written = model::OrganLoader::serialize(def);
+    REQUIRE_FALSE(written.empty());
+
+    const model::ParseResult parsed =
+        model::OrganLoader::parse(written, model::OrganFileFormat::Json, "caecilia.organ.json");
+    INFO(describe(parsed.diagnostics));
+    REQUIRE(parsed.ok());
+
+    const model::CompileResult rebuilt = model::OrganLoader::compile(*parsed.definition);
+    INFO(describe(rebuilt.diagnostics));
+    REQUIRE(rebuilt.ok());
+
+    const model::Organ& copy = *rebuilt.organ;
+
+    CHECK(copy.name()    == original.name());
+    CHECK(copy.builder() == original.builder());
+    CHECK(copy.year()    == original.year());
+    REQUIRE(copy.windchests().size() == original.windchests().size());
+    REQUIRE(copy.ranks().size()      == original.ranks().size());
+    REQUIRE(copy.stops().size()      == original.stops().size());
+    REQUIRE(copy.divisions().size()  == original.divisions().size());
+    REQUIRE(copy.manuals().size()    == original.manuals().size());
+    REQUIRE(copy.couplers().size()   == original.couplers().size());
+
+    for (std::size_t i = 0; i < original.windchests().size(); ++i)
+    {
+        INFO("windchest " << i << " '" << original.windchests()[i].name << "'");
+        CHECK(copy.windchests()[i].name == original.windchests()[i].name);
+        CHECK(copy.windchests()[i].nominalPressurePa
+              == Approx(original.windchests()[i].nominalPressurePa));
+        CHECK(copy.windchests()[i].hasTremulant == original.windchests()[i].hasTremulant);
+    }
+
+    for (std::size_t i = 0; i < original.ranks().size(); ++i)
+    {
+        const model::Rank& a = original.ranks()[i];
+        const model::Rank& b = copy.ranks()[i];
+        INFO("rank " << i << " '" << a.name() << "'");
+        CHECK(b.name()      == a.name());
+        CHECK(b.family()    == a.family());
+        CHECK(b.engine()    == a.engine());
+        CHECK(b.footage()   == a.footage());
+        CHECK(b.windchest().value == a.windchest().value);
+        CHECK(b.lowNote()   == a.lowNote());
+        CHECK(b.highNote()  == a.highNote());
+        CHECK(b.pipeCount() == a.pipeCount()); // the pipes the compass generates
+        CHECK(b.voicing().brightness == Approx(a.voicing().brightness));
+        CHECK(b.voicing().chiffAmount == Approx(a.voicing().chiffAmount));
+    }
+
+    for (std::size_t i = 0; i < original.stops().size(); ++i)
+    {
+        const model::Stop& a = original.stops()[i];
+        const model::Stop& b = copy.stops()[i];
+        INFO("stop " << i << " '" << a.name() << "'");
+        CHECK(b.name()       == a.name());
+        CHECK(b.family()     == a.family());
+        CHECK(b.footage()    == a.footage());
+        CHECK(b.pitchClass() == a.pitchClass());
+        CHECK(b.role()       == a.role());
+        CHECK(b.division().value == a.division().value);
+        CHECK(b.rank().value     == a.rank().value);
+        // The mixture compositions, which are what make a Fourniture a Fourniture.
+        REQUIRE(b.mixtureComposition().size() == a.mixtureComposition().size());
+        for (std::size_t m = 0; m < a.mixtureComposition().size(); ++m)
+            CHECK(b.mixtureComposition()[m] == a.mixtureComposition()[m]);
+    }
+
+    for (std::size_t i = 0; i < original.divisions().size(); ++i)
+    {
+        const model::Division& a = original.divisions()[i];
+        const model::Division& b = copy.divisions()[i];
+        INFO("division " << i << " '" << a.name() << "'");
+        CHECK(b.name()        == a.name());
+        CHECK(b.kind()        == a.kind());
+        CHECK(b.isEnclosed()  == a.isEnclosed());
+        CHECK(b.hasTremulant()== a.hasTremulant());
+        CHECK(b.lowNote()     == a.lowNote());
+        CHECK(b.highNote()    == a.highNote());
+        CHECK(b.stopCount()   == a.stopCount());
+    }
+
+    for (std::size_t i = 0; i < original.manuals().size(); ++i)
+    {
+        INFO("manual " << i);
+        CHECK(copy.manuals()[i].division.value == original.manuals()[i].division.value);
+        CHECK(copy.manuals()[i].manualIndex    == original.manuals()[i].manualIndex);
+        CHECK(copy.manuals()[i].midiChannel    == original.manuals()[i].midiChannel);
+    }
+
+    for (std::size_t i = 0; i < original.couplers().size(); ++i)
+    {
+        const model::Coupler& a = original.couplers()[i];
+        const model::Coupler& b = copy.couplers()[i];
+        INFO("coupler " << i << " '" << a.name() << "'");
+        CHECK(b.name() == a.name());
+        CHECK(b.from().value == a.from().value);
+        CHECK(b.to().value   == a.to().value);
+        CHECK(b.octaveShiftSemitones() == a.octaveShiftSemitones());
+        CHECK(b.kind() == a.kind());
+    }
+
+    // And the document is stable: exporting the rebuilt organ gives the same text.
+    CHECK(model::OrganLoader::serialize(model::OrganLoader::definitionFrom(copy)) == written);
 }
 
 TEST_CASE("An empty document is an empty organ, not an error", "[model][organfile]")

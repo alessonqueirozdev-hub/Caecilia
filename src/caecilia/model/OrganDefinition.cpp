@@ -200,16 +200,17 @@ LoadDiagnostics OrganDefinition::validate() const
             diag.error("Duplicate windchest name '" + w.name + "'.", "windchest");
     }
 
-    std::unordered_set<std::string> rankNames;
     for (std::size_t i = 0; i < ranks.size(); ++i)
     {
         const RankDef& r = ranks[i];
         const std::string ctx = "rank[" + std::to_string(i) + "] '" + r.name + "'";
 
+        // Rank names are NOT required to be unique: on a real organ the same
+        // Trompette 8 appears on two manuals as two different ranks of pipes, and
+        // this instrument's own demo organ has five such pairs. What must be
+        // unique is a REFERENCE, and that is checked where references are made.
         if (r.name.empty())
             diag.error("Rank with empty name.", ctx);
-        else if (!rankNames.insert(r.name).second)
-            diag.error("Duplicate rank name '" + r.name + "'.", ctx);
 
         if (!tonalFamilyFromString(r.family))
             diag.warning("Unknown tonal family '" + r.family + "' (treated as Undefined).", ctx);
@@ -249,8 +250,13 @@ LoadDiagnostics OrganDefinition::validate() const
             diag.error("Stop footage has zero denominator.", ctx);
         if (divisionNames.find(s.division) == divisionNames.end())
             diag.error("Stop references unknown division '" + s.division + "'.", ctx);
-        if (rankNames.find(s.rank) == rankNames.end())
+        const std::size_t matches = countRankMatches(ranks, s.rank);
+        if (matches == 0)
             diag.error("Stop references unknown rank '" + s.rank + "'.", ctx);
+        else if (matches > 1)
+            diag.error("Stop references rank '" + s.rank + "', which names "
+                       + std::to_string(matches)
+                       + " ranks. Qualify it as \"windchest/rank\".", ctx);
     }
 
     for (std::size_t i = 0; i < couplers.size(); ++i)
@@ -267,6 +273,65 @@ LoadDiagnostics OrganDefinition::validate() const
     }
 
     return diag;
+}
+
+std::size_t countRankMatches(const std::vector<RankDef>& ranks,
+                             std::string_view reference)
+{
+    // A qualified reference names exactly one rank or none: the chest and the name
+    // together are unique, because chest names are.
+    const std::size_t slash = reference.find('/');
+    if (slash != std::string_view::npos)
+    {
+        const std::string_view chest = reference.substr(0, slash);
+        const std::string_view name  = reference.substr(slash + 1);
+        std::size_t n = 0;
+        for (const RankDef& r : ranks)
+            if (r.windchest == chest && r.name == name)
+                ++n;
+        return n;
+    }
+
+    std::size_t n = 0;
+    for (const RankDef& r : ranks)
+        if (r.name == reference)
+            ++n;
+    return n;
+}
+
+std::optional<std::size_t> findRank(const std::vector<RankDef>& ranks,
+                                    std::string_view reference)
+{
+    if (countRankMatches(ranks, reference) != 1)
+        return std::nullopt;
+
+    const std::size_t slash = reference.find('/');
+    for (std::size_t i = 0; i < ranks.size(); ++i)
+    {
+        if (slash != std::string_view::npos)
+        {
+            if (ranks[i].windchest == reference.substr(0, slash)
+                && ranks[i].name == reference.substr(slash + 1))
+                return i;
+        }
+        else if (ranks[i].name == reference)
+        {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+std::string rankReference(const std::vector<RankDef>& ranks, std::size_t index)
+{
+    if (index >= ranks.size())
+        return {};
+
+    const RankDef& r = ranks[index];
+    if (countRankMatches(ranks, r.name) == 1)
+        return r.name; // unambiguous, so say it the short way
+
+    return r.windchest + "/" + r.name;
 }
 
 } // namespace caecilia::model
