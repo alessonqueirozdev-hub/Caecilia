@@ -3,6 +3,10 @@
 
 #include "caecilia/model/OrganLoader.h"
 
+#include "caecilia/model/Json.h"
+
+#include <cmath>
+
 #include <cstdint>
 #include <unordered_map>
 
@@ -49,19 +53,414 @@ SampleSetDescriptor toSampleDescriptor(const SampleSetDef& d)
 
 } // namespace
 
+namespace
+{
+// ---------------------------------------------------------------------------
+// Reading a document into an OrganDefinition.
+//
+// Every field is optional and every one has a default in the *Def structs, so a
+// minimal organ file is short and a full one is explicit. What is NOT tolerated
+// is a field of the wrong TYPE or an enum token that is not one: those are
+// mistakes a builder wants told about, and defaulting past them produces an organ
+// that is quietly not the one they described.
+// ---------------------------------------------------------------------------
+
+/// Accumulates diagnostics against a path like "ranks[2].windchest".
+class Reader
+{
+public:
+    Reader(LoadDiagnostics& diagnostics, std::string source)
+        : diag_(diagnostics), source_(std::move(source))
+    {
+    }
+
+    [[nodiscard]] bool failed() const noexcept { return failed_; }
+
+    void error(const std::string& path, const std::string& message,
+               const json::Value* at = nullptr)
+    {
+        std::string where = source_ + ": " + path;
+        if (at != nullptr)
+            where += " (line " + std::to_string(at->position().line) + ")";
+        diag_.error(message, where);
+        failed_ = true;
+    }
+
+    /// A string field. Absent leaves @p out alone; present-but-not-a-string is an
+    /// error rather than a silent default.
+    void str(const json::Value& obj, const char* key, const std::string& path,
+             std::string& out)
+    {
+        const json::Value* v = obj.find(key);
+        if (v == nullptr)
+            return;
+        if (!v->isString())
+        {
+            error(path + "." + key, "expected a string", v);
+            return;
+        }
+        out = v->asString();
+    }
+
+    void number(const json::Value& obj, const char* key, const std::string& path,
+                float& out)
+    {
+        const json::Value* v = obj.find(key);
+        if (v == nullptr)
+            return;
+        if (!v->isNumber())
+        {
+            error(path + "." + key, "expected a number", v);
+            return;
+        }
+        out = static_cast<float>(v->asNumber());
+    }
+
+    void number(const json::Value& obj, const char* key, const std::string& path,
+                double& out)
+    {
+        const json::Value* v = obj.find(key);
+        if (v == nullptr)
+            return;
+        if (!v->isNumber())
+        {
+            error(path + "." + key, "expected a number", v);
+            return;
+        }
+        out = v->asNumber();
+    }
+
+    /// An integer field. A number with a fraction is a mistake here -- a note
+    /// number or a rank count is a whole thing -- and saying so beats truncating.
+    template <typename Int>
+    void integer(const json::Value& obj, const char* key, const std::string& path,
+                 Int& out)
+    {
+        const json::Value* v = obj.find(key);
+        if (v == nullptr)
+            return;
+        if (!v->isNumber())
+        {
+            error(path + "." + key, "expected a whole number", v);
+            return;
+        }
+        const double d = v->asNumber();
+        if (d != std::floor(d))
+        {
+            error(path + "." + key, "expected a whole number", v);
+            return;
+        }
+        out = static_cast<Int>(d);
+    }
+
+    void boolean(const json::Value& obj, const char* key, const std::string& path,
+                 bool& out)
+    {
+        const json::Value* v = obj.find(key);
+        if (v == nullptr)
+            return;
+        if (!v->isBool())
+        {
+            error(path + "." + key, "expected true or false", v);
+            return;
+        }
+        out = v->asBool();
+    }
+
+    /// An enum-valued string, checked against its parser so an unknown token is a
+    /// diagnostic rather than a silent fall back to the default.
+    template <typename Parse>
+    void token(const json::Value& obj, const char* key, const std::string& path,
+               std::string& out, Parse&& parse, const char* what)
+    {
+        const json::Value* v = obj.find(key);
+        if (v == nullptr)
+            return;
+        if (!v->isString())
+        {
+            error(path + "." + key, "expected a string", v);
+            return;
+        }
+        if (!parse(v->asString()).has_value())
+        {
+            error(path + "." + key,
+                  "'" + v->asString() + "' is not a known " + what, v);
+            return;
+        }
+        out = v->asString();
+    }
+
+    /// An array of objects, each handed to @p each with its own path.
+    template <typename Each>
+    void objects(const json::Value& root, const char* key, Each&& each)
+    {
+        const json::Value* arr = root.find(key);
+        if (arr == nullptr)
+            return;
+        if (!arr->isArray())
+        {
+            error(key, "expected an array", arr);
+            return;
+        }
+        for (std::size_t i = 0; i < arr->items().size(); ++i)
+        {
+            const json::Value& item = arr->items()[i];
+            const std::string  path = std::string(key) + "[" + std::to_string(i) + "]";
+            if (!item.isObject())
+            {
+                error(path, "expected an object", &item);
+                continue;
+            }
+            each(item, path);
+        }
+    }
+
+private:
+    LoadDiagnostics& diag_;
+    std::string      source_;
+    bool             failed_ = false;
+};
+
+void readVoicing(Reader& r, const json::Value& obj, const std::string& path,
+                 VoicingDef& v)
+{
+    const json::Value* block = obj.find("voicing");
+    if (block == nullptr)
+        return;
+    if (!block->isObject())
+    {
+        r.error(path + ".voicing", "expected an object", block);
+        return;
+    }
+    const std::string p = path + ".voicing";
+    r.number(*block, "chiff",               p, v.chiff);
+    r.number(*block, "harmonicDevelopment", p, v.harmonicDevelopment);
+    r.number(*block, "brightness",          p, v.brightness);
+    r.number(*block, "windSensitivity",     p, v.windSensitivity);
+    r.number(*block, "detuneScatterCents",  p, v.detuneScatterCents);
+    r.number(*block, "levelScatterDb",      p, v.levelScatterDb);
+    r.number(*block, "brightnessScatter",   p, v.brightnessScatter);
+    r.number(*block, "attackScatterMs",     p, v.attackScatterMs);
+}
+
+void readSampleSet(Reader& r, const json::Value& obj, const std::string& path,
+                   std::optional<SampleSetDef>& out)
+{
+    const json::Value* block = obj.find("sampleSet");
+    if (block == nullptr)
+        return;
+    if (!block->isObject())
+    {
+        r.error(path + ".sampleSet", "expected an object", block);
+        return;
+    }
+
+    SampleSetDef       s;
+    const std::string  p = path + ".sampleSet";
+    r.str(*block, "resource",   p, s.resourceToken);
+    r.number(*block, "sampleRate", p, s.sourceSampleRate);
+    r.integer(*block, "channels",   p, s.channels);
+    r.integer(*block, "baseNote",   p, s.baseNote);
+    r.boolean(*block, "streaming",  p, s.streaming);
+    r.integer(*block, "loopStart",  p, s.loopStartFrame);
+    r.integer(*block, "loopEnd",    p, s.loopEndFrame);
+    out = s;
+}
+
+/// A footage, written either as a number ("8") or as a pair ("[8, 3]" for 2 2/3').
+///
+/// Both spellings because both are natural: an 8' rank is a number and a 2 2/3'
+/// one is a ratio, and forcing the first to be written [8, 1] would make every
+/// ordinary rank look like an exception.
+void readFootage(Reader& r, const json::Value& obj, const char* key,
+                 const std::string& path, std::int32_t& num, std::int32_t& den)
+{
+    const json::Value* v = obj.find(key);
+    if (v == nullptr)
+        return;
+
+    if (v->isNumber())
+    {
+        const double d = v->asNumber();
+        if (d != std::floor(d) || d <= 0.0)
+        {
+            r.error(path + "." + key, "expected a whole number of feet", v);
+            return;
+        }
+        num = static_cast<std::int32_t>(d);
+        den = 1;
+        return;
+    }
+
+    if (v->isArray() && v->items().size() == 2
+        && v->items()[0].isNumber() && v->items()[1].isNumber())
+    {
+        const double n = v->items()[0].asNumber();
+        const double d = v->items()[1].asNumber();
+        if (n != std::floor(n) || d != std::floor(d) || n <= 0.0 || d <= 0.0)
+        {
+            r.error(path + "." + key, "a footage ratio must be whole and positive", v);
+            return;
+        }
+        num = static_cast<std::int32_t>(n);
+        den = static_cast<std::int32_t>(d);
+        return;
+    }
+
+    r.error(path + "." + key,
+            "expected a number of feet, or a [numerator, denominator] pair", v);
+}
+} // namespace
+
 ParseResult OrganLoader::parse(std::string_view content,
                                OrganFileFormat format,
                                std::string_view sourceName)
 {
     ParseResult result;
-    (void) content;
-    (void) format;
+    const std::string source =
+        sourceName.empty() ? std::string{"<memory>"} : std::string{sourceName};
 
-    // TODO(phase model): implement the JSON/YAML reader that fills an
-    // OrganDefinition from `content`. Until then the loader compiles hand-built
-    // definitions and reports parsing as unimplemented so callers fail loudly.
-    result.diagnostics.error("Organ-file parsing is not yet implemented.",
-                             sourceName.empty() ? std::string{"<memory>"} : std::string{sourceName});
+    // Sniffing is deliberately crude and deliberately documented: a document that
+    // does not begin with '{' is not JSON, and there is no YAML reader to fall
+    // back to, so saying so is more useful than guessing.
+    OrganFileFormat resolved = format;
+    if (resolved == OrganFileFormat::Auto)
+    {
+        std::size_t i = 0;
+        while (i < content.size()
+               && (content[i] == ' ' || content[i] == '\t'
+                   || content[i] == '\n' || content[i] == '\r'))
+            ++i;
+        resolved = (i < content.size() && content[i] == '{') ? OrganFileFormat::Json
+                                                             : OrganFileFormat::Yaml;
+    }
+
+    if (resolved != OrganFileFormat::Json)
+    {
+        result.diagnostics.error("Only JSON organ documents are supported.", source);
+        return result;
+    }
+
+    json::Error jsonError;
+    const std::optional<json::Value> root = json::parse(content, jsonError);
+    if (!root.has_value())
+    {
+        result.diagnostics.error(jsonError.message,
+                                 source + ": line " + std::to_string(jsonError.where.line)
+                                        + ", column " + std::to_string(jsonError.where.column));
+        return result;
+    }
+    if (!root->isObject())
+    {
+        result.diagnostics.error("An organ document must be a JSON object.", source);
+        return result;
+    }
+
+    Reader          r(result.diagnostics, source);
+    OrganDefinition def;
+
+    r.str(*root, "name",    "", def.name);
+    r.str(*root, "builder", "", def.builder);
+    r.integer(*root, "year", "", def.year);
+
+    r.objects(*root, "windchests", [&](const json::Value& o, const std::string& path)
+    {
+        WindchestDef w;
+        r.str(o, "name", path, w.name);
+        r.number(o, "pressurePa", path, w.pressurePa);
+        r.boolean(o, "tremulant", path, w.tremulant);
+        def.windchests.push_back(std::move(w));
+    });
+
+    r.objects(*root, "ranks", [&](const json::Value& o, const std::string& path)
+    {
+        RankDef k;
+        r.str(o, "name", path, k.name);
+        r.token(o, "family", path, k.family, tonalFamilyFromString, "tonal family");
+        r.token(o, "engine", path, k.engine, engineKindFromString, "engine kind");
+        readFootage(r, o, "footage", path, k.footageNum, k.footageDen);
+        r.str(o, "windchest", path, k.windchest);
+        r.integer(o, "lowNote",  path, k.lowNote);
+        r.integer(o, "highNote", path, k.highNote);
+        r.number(o, "pan",       path, k.pan);
+        r.number(o, "distanceM", path, k.distanceM);
+        readVoicing(r, o, path, k.voicing);
+        readSampleSet(r, o, path, k.sampleSet);
+        def.ranks.push_back(std::move(k));
+    });
+
+    r.objects(*root, "divisions", [&](const json::Value& o, const std::string& path)
+    {
+        DivisionDef d;
+        r.str(o, "name", path, d.name);
+        r.token(o, "kind", path, d.kind, divisionKindFromString, "division kind");
+        r.integer(o, "lowNote",  path, d.lowNote);
+        r.integer(o, "highNote", path, d.highNote);
+        r.boolean(o, "enclosed",  path, d.enclosed);
+        r.boolean(o, "tremulant", path, d.tremulant);
+        r.integer(o, "manual",      path, d.manualIndex);
+        r.integer(o, "midiChannel", path, d.midiChannel);
+        def.divisions.push_back(std::move(d));
+    });
+
+    r.objects(*root, "stops", [&](const json::Value& o, const std::string& path)
+    {
+        StopDef s;
+        r.str(o, "name", path, s.name);
+        r.token(o, "family", path, s.family, tonalFamilyFromString, "tonal family");
+        readFootage(r, o, "footage", path, s.footageNum, s.footageDen);
+        r.token(o, "pitchClass", path, s.pitchClass, pitchClassFromString, "pitch class");
+        r.token(o, "role", path, s.role, chorusRoleFromString, "chorus role");
+        r.str(o, "division", path, s.division);
+        r.str(o, "rank",     path, s.rank);
+
+        // A compound stop names its constituent footages, in the same two
+        // spellings a rank's footage uses.
+        if (const json::Value* mix = o.find("mixture"))
+        {
+            if (!mix->isArray())
+            {
+                r.error(path + ".mixture", "expected an array of footages", mix);
+            }
+            else
+            {
+                for (std::size_t m = 0; m < mix->items().size(); ++m)
+                {
+                    json::Value wrapper = json::Value::object();
+                    wrapper.members().emplace_back("f", mix->items()[m]);
+
+                    std::int32_t num = 0, den = 1;
+                    readFootage(r, wrapper, "f",
+                                path + ".mixture[" + std::to_string(m) + "]", num, den);
+                    if (num > 0)
+                        s.mixture.emplace_back(num, den);
+                }
+            }
+        }
+        def.stops.push_back(std::move(s));
+    });
+
+    r.objects(*root, "couplers", [&](const json::Value& o, const std::string& path)
+    {
+        CouplerDef c;
+        r.str(o, "name", path, c.name);
+        r.str(o, "from", path, c.from);
+        r.str(o, "to",   path, c.to);
+        r.integer(o, "octaveShift", path, c.octaveShift);
+        r.token(o, "kind", path, c.kind, couplerKindFromString, "coupler kind");
+        def.couplers.push_back(std::move(c));
+    });
+
+    if (r.failed())
+        return result; // definition stays absent; every problem is already reported
+
+    // Structural validation runs here rather than only in compile(), so a caller
+    // that parses without compiling still learns about a dangling reference.
+    result.diagnostics.merge(def.validate());
+    if (result.diagnostics.hasErrors())
+        return result;
+
+    result.definition = std::move(def);
     return result;
 }
 
@@ -255,13 +654,212 @@ CompileResult OrganLoader::load(std::string_view content,
     return result;
 }
 
-std::string OrganLoader::serialize(const OrganDefinition& definition, OrganFileFormat format)
+namespace
 {
-    (void) definition;
-    (void) format;
-    // TODO(phase model): implement the JSON/YAML writer (round-trips
-    // an OrganDefinition back to editable document text).
-    return {};
+// ---------------------------------------------------------------------------
+// Writing a definition back out.
+//
+// Only what differs from the default is written. An organ file is a document a
+// person reads, and a rank that spells out eight voicing parameters it did not
+// choose buries the two it did.
+// ---------------------------------------------------------------------------
+
+void put(json::Value& obj, const char* key, const std::string& v)
+{
+    obj.members().emplace_back(key, json::Value(v));
+}
+
+void put(json::Value& obj, const char* key, double v)
+{
+    obj.members().emplace_back(key, json::Value(v));
+}
+
+void put(json::Value& obj, const char* key, bool v)
+{
+    obj.members().emplace_back(key, json::Value(v));
+}
+
+/// A footage: a bare number when it is whole feet, a pair when it is a ratio --
+/// the two spellings the reader accepts, chosen the way a builder would write it.
+void putFootage(json::Value& obj, const char* key, std::int32_t num, std::int32_t den)
+{
+    if (den == 1)
+    {
+        put(obj, key, static_cast<double>(num));
+        return;
+    }
+    json::Value pair = json::Value::array();
+    pair.items().push_back(json::Value(static_cast<double>(num)));
+    pair.items().push_back(json::Value(static_cast<double>(den)));
+    obj.members().emplace_back(key, std::move(pair));
+}
+
+json::Value voicingToJson(const VoicingDef& v)
+{
+    const VoicingDef d{}; // the defaults, to compare against
+    json::Value      out = json::Value::object();
+
+    if (v.chiff               != d.chiff)               put(out, "chiff", v.chiff);
+    if (v.harmonicDevelopment != d.harmonicDevelopment) put(out, "harmonicDevelopment", v.harmonicDevelopment);
+    if (v.brightness          != d.brightness)          put(out, "brightness", v.brightness);
+    if (v.windSensitivity     != d.windSensitivity)     put(out, "windSensitivity", v.windSensitivity);
+    if (v.detuneScatterCents  != d.detuneScatterCents)  put(out, "detuneScatterCents", v.detuneScatterCents);
+    if (v.levelScatterDb      != d.levelScatterDb)      put(out, "levelScatterDb", v.levelScatterDb);
+    if (v.brightnessScatter   != d.brightnessScatter)   put(out, "brightnessScatter", v.brightnessScatter);
+    if (v.attackScatterMs     != d.attackScatterMs)     put(out, "attackScatterMs", v.attackScatterMs);
+    return out;
+}
+} // namespace
+
+std::string OrganLoader::serialize(const OrganDefinition& definition,
+                                   OrganFileFormat format)
+{
+    if (format == OrganFileFormat::Yaml)
+        return {}; // no YAML writer; parse() says the same about reading one
+
+    const RankDef     rankDefaults{};
+    const DivisionDef divDefaults{};
+    const StopDef     stopDefaults{};
+    const CouplerDef  couplerDefaults{};
+    const WindchestDef chestDefaults{};
+
+    json::Value root = json::Value::object();
+    put(root, "name", definition.name);
+    if (!definition.builder.empty())
+        put(root, "builder", definition.builder);
+    if (definition.year != 0)
+        put(root, "year", static_cast<double>(definition.year));
+
+    json::Value chests = json::Value::array();
+    for (const WindchestDef& w : definition.windchests)
+    {
+        json::Value o = json::Value::object();
+        put(o, "name", w.name);
+        if (w.pressurePa != chestDefaults.pressurePa)
+            put(o, "pressurePa", w.pressurePa);
+        if (w.tremulant != chestDefaults.tremulant)
+            put(o, "tremulant", w.tremulant);
+        chests.items().push_back(std::move(o));
+    }
+    if (!chests.items().empty())
+        root.members().emplace_back("windchests", std::move(chests));
+
+    json::Value ranks = json::Value::array();
+    for (const RankDef& k : definition.ranks)
+    {
+        json::Value o = json::Value::object();
+        put(o, "name", k.name);
+        put(o, "family", k.family);
+        if (k.engine != rankDefaults.engine)
+            put(o, "engine", k.engine);
+        putFootage(o, "footage", k.footageNum, k.footageDen);
+        if (!k.windchest.empty())
+            put(o, "windchest", k.windchest);
+        if (k.lowNote  != rankDefaults.lowNote)  put(o, "lowNote",  static_cast<double>(k.lowNote));
+        if (k.highNote != rankDefaults.highNote) put(o, "highNote", static_cast<double>(k.highNote));
+        if (k.pan       != rankDefaults.pan)       put(o, "pan", k.pan);
+        if (k.distanceM != rankDefaults.distanceM) put(o, "distanceM", k.distanceM);
+
+        json::Value voicing = voicingToJson(k.voicing);
+        if (!voicing.members().empty())
+            o.members().emplace_back("voicing", std::move(voicing));
+
+        if (k.sampleSet)
+        {
+            const SampleSetDef  s{};
+            json::Value         set = json::Value::object();
+            put(set, "resource", k.sampleSet->resourceToken);
+            if (k.sampleSet->sourceSampleRate != s.sourceSampleRate)
+                put(set, "sampleRate", k.sampleSet->sourceSampleRate);
+            if (k.sampleSet->channels != s.channels)
+                put(set, "channels", static_cast<double>(k.sampleSet->channels));
+            if (k.sampleSet->baseNote != s.baseNote)
+                put(set, "baseNote", static_cast<double>(k.sampleSet->baseNote));
+            if (k.sampleSet->streaming != s.streaming)
+                put(set, "streaming", k.sampleSet->streaming);
+            if (k.sampleSet->loopStartFrame != s.loopStartFrame)
+                put(set, "loopStart", static_cast<double>(k.sampleSet->loopStartFrame));
+            if (k.sampleSet->loopEndFrame != s.loopEndFrame)
+                put(set, "loopEnd", static_cast<double>(k.sampleSet->loopEndFrame));
+            o.members().emplace_back("sampleSet", std::move(set));
+        }
+        ranks.items().push_back(std::move(o));
+    }
+    if (!ranks.items().empty())
+        root.members().emplace_back("ranks", std::move(ranks));
+
+    json::Value divisions = json::Value::array();
+    for (const DivisionDef& d : definition.divisions)
+    {
+        json::Value o = json::Value::object();
+        put(o, "name", d.name);
+        put(o, "kind", d.kind);
+        if (d.lowNote  != divDefaults.lowNote)  put(o, "lowNote",  static_cast<double>(d.lowNote));
+        if (d.highNote != divDefaults.highNote) put(o, "highNote", static_cast<double>(d.highNote));
+        if (d.enclosed  != divDefaults.enclosed)  put(o, "enclosed", d.enclosed);
+        if (d.tremulant != divDefaults.tremulant) put(o, "tremulant", d.tremulant);
+        if (d.manualIndex != divDefaults.manualIndex)
+            put(o, "manual", static_cast<double>(d.manualIndex));
+        if (d.midiChannel != divDefaults.midiChannel)
+            put(o, "midiChannel", static_cast<double>(d.midiChannel));
+        divisions.items().push_back(std::move(o));
+    }
+    if (!divisions.items().empty())
+        root.members().emplace_back("divisions", std::move(divisions));
+
+    json::Value stops = json::Value::array();
+    for (const StopDef& s : definition.stops)
+    {
+        json::Value o = json::Value::object();
+        put(o, "name", s.name);
+        put(o, "family", s.family);
+        putFootage(o, "footage", s.footageNum, s.footageDen);
+        if (s.pitchClass != stopDefaults.pitchClass) put(o, "pitchClass", s.pitchClass);
+        if (s.role       != stopDefaults.role)       put(o, "role", s.role);
+        put(o, "division", s.division);
+        put(o, "rank", s.rank);
+
+        if (!s.mixture.empty())
+        {
+            json::Value mix = json::Value::array();
+            for (const auto& f : s.mixture)
+            {
+                if (f.second == 1)
+                {
+                    mix.items().push_back(json::Value(static_cast<double>(f.first)));
+                }
+                else
+                {
+                    json::Value pair = json::Value::array();
+                    pair.items().push_back(json::Value(static_cast<double>(f.first)));
+                    pair.items().push_back(json::Value(static_cast<double>(f.second)));
+                    mix.items().push_back(std::move(pair));
+                }
+            }
+            o.members().emplace_back("mixture", std::move(mix));
+        }
+        stops.items().push_back(std::move(o));
+    }
+    if (!stops.items().empty())
+        root.members().emplace_back("stops", std::move(stops));
+
+    json::Value couplers = json::Value::array();
+    for (const CouplerDef& c : definition.couplers)
+    {
+        json::Value o = json::Value::object();
+        put(o, "name", c.name);
+        put(o, "from", c.from);
+        put(o, "to",   c.to);
+        if (c.octaveShift != couplerDefaults.octaveShift)
+            put(o, "octaveShift", static_cast<double>(c.octaveShift));
+        if (c.kind != couplerDefaults.kind)
+            put(o, "kind", c.kind);
+        couplers.items().push_back(std::move(o));
+    }
+    if (!couplers.items().empty())
+        root.members().emplace_back("couplers", std::move(couplers));
+
+    return json::write(root);
 }
 
 } // namespace caecilia::model

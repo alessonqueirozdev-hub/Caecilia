@@ -217,18 +217,43 @@ TEST_CASE("A well-formed definition validates cleanly", "[model][loader]")
     CHECK_FALSE(diag.hasErrors());
 }
 
-TEST_CASE("parse and serialize are stubs that fail loudly", "[model][loader]")
+TEST_CASE("A hand-built definition survives a trip through a document",
+          "[model][loader]")
 {
-    // The document reader is not implemented yet; it must report an error
-    // rather than silently return an empty organ.
-    const model::ParseResult parsed = model::OrganLoader::parse("{ \"organ\": true }");
-    CHECK_FALSE(parsed.ok());
-    CHECK(parsed.diagnostics.hasErrors());
+    // This used to assert that parse and serialize were stubs. They are not any
+    // more: the definition this file builds in memory can be written out, read
+    // back and compiled to the same organ. See OrganFileTest.cpp for the document
+    // format itself; what is checked here is that the two halves agree about the
+    // definition the rest of this file has been exercising all along.
+    const model::OrganDefinition original = tests::buildTestDefinition();
 
-    const model::CompileResult loaded = model::OrganLoader::load("anything at all");
-    CHECK_FALSE(loaded.ok());
-    CHECK_FALSE(loaded.organ.has_value());
+    const std::string written = model::OrganLoader::serialize(original);
+    REQUIRE_FALSE(written.empty());
 
-    // The writer is likewise unimplemented and returns empty text.
-    CHECK(model::OrganLoader::serialize(tests::buildTestDefinition()).empty());
+    const model::ParseResult back = model::OrganLoader::parse(written);
+    REQUIRE(back.ok());
+
+    const model::CompileResult a = model::OrganLoader::compile(original);
+    const model::CompileResult b = model::OrganLoader::compile(*back.definition);
+    REQUIRE(a.ok());
+    REQUIRE(b.ok());
+
+    REQUIRE(a.organ->stops().size() == b.organ->stops().size());
+    for (std::size_t i = 0; i < a.organ->stops().size(); ++i)
+    {
+        INFO("stop " << i);
+        CHECK(a.organ->stops()[i].name()     == b.organ->stops()[i].name());
+        CHECK(a.organ->stops()[i].family()   == b.organ->stops()[i].family());
+        CHECK(a.organ->stops()[i].footage()  == b.organ->stops()[i].footage());
+        CHECK(a.organ->stops()[i].division() == b.organ->stops()[i].division());
+    }
+    REQUIRE(a.organ->ranks().size() == b.organ->ranks().size());
+    for (std::size_t i = 0; i < a.organ->ranks().size(); ++i)
+        CHECK(a.organ->ranks()[i].windchest().value == b.organ->ranks()[i].windchest().value);
+
+    // A document with nothing readable in it still fails loudly rather than
+    // returning a silent empty organ.
+    const model::CompileResult nonsense = model::OrganLoader::load("anything at all");
+    CHECK_FALSE(nonsense.ok());
+    CHECK(nonsense.diagnostics.hasErrors());
 }
