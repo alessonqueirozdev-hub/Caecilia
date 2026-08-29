@@ -20,6 +20,7 @@
 //
 
 #include "caecilia/model/DemoOrgan.h"
+#include "caecilia/registration/FactoryGenerals.h"
 #include "caecilia/model/Organ.h"
 #include "caecilia/model/OrganDefinition.h"
 #include "caecilia/model/OrganLoader.h"
@@ -27,11 +28,14 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <string>
+#include <vector>
 
 using Catch::Approx;
 namespace core  = caecilia::core;
 namespace model = caecilia::model;
+namespace registration = caecilia::registration;
 
 namespace
 {
@@ -458,6 +462,50 @@ TEST_CASE("The format can express the organ this instrument actually ships",
 
     // And the document is stable: exporting the rebuilt organ gives the same text.
     CHECK(model::OrganLoader::serialize(model::OrganLoader::definitionFrom(copy)) == written);
+}
+
+TEST_CASE("An organ from a document opens with stops drawn and pistons set",
+          "[model][organfile][regression]")
+{
+    // What a user's own organ has to survive. defaultOpeningRegistration and
+    // resolveFactoryGenerals were written against the demo organ, and the plugin
+    // calls both the moment a document is loaded: if either returns nothing, the
+    // instrument opens SILENT and with an empty combination memory, which reads as
+    // a broken plugin rather than as an unlucky organ file.
+    const model::CompileResult built = model::OrganLoader::load(sampleDocument());
+    INFO(describe(built.diagnostics));
+    REQUIRE(built.ok());
+    const model::Organ& organ = *built.organ;
+
+    // A manual to play on, and not the pedal division if there is a choice.
+    const core::DivisionId primary = model::primaryManual(organ);
+    CHECK(organ.division(primary) != nullptr);
+    CHECK(organ.division(primary)->kind() != model::DivisionKind::Pedal);
+
+    // Something is drawn, and every id it names is a stop this organ has.
+    const std::vector<core::StopId> opening =
+        model::defaultOpeningRegistration(organ, primary);
+    INFO("opening registration draws " << opening.size() << " stops");
+    CHECK_FALSE(opening.empty());
+    for (const core::StopId id : opening)
+    {
+        INFO("stop id " << id.value);
+        CHECK(organ.stop(id) != nullptr);
+    }
+
+    // And the factory pistons resolve against THIS organ rather than against the
+    // one they were written for. An empty row is a legitimate answer for a small
+    // instrument, but every bit that IS set has to name a stop that exists.
+    std::array<std::uint64_t, 8> generals{};
+    const std::size_t written = registration::resolveFactoryGenerals(organ, generals);
+    INFO(written << " factory pistons resolved");
+    for (std::size_t i = 0; i < written && i < generals.size(); ++i)
+        for (int b = 0; b < 64; ++b)
+            if ((generals[i] & (std::uint64_t{ 1 } << b)) != 0)
+            {
+                INFO("piston " << i << " draws stop id " << b);
+                CHECK(organ.stop(core::StopId{ static_cast<std::uint16_t>(b) }) != nullptr);
+            }
 }
 
 TEST_CASE("An empty document is an empty organ, not an error", "[model][organfile]")
