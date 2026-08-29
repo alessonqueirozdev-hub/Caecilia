@@ -8,8 +8,8 @@
 #include "caecilia/registration/StopSet.h"
 
 #include "caecilia/midi/ChannelToDivisionMap.h"
-#include "caecilia/registration/FactoryGenerals.h"
 #include "caecilia/model/Division.h"
+#include "caecilia/model/OrganLoader.h"
 #include "caecilia/plugin/PluginEditor.h"
 
 #include <algorithm>
@@ -684,6 +684,97 @@ void CaeciliaAudioProcessor::uiNote(core::DivisionId division, core::MidiNote no
 }
 
 // ---------------------------------------------------------------------------
+// Loading an organ.
+// ---------------------------------------------------------------------------
+
+void CaeciliaAudioProcessor::adoptOrgan(model::Organ&& organ, juce::String path)
+{
+    organ_     = std::move(organ);
+    organPath_ = std::move(path);
+
+    // Everything keyed to the OLD organ has to go. A stop id, a coupler index and
+    // a combination are all positions in a table that has just been replaced, and
+    // carrying one across means drawing whatever now happens to sit in that slot.
+    playDivision_ = model::primaryManual(organ_);
+    couplers_     = 0;
+    generals_.fill(0);
+    generalsSet_.reset();
+    registration::resolveFactoryGenerals(organ_, generals_);
+    for (std::size_t i = 0; i < generals_.size(); ++i)
+        if (generals_[i] != 0)
+            generalsSet_.set(i);
+
+    // The opening registration of the NEW organ, written through to the host
+    // parameters so the two agree from the first block. Origin::Restore because
+    // this is not a gesture the user made on a control.
+    std::uint64_t opening = 0;
+    for (const core::StopId id : model::defaultOpeningRegistration(organ_, playDivision_))
+        if (id.value < 64)
+            opening |= (std::uint64_t{ 1 } << id.value);
+
+    registration_ = 0;
+    applyRegistration(opening, RegistrationOrigin::Restore);
+    parameters_.writeCouplerBits(0);
+
+    // And then everything prepareToPlay builds, because a different organ has a
+    // different chest count, a different voice pool, a different wind system and a
+    // different keyboard map. Skipped when the host has not prepared us yet -- it
+    // will, and it will do this itself.
+    if (getSampleRate() > 0.0)
+        prepareToPlay(getSampleRate(), getBlockSize());
+}
+
+model::LoadDiagnostics CaeciliaAudioProcessor::loadOrganDocument(const juce::String& document,
+                                                                 const juce::String& sourceName)
+{
+    // Parse and compile FIRST, and only then touch the instrument. A document that
+    // does not load leaves the organ that was playing exactly where it was: a
+    // half-loaded organ is worse than the one you had, and an organist who mistypes
+    // a filename should not lose the instrument they were using.
+    model::CompileResult result =
+        model::OrganLoader::load(document.toStdString(), model::OrganFileFormat::Auto,
+                                 sourceName.toStdString());
+    if (! result.ok())
+        return result.diagnostics;
+
+    // Audio off for the swap. This rebuilds the voice pool and every buffer in the
+    // engine, so it cannot happen underneath a render.
+    suspendProcessing(true);
+    adoptOrgan(std::move(*result.organ), sourceName);
+    suspendProcessing(false);
+
+    return result.diagnostics;
+}
+
+model::LoadDiagnostics CaeciliaAudioProcessor::loadOrganFile(const juce::File& file)
+{
+    model::LoadDiagnostics diagnostics;
+
+    if (! file.existsAsFile())
+    {
+        diagnostics.error("No such file.", file.getFullPathName().toStdString());
+        return diagnostics;
+    }
+
+    const juce::String text = file.loadFileAsString();
+    if (text.isEmpty())
+    {
+        diagnostics.error("The file is empty or could not be read.",
+                          file.getFullPathName().toStdString());
+        return diagnostics;
+    }
+
+    return loadOrganDocument(text, file.getFullPathName());
+}
+
+void CaeciliaAudioProcessor::loadBuiltInOrgan()
+{
+    suspendProcessing(true);
+    adoptOrgan(model::buildCaeciliaDemoOrgan(), {});
+    suspendProcessing(false);
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle (off-thread). prepareToPlay is the ONLY place allocation happens.
 // ---------------------------------------------------------------------------
 
@@ -1351,6 +1442,13 @@ juce::ValueTree CaeciliaAudioProcessor::captureConsoleState() const
         state.setProperty("midiBindings", packed, nullptr);
     }
 
+    // Which organ this session is playing. A PATH rather than the document: an
+    // organ file is a document the user owns and may still be editing, and copying
+    // it into every project that uses it would freeze whatever it said that day.
+    // The cost is that a moved file cannot be found on restore, which the loader
+    // reports rather than papers over.
+    state.setProperty("organPath", organPath_, nullptr);
+
     state.setProperty("seqPrev", seqPrevNote_.load(std::memory_order_relaxed), nullptr);
     state.setProperty("seqNext", seqNextNote_.load(std::memory_order_relaxed), nullptr);
     state.setProperty("seqOn",   seqNavEnabled_.load(std::memory_order_relaxed), nullptr);
@@ -1383,6 +1481,32 @@ void CaeciliaAudioProcessor::applyConsoleState(const juce::ValueTree& state)
 {
     if (! state.isValid())
         return;
+
+    // The organ FIRST, before anything keyed to it. A registration, a combination
+    // and a coupler mask are all positions in this organ's tables, and restoring
+    // them onto the previous instrument would draw whatever happened to sit in
+    // those slots.
+    //
+    // A document that predates this property leaves the built-in organ alone; a
+    // path that no longer resolves leaves it alone too, and says so, because
+    // silently substituting a different instrument for the one a project was
+    // written on is the worst of the available answers.
+    if (state.hasProperty("organPath"))
+    {
+        const juce::String path = state.getProperty("organPath").toString();
+        if (path.isEmpty())
+        {
+            if (organPath_.isNotEmpty())
+                loadBuiltInOrgan();
+        }
+        else if (path != organPath_)
+        {
+            const model::LoadDiagnostics d = loadOrganFile(juce::File(path));
+            if (d.hasErrors())
+                juce::Logger::writeToLog("Caecilia: could not restore the organ at "
+                                         + path + "; keeping the current one.");
+        }
+    }
 
     setUiMaster(static_cast<float>(state.getProperty("master", 1.0)));
     setUiVolume(static_cast<float>(state.getProperty("volume", 1.0)));

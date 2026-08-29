@@ -248,6 +248,26 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   .cluster > .cap b { color: var(--ink-dim); font-family: var(--font-mono); font-weight: 500; letter-spacing:.5px; }
   .cluster > .cap .reads { display: flex; gap: 12px; align-items: center; }
 
+  /* Which organ is loaded. The name, and two ways to change it. */
+  .organ-id { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .organ-id b {
+    font: 600 11px var(--font-mono); letter-spacing: .3px; color: var(--ink-dim);
+    max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* An organ loaded from a file is visibly not the built-in one. */
+  .organ-id.loaded b { color: #d9ad57; }
+  .tool-btn.tiny { padding: 2px 7px; font-size: 12px; line-height: 1; }
+  #organ-revert { display: none; }
+  .organ-id.loaded #organ-revert { display: inline-block; }
+
+  /* What went wrong with the last attempt, where the eye already is. */
+  #organ-note {
+    display: none; align-items: center; gap: 8px; max-width: 46ch;
+    font: 500 10px var(--font-mono); color: #e0603c;
+    padding: 3px 9px; border-radius: 5px; background: rgba(224,96,60,.12);
+  }
+  #organ-note.on { display: inline-flex; }
+
   /* A control that answers to a real one. Small, and on the plate rather than the
      knob, so it reads as a label on the stop and not as part of the drawknob. */
   .stop { position: relative; }
@@ -671,6 +691,11 @@ of inline SVG data-URI textures. Open directly in any modern browser.
                placeholder="selector:  reed &amp; 8   ·   principal | mixture   ·   rec &amp; !reed">
         <span class="hint" id="omni-hint">Enter to draw</span>
       </div>
+      <div class="organ-id" id="organ-id">
+        <b id="organ-name">Caecilia</b>
+        <button class="tool-btn tiny" id="organ-open"   title="Open an organ file">⌂</button>
+        <button class="tool-btn tiny" id="organ-revert" title="Back to the built-in organ">↺</button>
+      </div>
       <button class="tool-btn" id="panic" title="All notes off" data-i18n-title="allNotesOff">Release keys</button>
       <div class="seg" role="group" aria-label="Console skin">
         <button id="th-wood" class="active" data-i18n="themeWood">Wood</button>
@@ -691,7 +716,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
         </div>
       </div>
       <div class="cluster ctrl-cluster">
-        <div class="cap"><span data-i18n="controlsLabel">Console controls</span><span class="reads"><span id="midi-learn"><span>MIDI</span><span id="midi-learn-what"></span><button id="midi-learn-cancel">esc</button></span><b id="cpu-read" title="engine CPU load">0%</b><b id="sag-read" title="wind reservoir sag" data-i18n-title="windReservoirSag">stable</b></span></div>
+        <div class="cap"><span data-i18n="controlsLabel">Console controls</span><span class="reads"><span id="organ-note"></span><span id="midi-learn"><span>MIDI</span><span id="midi-learn-what"></span><button id="midi-learn-cancel">esc</button></span><b id="cpu-read" title="engine CPU load">0%</b><b id="sag-read" title="wind reservoir sag" data-i18n-title="windReservoirSag">stable</b></span></div>
         <div class="controls" id="controls"></div>
       </div>
     </section>
@@ -1244,6 +1269,36 @@ GENERALS.forEach((g, i) => {
   genHost.append(b);
 });
 
+/* ---- Which organ ----------------------------------------------------------
+ * The instrument is whatever organ it was given. The plugin owns the loading;
+ * this asks for it and draws what came back. The name is read from the state
+ * frame rather than assumed from the click, so the console can never claim an
+ * organ the instrument did not manage to load.
+ */
+(function () {
+  const open   = document.getElementById("organ-open");
+  const revert = document.getElementById("organ-revert");
+  if (open)   open.addEventListener("click",   () => caeInvoke("caeciliaLoadOrgan", []));
+  if (revert) revert.addEventListener("click", () => caeInvoke("caeciliaRevertOrgan", []));
+
+  // A document that will not open says why, on the console, rather than only in
+  // a log nobody reads. It clears itself: an error about a file you have since
+  // replaced is worse than no error.
+  if (window.__JUCE__ && window.__JUCE__.backend) {
+    window.__JUCE__.backend.addEventListener("caeciliaOrganStatus", (st) => {
+      const note = document.getElementById("organ-note");
+      if (!note) return;
+      if (st && st.error) {
+        note.textContent = String(st.message || "could not open that organ");
+        note.classList.add("on");
+        setTimeout(() => note.classList.remove("on"), 9000);
+      } else {
+        note.classList.remove("on");
+      }
+    });
+  }
+})();
+
 // Escape, or the bridge's own button, abandons a pending learn. A console left
 // armed would swallow the next key the organist played, which is the one thing
 // this feature must never do quietly.
@@ -1408,6 +1463,21 @@ if (CAE_BRIDGE) {
         const m = +k.dataset.midi;
         k.classList.toggle("held", lit.has(m) || state.held.has(ld + ":" + m));
       });
+      // Which organ is loaded. Drawn from the frame rather than from the click
+      // that asked for it, so the console cannot show an instrument that failed
+      // to load.
+      if (typeof st.organName === "string") {
+        const nameEl = document.getElementById("organ-name");
+        const wrap   = document.getElementById("organ-id");
+        if (nameEl && nameEl.textContent !== st.organName)
+          nameEl.textContent = st.organName;
+        if (wrap)
+          wrap.classList.toggle("loaded", !!(st.organPath && st.organPath.length));
+        if (nameEl)
+          nameEl.title = (st.organPath && st.organPath.length) ? st.organPath
+                                                              : "Built into Caecilia";
+      }
+
       // Which controls answer to a physical one, and whether a learn is waiting.
       // The instrument is the authority on both: the console lights from this
       // frame rather than from its own click, so it can never show a binding that

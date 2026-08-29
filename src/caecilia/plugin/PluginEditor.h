@@ -52,8 +52,23 @@ private:
     /// Build the configured WebBrowserComponent options (native bridge + provider).
     juce::WebBrowserComponent::Options makeOptions();
 
+    /// Ask for an organ file and load it. The chooser is asynchronous and has to
+    /// outlive the call, which is why it is a member and not a local.
+    void chooseOrganFile();
+
+    /// Tell the page what happened to the last load, so a document that will not
+    /// open says why on the console rather than only in a log nobody reads.
+    void pushOrganStatus(const juce::String& message, bool isError);
+
     CaeciliaAudioProcessor& processor_;
     juce::WebBrowserComponent web_;
+
+    /// Kept alive across the chooser's asynchronous callback.
+    std::unique_ptr<juce::FileChooser> organChooser_;
+
+    /// What to tell the page about the last attempt to load an organ.
+    juce::String organStatus_;
+    bool         organStatusIsError_ = false;
 
     /// Language the installer recorded (HKCU\Software\Caecilia\Language, Windows),
     /// forwarded to the console so it opens in the language chosen at install time.

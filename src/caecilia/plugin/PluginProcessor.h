@@ -15,6 +15,7 @@
 #include "caecilia/midi/MidiLearn.h"
 #include "caecilia/midi/MidiMap.h"
 #include "caecilia/model/DemoOrgan.h"
+#include "caecilia/model/Diagnostics.h"
 #include "caecilia/model/Organ.h"
 #include "caecilia/plugin/CommandBridge.h"
 #include "caecilia/plugin/MeterBridge.h"
@@ -119,6 +120,36 @@ public:
 
     /// The compiled instrument the console lays itself out from (immutable).
     [[nodiscard]] const model::Organ& organ() const noexcept { return organ_; }
+
+    // --- Loading an organ ---------------------------------------------------
+    //
+    // The instrument is whatever organ it was given. Until this existed it was
+    // whichever one had been compiled into the binary, which is the difference
+    // between a virtual organ and a platform for them.
+
+    /**
+     * @brief Replace the instrument with the organ in @p document.
+     * @param document   Organ-file text (see @c model::OrganLoader).
+     * @param sourceName What to call it in a diagnostic -- a path, usually.
+     * @return The diagnostics. On any error the instrument is UNCHANGED: a
+     *         half-loaded organ is worse than the one you had.
+     *
+     * Message thread. Audio is suspended across the swap, because this rebuilds
+     * the voice pool, the wind, the buses and the channel map -- everything
+     * prepareToPlay builds, which is exactly what a different organ needs.
+     */
+    model::LoadDiagnostics loadOrganDocument(const juce::String& document,
+                                             const juce::String& sourceName);
+
+    /// @copydoc loadOrganDocument but reading the bytes from a file first.
+    model::LoadDiagnostics loadOrganFile(const juce::File& file);
+
+    /// Go back to the organ built into the binary.
+    void loadBuiltInOrgan();
+
+    /// @return The file this instrument was loaded from, or an empty string when
+    ///         it is the built-in organ.
+    [[nodiscard]] juce::String organPath() const { return organPath_; }
 
     /// The live audio->UI mirror (meters + lit keys) the console polls.
     [[nodiscard]] ui::StateMirror& stateMirror() noexcept { return stateMirror_; }
@@ -352,6 +383,14 @@ private:
     // the host's own "reset to default", and it is why the opening registration is
     // no longer chosen in the constructor body.
     model::Organ            organ_;
+
+    /// Where @ref organ_ came from; empty means the one built into the binary.
+    /// Saved with the document so a session reopens the same instrument.
+    juce::String            organPath_;
+
+    /// Swap in a compiled organ and rebuild everything that depends on it.
+    /// Message thread, audio suspended by the caller.
+    void adoptOrgan(model::Organ&& organ, juce::String path);
     core::DivisionId        playDivision_{};   ///< Primary manual for MIDI + key lights.
 
     /// THE registration. One mask, keyed by StopId::value, and the only answer to

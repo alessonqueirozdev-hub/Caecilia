@@ -323,6 +323,27 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                 }
                 complete(juce::var());
             })
+        // --- Loading an organ ---------------------------------------------------
+        //
+        // The instrument is whatever organ it was given. These two are how an
+        // organist chooses which -- and the revert, because a file that turns out
+        // to be wrong should not leave them stranded.
+        .withNativeFunction("caeciliaLoadOrgan",
+            [this](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                chooseOrganFile();
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaRevertOrgan",
+            [this](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                processor_.loadBuiltInOrgan();
+                pushOrganSpec();
+                pushRegistration();
+                pushOrganStatus("Built-in organ", false);
+                complete(juce::var());
+            })
+
         .withNativeFunction("caeciliaMidiUnlearn",
             [&proc](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
             {
@@ -461,6 +482,59 @@ void CaeciliaEditor::pushRegistration()
     web_.emitEventIfBrowserIsVisible("caeciliaRegistration", juce::var(o));
 }
 
+void CaeciliaEditor::chooseOrganFile()
+{
+    organChooser_ = std::make_unique<juce::FileChooser>(
+        "Open an organ", juce::File{}, "*.json;*.organ.json");
+
+    const auto chooserFlags = juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles;
+
+    organChooser_->launchAsync(chooserFlags, [this](const juce::FileChooser& chooser)
+    {
+        const juce::File file = chooser.getResult();
+        if (file == juce::File{})
+            return; // cancelled, and cancelling is not an error to report
+
+        const model::LoadDiagnostics diagnostics = processor_.loadOrganFile(file);
+
+        if (diagnostics.hasErrors())
+        {
+            // The first error, which is the one that stopped it. Showing all of
+            // them on a console strip would show none of them legibly, and the
+            // first is nearly always the cause of the rest.
+            juce::String message = "Could not open " + file.getFileName();
+            for (const model::Diagnostic& d : diagnostics.entries())
+                if (d.severity == model::DiagnosticSeverity::Error)
+                {
+                    message = juce::String(d.context) + ": " + juce::String(d.message);
+                    break;
+                }
+            pushOrganStatus(message, true);
+            return;
+        }
+
+        // The page's whole model of the instrument came from the old organ, so it
+        // is rebuilt rather than patched: different divisions, different stops,
+        // different ids.
+        pushOrganSpec();
+        pushRegistration();
+        pushOrganStatus(juce::String(processor_.organ().name()), false);
+    });
+}
+
+void CaeciliaEditor::pushOrganStatus(const juce::String& message, bool isError)
+{
+    organStatus_        = message;
+    organStatusIsError_ = isError;
+
+    auto* o = new juce::DynamicObject();
+    o->setProperty("message", message);
+    o->setProperty("error",   isError);
+    o->setProperty("path",    processor_.organPath());
+    web_.emitEventIfBrowserIsVisible("caeciliaOrganStatus", juce::var(o));
+}
+
 void CaeciliaEditor::timerCallback()
 {
     // Push one consistent frame (lit keys + meters) to the page. The console listens
@@ -522,6 +596,12 @@ void CaeciliaEditor::timerCallback()
         obj->setProperty("midiGen",   static_cast<int>(generals));
         obj->setProperty("midiLearn", processor_.midiLearnArmed());
     }
+
+    // Which organ is loaded. The page draws its name, and an organ loaded from a
+    // file is visibly not the built-in one -- which matters the moment a user has
+    // more than one.
+    obj->setProperty("organName", juce::String(processor_.organ().name()));
+    obj->setProperty("organPath", processor_.organPath());
 
     obj->setProperty("cpuLoad",  frame.meters.cpuLoad);
     obj->setProperty("cpuPeak",  frame.meters.cpuPeakLoad);
