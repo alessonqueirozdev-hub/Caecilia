@@ -35,7 +35,9 @@
 
 #include "common/CliArgs.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -53,9 +55,58 @@ void report(const model::LoadDiagnostics& d, const char* what)
         const char* level = x.severity == model::DiagnosticSeverity::Error   ? "error"
                           : x.severity == model::DiagnosticSeverity::Warning ? "warning"
                                                                              : "note";
-        std::fprintf(stderr, "%s: %s: %s %s\n", what, level,
-                     x.context.c_str(), x.message.c_str());
+        // "check: warning: rank 'Montre 8' spectrum 'x.json': could not open it".
+        // The colon was missing, so the context and the message ran together into
+        // one sentence that was not one.
+        if (x.context.empty())
+            std::fprintf(stderr, "%s: %s: %s\n", what, level, x.message.c_str());
+        else
+            std::fprintf(stderr, "%s: %s: %s: %s\n", what, level,
+                         x.context.c_str(), x.message.c_str());
     }
+}
+
+/// Resolve a document's relative references inside its own directory, and nowhere
+/// else -- the same policy the plugin applies, for the same reason.
+///
+/// An organ file travels. One that could name an absolute path, or climb out with
+/// .., would read the disk of whoever received it. weakly_canonical resolves the
+/// .. and the lexical comparison afterwards is what notices where it landed.
+model::ResourceResolver resolverBeside(const std::string& documentPath)
+{
+    namespace fs = std::filesystem;
+
+    std::error_code ec;
+    const fs::path root = fs::weakly_canonical(fs::path(documentPath).parent_path(), ec);
+    if (ec)
+        return {};
+
+    return [root](std::string_view relative) -> std::optional<std::string>
+    {
+        const fs::path rel(std::string{ relative });
+        if (rel.empty() || rel.is_absolute())
+            return std::nullopt;
+
+        std::error_code err;
+        const fs::path target = fs::weakly_canonical(root / rel, err);
+        if (err)
+            return std::nullopt;
+
+        // Did it stay inside? mismatch walks the two paths together; if the whole
+        // of `root` was consumed, `target` is under it.
+        const auto [rootEnd, _] = std::mismatch(root.begin(), root.end(),
+                                                target.begin(), target.end());
+        if (rootEnd != root.end())
+            return std::nullopt;
+
+        std::ifstream in(target, std::ios::binary);
+        if (!in)
+            return std::nullopt;
+
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        return buffer.str();
+    };
 }
 
 /// A short census, so `--check` says something useful about a file that is fine.
@@ -161,8 +212,13 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    const model::CompileResult loaded = model::OrganLoader::load(text, model::OrganFileFormat::Auto,
-                                                                 path);
+    // Resolve the document's spectra beside the document, the way the plugin will.
+    // Without this, checking a file that names measured spectra would report that
+    // nothing here can open one -- true, and useless from the tool whose whole job
+    // is to tell you whether the plugin will be happy with your file.
+    const model::CompileResult loaded =
+        model::OrganLoader::load(text, model::OrganFileFormat::Auto, path,
+                                 resolverBeside(path));
     report(loaded.diagnostics, "check");
     if (!loaded.ok())
     {

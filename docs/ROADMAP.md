@@ -125,6 +125,13 @@ The offline analysis toolchain produces the `SpectralModel`; `IModeledSustain`
 phase-aligned crossfade splices a recorded chiff into a **loop-free** modeled
 sustain (see [`SYNTHESIS.md`](SYNTHESIS.md) §7).
 
+**Done:** the seeding half. `caecilia-partial-extractor` writes a measured partial
+bank, a rank in an organ file names one with `spectrum:`, and what it measured
+becomes that rank's timbre — see [`ORGAN_FILE.md`](ORGAN_FILE.md). The measurement
+supplies the shape; the organ keeps its own balance.
+
+**Still open:** the attack splice itself, and a recorded chiff to splice.
+
 **Exit:** ABX / spectral-difference validation against reference recordings.
 
 ---
