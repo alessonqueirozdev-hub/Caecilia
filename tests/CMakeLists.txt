@@ -105,6 +105,7 @@ target_include_directories(caecilia_tests PRIVATE
 # ---------------------------------------------------------------------------
 if(TARGET Caecilia)
     add_executable(caecilia_plugin_tests
+        plugin/MidiLearnEndToEndTest.cpp
         plugin/ProcessorOrganStateTest.cpp
         plugin/SessionRoundTripTest.cpp)
 

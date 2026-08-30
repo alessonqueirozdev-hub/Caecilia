@@ -286,6 +286,24 @@ public:
     /// The learned bindings, for the console and for the saved document.
     [[nodiscard]] const midi::MidiMap& midiMap() const noexcept { return midiMap_; }
 
+    /**
+     * @brief Run the message-thread work the audio thread has queued, now.
+     *
+     * A MIDI event that reaches a learned control is packed into a ring by the
+     * audio thread and woken with triggerAsyncUpdate; the binding is installed,
+     * and the registration changed, when the host next pumps its message loop.
+     *
+     * This is that pump, for a caller that has no host. It exists for the tests --
+     * said plainly rather than dressed up, because there is no other caller and
+     * inventing one would be worse than admitting it. What it buys is that the
+     * whole path can be exercised end to end instead of at its two ends, and the
+     * alternative was to widen AsyncUpdater from private to public, which would
+     * publish triggerAsyncUpdate and cancelPendingUpdate to everyone.
+     *
+     * Message thread. Idempotent: with nothing queued it does nothing.
+     */
+    void flushQueuedMidiActions() { handleMidiActions(); }
+
     void armSeqLearn(int which) noexcept { seqLearn_.store(which, std::memory_order_relaxed); }
 
     /// Editor drain: pop one page-turn direction (-1 = Previous, +1 = Next).
