@@ -133,20 +133,14 @@ TEST_CASE("A reed is brighter than a flute, well above it", "[synthesis][acousti
     }
     const double brighterBy = 10.0 * std::log10(reedTop / fluteTop);
 
-    // Ten decibels is what this asserts and roughly thirteen is what it measures.
+    // Fifteen decibels is what this asserts and about nineteen is what it measures.
     //
-    // On a real organ the gap is larger -- a Trompette's spectrum peaks somewhere
-    // around its fourth to eighth harmonic while a Bourdon has essentially a
-    // fundamental and a weak third, which is tens of decibels apart, not thirteen.
-    // The reed RECIPE agrees: it adds four decibels to every odd harmonic and six
-    // more across exactly this band, which should put the fifth harmonic within a
-    // few decibels of the fundamental. The rendered audio puts it fifteen below.
-    //
-    // So this asserts the direction, which is certainly right, and not the size,
-    // which is under investigation: the gap between what a SpectralModel describes
-    // and what the synthesiser fed by it produces is its own question, and a
-    // number invented to make this line pass would bury it.
-    CHECK(brighterBy > 10.0);
+    // Whether nineteen is ENOUGH is a question this test cannot answer and does not
+    // pretend to: it takes a comparison against a recording of a real Trompette,
+    // which is the listening validation still outstanding. What it can say is that
+    // the direction and the order of magnitude are right, and that a change which
+    // flattened the reeds into the flues would fail here.
+    CHECK(brighterBy > 15.0);
 }
 
 TEST_CASE("Footage is pitch: a 16' sounds an octave below an 8'", "[synthesis][acoustics]")
@@ -247,3 +241,4 @@ TEST_CASE("An organ file can say which kind of flute it has", "[synthesis][acous
     CHECK(hollow.h(2) < -60.0);
     CHECK(bright.h(2) > -30.0);
 }
+

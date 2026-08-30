@@ -27,6 +27,7 @@
 #include "caecilia/synthesis/AdditiveVoice.h"
 #include "caecilia/synthesis/RankVoicing.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <numbers>
@@ -126,6 +127,35 @@ namespace caecilia::testing
     return std::sqrt(real * real + imag * imag) / static_cast<double>(n);
 }
 
+/**
+ * @brief The strongest energy NEAR @p targetHz, within @p tolerance (a fraction).
+ *
+ * Not at it. A rank's pipes are deliberately scattered a few cents from exact
+ * equal temperament -- a rank with zero scatter is a synthesiser, not an organ --
+ * so its partials do not sit on integer multiples of the nominal fundamental.
+ * Measuring at the nominal frequency finds the SKIRT of the partial rather than
+ * its peak, and because the error in hertz grows with the harmonic number, the
+ * reading gets progressively darker up the series.
+ *
+ * That artefact cost an afternoon: it looks exactly like a synthesiser failing to
+ * honour the upper partials of its own model, which is a thing worth investigating
+ * and was not what was happening.
+ */
+[[nodiscard]] inline double magnitudeNear(const std::vector<float>& signal,
+                                          double targetHz, double tolerance = 0.015,
+                                          double sampleRate = 48000.0)
+{
+    constexpr int kSteps = 41;
+    double best = 0.0;
+    for (int i = 0; i < kSteps; ++i)
+    {
+        const double frac = -1.0 + 2.0 * static_cast<double>(i) / (kSteps - 1);
+        const double hz   = targetHz * (1.0 + tolerance * frac);
+        best = std::max(best, magnitudeAt(signal, hz, sampleRate));
+    }
+    return best;
+}
+
 /// @return The level of harmonic @p n relative to the fundamental, in decibels.
 ///
 /// Negative is quieter than the fundamental, which is what every partial of an
@@ -135,8 +165,8 @@ namespace caecilia::testing
                                        double fundamentalHz, int n,
                                        double sampleRate = 48000.0)
 {
-    const double f0 = magnitudeAt(signal, fundamentalHz, sampleRate);
-    const double fn = magnitudeAt(signal, fundamentalHz * n, sampleRate);
+    const double f0 = magnitudeNear(signal, fundamentalHz, 0.015, sampleRate);
+    const double fn = magnitudeNear(signal, fundamentalHz * n, 0.015, sampleRate);
     if (!(f0 > 0.0) || !(fn > 0.0))
         return -120.0;
     return 20.0 * std::log10(fn / f0);
