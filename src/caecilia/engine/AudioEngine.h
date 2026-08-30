@@ -9,6 +9,7 @@
 #include "caecilia/core/ITuning.h"
 #include "caecilia/core/IVoice.h"
 #include "caecilia/core/IWindSupply.h"
+#include "caecilia/core/ParameterIds.h"
 #include "caecilia/core/TripleBuffer.h"
 #include "caecilia/dsp/OnePole.h"
 #include "caecilia/engine/CpuGovernor.h"
@@ -49,7 +50,7 @@ inline constexpr std::size_t kMaxVoices = 1024;
 inline constexpr std::size_t kCommandQueueCapacity = 4096;
 
 /// Upper bound on windchest accumulation buses.
-inline constexpr std::size_t kMaxWindchests = 64;
+inline constexpr std::size_t kMaxWindchests = core::params::kMaxWindchests;
 
 /**
  * @brief A windchest that sits inside a swell box, and whose shoe closes it.

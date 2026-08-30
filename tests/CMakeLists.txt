@@ -58,6 +58,7 @@ add_executable(caecilia_tests
     midi/MidiLearnTest.cpp
     midi/MidiRouterTest.cpp
     model/JsonTest.cpp
+    model/OrganCapacityTest.cpp
     model/OrganFileTest.cpp
     model/OrganLoaderTest.cpp
     model/RegistrationDynamicsTest.cpp

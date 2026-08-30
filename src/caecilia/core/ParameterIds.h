@@ -50,6 +50,15 @@ inline constexpr std::size_t kMaxStopParameters = 64;
 /// this one has divisions.
 inline constexpr std::size_t kMaxCouplerParameters = 16;
 
+/// Windchests the engine holds wind for.
+///
+/// Declared here, with the other capacities, rather than in the engine that uses
+/// it: the model has to be able to say whether an organ fits the instrument, and
+/// it cannot see the engine. A chest past the last one is not dropped -- its
+/// ranks book their wind on chest 0, and so sag with a chest they do not stand
+/// on. @c engine::kMaxWindchests IS this constant; the engine has no second one.
+inline constexpr std::size_t kMaxWindchests = 64;
+
 // --- global parameter IDs ---------------------------------------------------
 
 inline constexpr const char* kMasterGainDb     = "master_gain_db";

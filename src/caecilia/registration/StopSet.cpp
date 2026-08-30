@@ -3,11 +3,22 @@
 
 #include "caecilia/registration/StopSet.h"
 
+#include "caecilia/core/ParameterIds.h"
+
 #include <algorithm>
 #include <iterator>
 
 namespace caecilia::registration
 {
+
+// The comment on kMaskCapacity says the host stop pool is exactly this wide. Said
+// in a comment it was true by inspection and by nothing else; said here it is a
+// build failure the day one of them moves. They are not two numbers that happen
+// to agree -- a stop the mask cannot hold is a parameter that can never do
+// anything, and a parameter that does not exist is a stop nobody can draw.
+static_assert(StopSet::kMaskCapacity == core::params::kMaxStopParameters,
+              "The registration mask and the host stop-parameter pool must be "
+              "the same width.");
 
 std::uint64_t StopSet::toMask() const noexcept
 {

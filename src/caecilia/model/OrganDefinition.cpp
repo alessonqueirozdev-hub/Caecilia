@@ -3,6 +3,8 @@
 
 #include "caecilia/model/OrganDefinition.h"
 
+#include "caecilia/core/ParameterIds.h"
+
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
@@ -270,6 +272,60 @@ LoadDiagnostics OrganDefinition::validate() const
             diag.error("Coupler references unknown 'to' division '" + c.to + "'.", ctx);
         if (!couplerKindFromString(c.kind))
             diag.warning("Unknown coupler kind '" + c.kind + "' (treated as InterManual).", ctx);
+    }
+
+    // --- Does this organ fit the instrument? --------------------------------
+    //
+    // An organ larger than the tables that carry it does not fail to load. It
+    // loads, reports nothing, and quietly does less -- which is the worst of the
+    // three possible outcomes, because the organist is then hunting for a
+    // Bombarde that the file declares, the console never draws, and no amount of
+    // registration will ever sound. Every one of these was reachable the moment
+    // an organ could come from a file instead of from the binary.
+
+    if (stops.size() > core::params::kMaxStopParameters)
+    {
+        // A stop's id is its index, and the registration the audio thread reads
+        // is a single 64-bit word. A stop past the width of that word cannot be
+        // held in a registration, cannot be given a host parameter and cannot be
+        // drawn -- so this is an error and not a warning: the file describes an
+        // instrument that this one cannot be.
+        const std::size_t lost = stops.size() - core::params::kMaxStopParameters;
+        diag.error("Organ declares " + std::to_string(stops.size())
+                   + " stops; this instrument can address "
+                   + std::to_string(core::params::kMaxStopParameters)
+                   + ". The last " + std::to_string(lost) + " ('"
+                   + stops[core::params::kMaxStopParameters].name
+                   + "' onwards) could never be drawn or sound.",
+                   "organ");
+    }
+
+    if (couplers.size() > core::params::kMaxCouplerParameters)
+    {
+        // Not a warning either, and for a sharper reason than the stops: a
+        // coupler past this one is refused by the console as well as absent from
+        // the host, so there is no surface anywhere that can engage it.
+        const std::size_t lost = couplers.size() - core::params::kMaxCouplerParameters;
+        diag.error("Organ declares " + std::to_string(couplers.size())
+                   + " couplers; this instrument can address "
+                   + std::to_string(core::params::kMaxCouplerParameters)
+                   + ". The last " + std::to_string(lost) + " ('"
+                   + couplers[core::params::kMaxCouplerParameters].name
+                   + "' onwards) could never be engaged.",
+                   "organ");
+    }
+
+    if (windchests.size() > core::params::kMaxWindchests)
+    {
+        // A warning, because unlike the two above the organ still plays: the
+        // ranks on those chests speak, and draw their wind from chest 0. What is
+        // lost is whose wind they take, which is audible as a sag in the wrong
+        // place rather than as a missing stop.
+        diag.warning("Organ declares " + std::to_string(windchests.size())
+                     + " windchests; this instrument holds wind for "
+                     + std::to_string(core::params::kMaxWindchests)
+                     + ". Ranks on the rest will draw from the first chest.",
+                     "organ");
     }
 
     return diag;
