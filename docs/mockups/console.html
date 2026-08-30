@@ -260,6 +260,10 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   #organ-revert { display: none; }
   .organ-id.loaded #organ-revert { display: inline-block; }
 
+  /* Backwards and forwards through the registrations this organist has tried. */
+  .reg-history { display: flex; gap: 4px; }
+  .reg-history .tool-btn[disabled] { opacity: .3; cursor: default; }
+
   /* What went wrong with the last attempt, where the eye already is. */
   #organ-note {
     display: none; align-items: center; gap: 8px; max-width: 46ch;
@@ -695,6 +699,10 @@ of inline SVG data-URI textures. Open directly in any modern browser.
         <b id="organ-name">Caecilia</b>
         <button class="tool-btn tiny" id="organ-open"   title="Open an organ file">⌂</button>
         <button class="tool-btn tiny" id="organ-revert" title="Back to the built-in organ">↺</button>
+      </div>
+      <div class="reg-history">
+        <button class="tool-btn tiny" id="reg-undo" title="Take back the last registration change (Ctrl+Z)" disabled>&#8630;</button>
+        <button class="tool-btn tiny" id="reg-redo" title="Put it back (Ctrl+Shift+Z)" disabled>&#8631;</button>
       </div>
       <button class="tool-btn" id="panic" title="All notes off" data-i18n-title="allNotesOff">Release keys</button>
       <div class="seg" role="group" aria-label="Console skin">
@@ -1269,6 +1277,29 @@ GENERALS.forEach((g, i) => {
   genHost.append(b);
 });
 
+/* ---- Taking a registration back -------------------------------------------
+ * An organist pulls the wrong knob in the middle of a phrase and wants the sound
+ * they had. The buttons draw their enabled state from the frame rather than from
+ * whether we think anything happened, because the history lives in the plugin and
+ * the plugin is the one that knows.
+ */
+(function () {
+  const undo = document.getElementById("reg-undo");
+  const redo = document.getElementById("reg-redo");
+  if (undo) undo.addEventListener("click", () => caeInvoke("caeciliaUndoRegistration", []));
+  if (redo) redo.addEventListener("click", () => caeInvoke("caeciliaRedoRegistration", []));
+
+  // Ctrl+Z, because that is the key every hand already reaches for. Not while a
+  // text field has the caret: inside the omnibox it must still undo typing.
+  document.addEventListener("keydown", e => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+    const el = document.activeElement;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+    caeInvoke(e.shiftKey ? "caeciliaRedoRegistration" : "caeciliaUndoRegistration", []);
+    e.preventDefault();
+  });
+})();
+
 /* ---- Which organ ----------------------------------------------------------
  * The instrument is whatever organ it was given. The plugin owns the loading;
  * this asks for it and draws what came back. The name is read from the state
@@ -1463,6 +1494,15 @@ if (CAE_BRIDGE) {
         const m = +k.dataset.midi;
         k.classList.toggle("held", lit.has(m) || state.held.has(ld + ":" + m));
       });
+      // Whether there is anywhere to go, backwards or forwards. A button that
+      // looks pressable and does nothing is worse than one that is visibly not.
+      if (typeof st.canUndo === "boolean") {
+        const u = document.getElementById("reg-undo");
+        const r = document.getElementById("reg-redo");
+        if (u) u.disabled = !st.canUndo;
+        if (r) r.disabled = !st.canRedo;
+      }
+
       // Which organ is loaded. Drawn from the frame rather than from the click
       // that asked for it, so the console cannot show an instrument that failed
       // to load.

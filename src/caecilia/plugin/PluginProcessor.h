@@ -17,6 +17,7 @@
 #include "caecilia/model/DemoOrgan.h"
 #include "caecilia/model/Diagnostics.h"
 #include "caecilia/model/Organ.h"
+#include "caecilia/registration/RegistrationHistory.h"
 #include "caecilia/plugin/CommandBridge.h"
 #include "caecilia/plugin/MeterBridge.h"
 #include "caecilia/plugin/ParameterMirror.h"
@@ -336,6 +337,22 @@ public:
     /// @return The drawn registration as a StopId mask. Message thread.
     [[nodiscard]] std::uint64_t drawnStops() const noexcept { return registration_; }
 
+    // --- Taking a registration back -----------------------------------------
+    //
+    // An organist pulls the wrong knob in the middle of a phrase and wants the
+    // sound they had. The history is BRANCHING, so an undo does not throw the
+    // other path away: going back and trying something else keeps both, which is
+    // what auditioning a plenum actually looks like.
+
+    /// Step back to the previous registration. Does nothing at the root.
+    void undoRegistration();
+
+    /// Step forward again, onto the most recently explored branch.
+    void redoRegistration();
+
+    [[nodiscard]] bool canUndoRegistration() const noexcept { return history_.canUndo(); }
+    [[nodiscard]] bool canRedoRegistration() const noexcept { return history_.canRedo(); }
+
     /// Draw exactly this set. Message thread; moves the host parameters with it.
     void setDrawnStops(std::uint64_t bits);
 
@@ -572,6 +589,26 @@ private:
     /// Draw / retire couplers and republish. Message thread; same single-writer
     /// discipline as @ref applyRegistration, and idempotent for the same reason.
     void applyCouplers(std::uint32_t next, RegistrationOrigin origin);
+
+    /// Every registration this organist has been through, as a tree.
+    ///
+    /// Only DELIBERATE gestures are recorded -- Console, which covers a drawstop
+    /// click, a piston and a learned tab. Host automation is excluded on purpose:
+    /// a lane sweeping the stops would record a node per block, this history has
+    /// no cap, and a host already has its own undo for its own controls. Restore
+    /// is excluded because reopening a project is not a move to take back.
+    registration::RegistrationHistory history_;
+
+    /// The registration as the history stores it: stops AND couplers together,
+    /// because taking back "I drew the Récit reeds and coupled them" has to take
+    /// back both or it takes back neither usefully.
+    [[nodiscard]] registration::RegistrationState currentRegistrationState() const;
+
+    /// Record the state as it now stands, under @p kind.
+    void recordRegistration(registration::RegistrationCommand::Kind kind);
+
+    /// Draw exactly @p state, without recording it -- an undo is not a new move.
+    void applyRegistrationState(const registration::RegistrationState& state);
 
     /// Fill the first few generals from the organ, using the shared selector
     /// grammar. Construction only.

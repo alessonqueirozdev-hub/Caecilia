@@ -168,6 +168,12 @@ CaeciliaAudioProcessor::CaeciliaAudioProcessor()
     // stored registration, and rebuilding one behind the organist's back is the
     // opposite of what a combination memory is for.
     buildDefaultGenerals();
+
+    // The root of the history is what the organ opens with. RegistrationHistory
+    // starts empty, and the opening registration is applied as a Restore -- which
+    // is deliberately not a recorded move -- so without this the first undo of the
+    // session would take an organist to a silent console they had never seen.
+    history_.reset(currentRegistrationState());
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +226,13 @@ void CaeciliaAudioProcessor::applyCouplers(std::uint32_t next, RegistrationOrigi
 
     if (origin != RegistrationOrigin::HostParameters)
         parameters_.writeCouplerBits(couplers_);
+
+    // Same rule as the stops, and the same history: coupling the Récit to the
+    // Grand-Orgue is a registration change like any other, and an undo that took
+    // back the stops but left the couplers would give back a sound the organist
+    // never had.
+    if (origin == RegistrationOrigin::Console)
+        recordRegistration(registration::RegistrationCommand::Kind::ToggleCoupler);
 
     if (getSampleRate() <= 0.0)
         return; // not prepared yet; prepareToPlay publishes from couplers_
@@ -553,6 +566,15 @@ void CaeciliaAudioProcessor::applyRegistration(std::uint64_t next, RegistrationO
     if (origin != RegistrationOrigin::HostParameters)
         parameters_.writeStopBits(registration_);
 
+    // Recorded AFTER the change and BEFORE the not-prepared return, because the
+    // history is message-thread bookkeeping and has nothing to do with whether
+    // audio is running: an organist can set a registration before a host has
+    // prepared us, and taking that back must still work. The idempotence guard at
+    // the top of this function means an unchanged write never reaches here, so the
+    // history cannot fill with nodes that all say the same thing.
+    if (origin == RegistrationOrigin::Console)
+        recordRegistration(registration::RegistrationCommand::Kind::ToggleStop);
+
     if (getSampleRate() <= 0.0)
         return; // not prepared yet; prepareToPlay builds from registration_
 
@@ -560,6 +582,51 @@ void CaeciliaAudioProcessor::applyRegistration(std::uint64_t next, RegistrationO
     // the ranks that were already drawn keep their voices untouched, so held notes
     // are not merely un-clicked but bit-identical.
     publishEngagedRanks();
+}
+
+registration::RegistrationState CaeciliaAudioProcessor::currentRegistrationState() const
+{
+    registration::RegistrationState state;
+    state.stops = registration::StopSet::fromMask(registration_);
+
+    for (const model::Coupler& c : organ_.couplers())
+        if (c.id().value < 32 && (couplers_ & (std::uint32_t{ 1 } << c.id().value)) != 0)
+            state.couplers.push_back(c.id());
+
+    return state;
+}
+
+void CaeciliaAudioProcessor::recordRegistration(registration::RegistrationCommand::Kind kind)
+{
+    registration::RegistrationCommand command;
+    command.kind = kind;
+    history_.record(command, currentRegistrationState());
+}
+
+void CaeciliaAudioProcessor::applyRegistrationState(const registration::RegistrationState& state)
+{
+    std::uint32_t couplerBits = 0;
+    for (const model::CouplerId id : state.engagedCouplers())
+        if (id.value < 32)
+            couplerBits |= (std::uint32_t{ 1 } << id.value);
+
+    // Restore, not Console: an undo is a move BACK through the history, not a new
+    // move to be recorded at the end of it. Recording here would put undo out of
+    // reach -- every step back would add a step forward.
+    applyRegistration(state.engagedStops().toMask(), RegistrationOrigin::Restore);
+    applyCouplers(couplerBits, RegistrationOrigin::Restore);
+}
+
+void CaeciliaAudioProcessor::undoRegistration()
+{
+    if (history_.canUndo())
+        applyRegistrationState(history_.undo());
+}
+
+void CaeciliaAudioProcessor::redoRegistration()
+{
+    if (history_.canRedo())
+        applyRegistrationState(history_.redo());
 }
 
 void CaeciliaAudioProcessor::setUiRegistration(const std::vector<model::RegistrationRank>& ranks)
@@ -719,6 +786,12 @@ void CaeciliaAudioProcessor::adoptOrgan(model::Organ&& organ, juce::String path)
     registration_ = 0;
     applyRegistration(opening, RegistrationOrigin::Restore);
     parameters_.writeCouplerBits(0);
+
+    // And the history starts again here. Every node in it holds stop ids of the
+    // OLD organ, and an id is a position in a table that has just been replaced --
+    // so undoing across an organ change would not give back the sound the organist
+    // had; it would draw whatever now happens to sit in those slots.
+    history_.reset(currentRegistrationState());
 
     // And then everything prepareToPlay builds, because a different organ has a
     // different chest count, a different voice pool, a different wind system and a
@@ -1682,6 +1755,11 @@ void CaeciliaAudioProcessor::setStateInformation(const void* data, int sizeInByt
         // disagreeing with the host's own parameters, and how long that lasts is
         // decided by whether anyone presses play.
         applyCouplers(parameters_.couplerBits(), RegistrationOrigin::Restore);
+
+        // The restored registration is where this organist STARTS, so it becomes the
+        // root. Reopening a project is not a move they made, and an undo from here
+        // must not walk back into the previous document's registration.
+        history_.reset(currentRegistrationState());
 
         // Force the next block to re-send the restored parameter state to the engine.
         commandBridge_.resetChangeTracking();

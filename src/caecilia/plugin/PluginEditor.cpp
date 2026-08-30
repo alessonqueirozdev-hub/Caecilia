@@ -335,6 +335,22 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                 }
                 complete(juce::var());
             })
+        // --- Taking a registration back -----------------------------------------
+        .withNativeFunction("caeciliaUndoRegistration",
+            [this](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                processor_.undoRegistration();
+                pushRegistration();
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaRedoRegistration",
+            [this](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                processor_.redoRegistration();
+                pushRegistration();
+                complete(juce::var());
+            })
+
         // --- Loading an organ ---------------------------------------------------
         //
         // The instrument is whatever organ it was given. These two are how an
@@ -612,6 +628,9 @@ void CaeciliaEditor::timerCallback()
     // Which organ is loaded. The page draws its name, and an organ loaded from a
     // file is visibly not the built-in one -- which matters the moment a user has
     // more than one.
+    obj->setProperty("canUndo", processor_.canUndoRegistration());
+    obj->setProperty("canRedo", processor_.canRedoRegistration());
+
     obj->setProperty("organName", juce::String(processor_.organ().name()));
     obj->setProperty("organPath", processor_.organPath());
 
