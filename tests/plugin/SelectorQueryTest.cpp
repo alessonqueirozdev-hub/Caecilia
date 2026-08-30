@@ -188,3 +188,70 @@ TEST_CASE("Drawing an expression that will not parse changes nothing", "[plugin]
     // happened. A history entry here would make undo do nothing visible once.
     CHECK_FALSE(processor.canUndoRegistration());
 }
+
+TEST_CASE("A plenum is a chorus, not everything", "[plugin][plenum]")
+{
+    JuceScope              scope;
+    CaeciliaAudioProcessor processor;
+
+    const std::size_t drew = processor.drawPlenum(false);
+    REQUIRE(drew > 1);
+
+    // Not a tutti. What makes it a plenum rather than "all the stops" is what it
+    // leaves OUT: the mutations, so a tierce does not pollute the diapason
+    // chorus, and the reeds, which were not asked for.
+    CHECK(drew < processor.organ().stops().size());
+
+    for (const model::Stop& s : processor.organ().stops())
+    {
+        if (! processor.isStopEngaged(s.id()))
+            continue;
+
+        // The division being played, and only that. A plenum drawn across the
+        // whole organ would sound the Pédale and the Récit under a manual chorus
+        // the organist asked for on one keyboard.
+        CHECK(s.division() == processor.playDivision());
+
+        CHECK(s.family() != core::TonalFamily::Reed);
+
+        // No mutation in the chorus. Worth stating even though this organ cannot
+        // disprove it: both of its mutations are FLUTES, and the builder takes
+        // principal-family octave pitches, so excludeMutations has nothing to
+        // exclude here. Disproving it would need a principal-toned quint -- real
+        // enough on a French organ, absent from this one.
+        CHECK(s.pitchClass() != core::PitchClass::Mutation);
+    }
+}
+
+TEST_CASE("The reeds go on when they are asked for", "[plugin][plenum]")
+{
+    JuceScope              scope;
+    CaeciliaAudioProcessor processor;
+
+    const std::size_t plain = processor.drawPlenum(false);
+    const std::size_t grand = processor.drawPlenum(true);
+
+    // A grand plein-jeu is the chorus with its reeds. It cannot be smaller.
+    CHECK(grand >= plain);
+}
+
+TEST_CASE("A plenum replaces, and is one gesture", "[plugin][plenum]")
+{
+    JuceScope              scope;
+    CaeciliaAudioProcessor processor;
+
+    const std::uint64_t before = processor.drawnStops();
+    processor.drawSelector("family:reed");
+    const std::uint64_t withReeds = processor.drawnStops();
+    REQUIRE(withReeds != before);
+
+    REQUIRE(processor.drawPlenum(false) > 0);
+
+    // A plenum is a complete registration: drawing one over the top of the reeds
+    // would give neither the plenum nor what was there.
+    CHECK(processor.drawnStops() != withReeds);
+
+    // And one step back is the whole plenum, not a stop of it.
+    processor.undoRegistration();
+    CHECK(processor.drawnStops() == withReeds);
+}

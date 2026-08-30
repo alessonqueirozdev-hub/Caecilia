@@ -3,6 +3,7 @@
 
 #include "caecilia/plugin/PluginProcessor.h"
 
+#include "caecilia/registration/PlenumBuilder.h"
 #include "caecilia/registration/SelectorParser.h"
 
 #include "caecilia/registration/FactoryGenerals.h"
@@ -667,6 +668,33 @@ std::size_t CaeciliaAudioProcessor::drawSelector(const juce::String& query)
     // back the gesture, not fourteen stops one at a time.
     applyRegistration(next, RegistrationOrigin::Console);
     return result.stops.size();
+}
+
+std::size_t CaeciliaAudioProcessor::drawPlenum(bool withReeds)
+{
+    registration::PlenumSpec spec;
+    spec.division           = playDivision_;
+    spec.includeMixtures    = true;
+    spec.includeChorusReeds = withReeds;
+    spec.excludeMutations   = true;
+    spec.additive           = false;
+
+    const registration::DefaultPlenumBuilder builder;
+    const registration::StopSet built = builder.build(organ_, spec, currentRegistrationState());
+    if (built.empty())
+        return 0;
+
+    // Replacing, not adding. A plenum is a complete registration -- the whole
+    // point of it is the balance between the pitches -- and drawing one over the
+    // top of whatever was already out gives neither that registration nor the one
+    // it was added to.
+    std::uint64_t next = 0;
+    for (const core::StopId id : built.ids())
+        if (id.value < registration::StopSet::kMaskCapacity)
+            next |= (std::uint64_t{ 1 } << id.value);
+
+    applyRegistration(next, RegistrationOrigin::Console);
+    return built.size();
 }
 
 void CaeciliaAudioProcessor::undoRegistration()

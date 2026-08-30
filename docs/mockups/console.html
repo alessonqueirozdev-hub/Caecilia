@@ -759,6 +759,7 @@ of inline SVG data-URI textures. Open directly in any modern browser.
           <div class="grp">
             <button class="piston wide" id="p-set"  title="Arm capture, then press a general to store" data-i18n="setPiston" data-i18n-title="setTip">SET</button>
             <button class="piston wide" id="p-canc" title="General cancel" data-i18n-title="generalCancel">0</button>
+            <button class="piston wide" id="p-plein" title="Plein-jeu: the principal chorus of this manual. Shift for its reeds.">PLEIN</button>
             <button class="piston wide" id="p-tutti" title="Tutti (reversible)" data-i18n="tuttiPiston" data-i18n-title="tuttiTip">TUTTI</button>
           </div>
         </div>
@@ -1747,6 +1748,21 @@ function pressTutti() {
   if (isFull) { setDrawn(new Set(), "Tutti released"); btn.classList.remove("latched"); }
   else { setDrawn(new Set(ALL.map(x => x.id)), "Tutti · full organ · " + ALL.length + " stops"); btn.classList.add("latched"); }
 }
+/* The chorus, not the whole organ. A plenum is the principal pyramid 16-8-4-2
+ * crowned by mixtures with the mutations left out, and it is what an organist
+ * reaches for far more often than everything at once. Built by the plugin against
+ * the organ that is loaded, because the conventions are the plugin's and so is the
+ * organ -- the page cannot know which of these stops is a tierce.
+ *
+ * With no plugin behind the page (this file opens in a browser too) it falls back
+ * to the local grammar, which can approximate the shape but not the taxonomy. */
+function pressPlein(withReeds) {
+  if (haveBackend()) { caeInvoke("caeciliaDrawPlenum", [!!withReeds]); return; }
+  const q = withReeds ? "principal | mixture | reed" : "principal | mixture";
+  const set = selectStops(q);
+  if (set.size) setDrawn(set, `Plein-jeu · ${set.size} stops`);
+}
+
 function seqStep(dir) {
   let i = state.seqIndex + dir;
   i = (i + GENERALS.length) % GENERALS.length;
@@ -1862,6 +1878,7 @@ omni.addEventListener("keydown", e => {
 $("#panic").addEventListener("click", releaseAll);
 $("#p-canc").addEventListener("click", () => setDrawn(new Set(), "General cancel · all stops retired"));
 $("#p-tutti").addEventListener("click", pressTutti);
+$("#p-plein").addEventListener("click", e => pressPlein(e.shiftKey));
 $("#p-set").addEventListener("click", () => {
   state.setArmed = !state.setArmed;
   $("#p-set").classList.toggle("arm", state.setArmed);

@@ -388,6 +388,24 @@ public:
      */
     std::size_t drawSelector(const juce::String& query);
 
+    /**
+     * @brief Draw the plenum of the division being played.
+     * @param withReeds Add the chorus reeds -- a grand plein-jeu rather than a
+     *                  diapason chorus.
+     * @return How many stops the plenum came to.
+     *
+     * Not a tutti. A plenum is the principal-family pyramid 16'-8'-4'-2' crowned
+     * by mixtures, with the mutations left out so the chorus is not polluted by a
+     * tierce -- which is the registration an organist actually wants far more
+     * often than everything at once, and the one this instrument could not offer
+     * despite having had a builder for it all along.
+     *
+     * Replaces what is drawn rather than adding to it: a plenum is a complete
+     * registration, and half of one over the top of something else is neither.
+     * One gesture, so one entry in the history.
+     */
+    std::size_t drawPlenum(bool withReeds);
+
     /// Draw exactly this set. Message thread; moves the host parameters with it.
     void setDrawnStops(std::uint64_t bits);
 

@@ -373,6 +373,15 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                 complete(juce::var());
             })
 
+        // The chorus of the division being played -- shift for its reeds.
+        .withNativeFunction("caeciliaDrawPlenum",
+            [this](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                processor_.drawPlenum(! args.isEmpty() && static_cast<bool>(args[0]));
+                pushRegistration();
+                complete(juce::var());
+            })
+
         // --- Taking a registration back -----------------------------------------
         .withNativeFunction("caeciliaUndoRegistration",
             [this](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
