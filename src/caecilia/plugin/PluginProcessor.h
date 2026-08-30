@@ -151,6 +151,15 @@ public:
     ///         it is the built-in organ.
     [[nodiscard]] juce::String organPath() const { return organPath_; }
 
+    /// @return The organ this project asked for and did not get, or empty.
+    ///
+    /// Set when a session names an organ file that will not open -- moved, renamed,
+    /// on a drive that is not mounted. It is what the project is SAVED with, so a
+    /// save on the wrong machine does not quietly rewrite the project to the
+    /// built-in organ; and it is what the console reports, because a log file is
+    /// not somewhere an organist finds out they are playing the wrong instrument.
+    [[nodiscard]] juce::String unresolvedOrganPath() const { return unresolvedOrgan_; }
+
     /// The live audio->UI mirror (meters + lit keys) the console polls.
     [[nodiscard]] ui::StateMirror& stateMirror() noexcept { return stateMirror_; }
 
@@ -387,6 +396,11 @@ private:
     /// Where @ref organ_ came from; empty means the one built into the binary.
     /// Saved with the document so a session reopens the same instrument.
     juce::String            organPath_;
+
+    /// @see unresolvedOrganPath. Cleared by any successful load, including a
+    /// deliberate revert to the built-in organ -- that is the user choosing, and
+    /// holding on to the old path past that point would be second-guessing them.
+    juce::String            unresolvedOrgan_;
 
     /// Swap in a compiled organ and rebuild everything that depends on it.
     /// Message thread, audio suspended by the caller.

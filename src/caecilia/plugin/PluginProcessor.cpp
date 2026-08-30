@@ -692,6 +692,10 @@ void CaeciliaAudioProcessor::adoptOrgan(model::Organ&& organ, juce::String path)
     organ_     = std::move(organ);
     organPath_ = std::move(path);
 
+    // Whatever the project could not find, it is no longer what is playing here:
+    // the user has an organ, and it is this one.
+    unresolvedOrgan_.clear();
+
     // Everything keyed to the OLD organ has to go. A stop id, a coupler index and
     // a combination are all positions in a table that has just been replaced, and
     // carrying one across means drawing whatever now happens to sit in that slot.
@@ -1447,7 +1451,14 @@ juce::ValueTree CaeciliaAudioProcessor::captureConsoleState() const
     // it into every project that uses it would freeze whatever it said that day.
     // The cost is that a moved file cannot be found on restore, which the loader
     // reports rather than papers over.
-    state.setProperty("organPath", organPath_, nullptr);
+    //
+    // And a path that did NOT resolve is written back unchanged rather than
+    // replaced with what is playing instead. A project opened on a machine where
+    // the organ file is missing must not be rewritten to the built-in organ by the
+    // act of saving it: the file is missing here, not gone.
+    state.setProperty("organPath",
+                      organPath_.isNotEmpty() ? organPath_ : unresolvedOrgan_,
+                      nullptr);
 
     state.setProperty("seqPrev", seqPrevNote_.load(std::memory_order_relaxed), nullptr);
     state.setProperty("seqNext", seqNextNote_.load(std::memory_order_relaxed), nullptr);
@@ -1503,8 +1514,14 @@ void CaeciliaAudioProcessor::applyConsoleState(const juce::ValueTree& state)
         {
             const model::LoadDiagnostics d = loadOrganFile(juce::File(path));
             if (d.hasErrors())
+            {
+                // Held, not discarded. The editor asks for this when it attaches --
+                // the host restores state before there is any UI, so there is
+                // nowhere to report it at the moment it happens.
+                unresolvedOrgan_ = path;
                 juce::Logger::writeToLog("Caecilia: could not restore the organ at "
                                          + path + "; keeping the current one.");
+            }
         }
     }
 

@@ -107,6 +107,18 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                             {
                                 pushOrganSpec();
                                 pushRegistration();
+
+                                // The one thing the console can say that nothing
+                                // else can: this project was written on an organ
+                                // that is not here. It happened before this editor
+                                // existed, so it is reported on attach.
+                                if (const juce::String missing = processor_.unresolvedOrganPath();
+                                    missing.isNotEmpty())
+                                    pushOrganStatus("This project was written on "
+                                                    + juce::File(missing).getFileName()
+                                                    + ", which is not where it was. "
+                                                      "Playing the current organ instead.",
+                                                    true);
                                 c(juce::var());
                             })
 

@@ -143,10 +143,19 @@ jobs:
           -OutputDirectory "${{ github.workspace }}\packages" -ExcludeVersion
       - name: Configure (Release)
         run: >
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCAECILIA_BUILD_TESTS=OFF -DCAECILIA_BUILD_TOOLS=OFF
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCAECILIA_BUILD_TESTS=ON -DCAECILIA_BUILD_TOOLS=OFF
           "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=${{ github.workspace }}\packages"
       - name: Build plugin
         run: cmake --build build --config Release --target Caecilia_Standalone Caecilia_VST3 --parallel 4
+
+      # The plugin's own suite. It needs a configuration where BOTH the plugin and
+      # the tests exist, and this is the only job that has one -- the dedicated test
+      # job is deliberately core-only, which is the point of it. Only this target is
+      # built, so the core suite costs a configure here and nothing more.
+      - name: Build the plugin test suite
+        run: cmake --build build --config Release --target caecilia_plugin_tests --parallel 4
+      - name: Run the plugin test suite
+        run: build/tests/Release/caecilia_plugin_tests.exe
       # /arch:AVX2 is a per-TRANSLATION-UNIT flag. Anything that ends up in the AVX2
       # unit -- an inline function from a header, a container's growth path -- is
       # compiled with AVX2 instructions too, and COMDAT folding may splice that copy
