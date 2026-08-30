@@ -160,6 +160,7 @@
       "family": "Flute",
       "footage": 4,
       "windchest": "Grand-Orgue chest",
+      "stopped": false,
       "voicing": {
         "chiff": 0.25,
         "harmonicDevelopment": 0.3,
@@ -262,6 +263,7 @@
       "family": "Flute",
       "footage": 4,
       "windchest": "Récit chest",
+      "stopped": false,
       "voicing": {
         "chiff": 0.25,
         "harmonicDevelopment": 0.3,

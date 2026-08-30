@@ -281,7 +281,7 @@ synth::SpectralModel makeSpectralMutation(core::Footage footage,
     return model;
 }
 
-synth::SpectralModel spectralModelForStop(const Stop& stop)
+synth::SpectralModel spectralModelForStop(const Stop& stop, bool stopped)
 {
     const core::Footage footage = stop.footage();
 
@@ -298,7 +298,9 @@ synth::SpectralModel spectralModelForStop(const Stop& stop)
             // A flute-family stop at a mutation footage is a Nazard / Tierce.
             if (stop.isMutation())
                 return makeSpectralMutation(footage);
-            return makeSpectralFlute(footage);
+            // The one place the distinction is audible today, and it is very
+            // audible: a stopped pipe has no even harmonics at all.
+            return makeSpectralFlute(footage, 1.0f, stopped);
 
         case core::TonalFamily::String:
             // Colour-role strings are the céleste ranks — give them a beat.
@@ -511,7 +513,9 @@ synth::SpectralModel buildRegistrationCompositeSpectrum(
         const float  gainDb = compositeRankGainDb(*stop);
 
         const std::size_t rankFirst = composite.partials.size();
-        const synth::SpectralModel recipe = spectralModelForStop(*stop);
+        const Rank* rankOf  = organ.rank(stop->rank());
+        const bool  stoppedR = rankOf == nullptr || rankOf->isStopped();
+        const synth::SpectralModel recipe = spectralModelForStop(*stop, stoppedR);
         adoptFormants(composite, recipe);
         for (const synth::PartialTrack& p : recipe.partials)
         {
@@ -602,12 +606,14 @@ synth::SpeechProfile speechProfileFor(core::TonalFamily family, core::Footage fo
 synth::SpectralModel measuredOrProceduralSpectrum(const Organ& organ, const Stop& s)
 {
     const Rank* rank = organ.rank(s.rank());
+    const bool  stopped = rank == nullptr || rank->isStopped();
+
     if (rank == nullptr || ! rank->measuredSpectrum().has_value())
-        return spectralModelForStop(s);
+        return spectralModelForStop(s, stopped);
 
     synth::SpectralModel model = *rank->measuredSpectrum();
     if (model.partials.empty())
-        return spectralModelForStop(s);
+        return spectralModelForStop(s, stopped);
 
     float peak = model.partials.front().ampDb;
     for (const synth::PartialTrack& p : model.partials)
@@ -1019,7 +1025,8 @@ namespace
                              core::WindchestId   chest,
                              core::MidiNote      low,
                              core::MidiNote      high,
-                             std::vector<core::Footage> mixture = {})
+                             std::vector<core::Footage> mixture = {},
+                             bool                stopped = true)
         {
             const auto rankId = core::RankId{ static_cast<std::uint16_t>(ranks.size()) };
             const auto stopId = core::StopId{ static_cast<std::uint16_t>(stops.size()) };
@@ -1027,6 +1034,7 @@ namespace
             Rank rank;
             rank.setId(rankId);
             rank.setName(name);
+            rank.setStopped(stopped);
             rank.setFamily(family);
             rank.setEngine(core::EngineKind::Additive);
             rank.setFootage(footage);
@@ -1113,7 +1121,12 @@ Organ buildCaeciliaDemoOrgan()
     b.addStop(go, "Bourdon 16",    TonalFamily::Flute,     ft::kSixteen,         PitchClass::Sub,      ChorusRole::Foundation,   chestGO, 36, 96);
     b.addStop(go, "Bourdon 8",     TonalFamily::Flute,     ft::kEight,           PitchClass::Unison,   ChorusRole::Foundation,   chestGO, 36, 96);
     b.addStop(go, "Prestant 4",    TonalFamily::Principal, ft::kFour,            PitchClass::Octave,   ChorusRole::Chorus,       chestGO, 36, 96);
-    b.addStop(go, "Flûte 4",       TonalFamily::Flute,     ft::kFour,            PitchClass::Octave,   ChorusRole::Chorus,       chestGO, 36, 96);
+    // OPEN, both of them, and the difference is not subtle: an open flute has the
+    // even harmonics a stopped one cannot produce. A Flûte octaviante is open by
+    // definition -- octaviante is what a harmonic flute does, overblow at the
+    // octave -- and it is one of the brightest flutes on a French organ, not a
+    // hollow one. Both sounded as bourdons until a rank could say otherwise.
+    b.addStop(go, "Flûte 4",       TonalFamily::Flute,     ft::kFour,            PitchClass::Octave,   ChorusRole::Chorus,       chestGO, 36, 96, {}, false);
     b.addStop(go, "Nazard 2 2/3",  TonalFamily::Flute,     ft::kTwoAndTwoThird,  PitchClass::Mutation, ChorusRole::Color,        chestGO, 36, 96);
     b.addStop(go, "Doublette 2",   TonalFamily::Principal, ft::kTwo,             PitchClass::Super,    ChorusRole::Chorus,       chestGO, 36, 96);
     b.addStop(go, "Tierce 1 3/5",  TonalFamily::Flute,     ft::kOneAndThreeFifth,PitchClass::Mutation, ChorusRole::Color,        chestGO, 36, 96);
@@ -1124,7 +1137,7 @@ Organ buildCaeciliaDemoOrgan()
 
     // === Récit (enclosed, 8 stops) =========================================
     b.addStop(recit, "Bourdon 8",       TonalFamily::Flute,     ft::kEight, PitchClass::Unison,   ChorusRole::Foundation,   chestRecit, 36, 96);
-    b.addStop(recit, "Flûte octaviante 4", TonalFamily::Flute,  ft::kFour,  PitchClass::Octave,   ChorusRole::Chorus,       chestRecit, 36, 96);
+    b.addStop(recit, "Flûte octaviante 4", TonalFamily::Flute,  ft::kFour,  PitchClass::Octave,   ChorusRole::Chorus,       chestRecit, 36, 96, {}, false);
     b.addStop(recit, "Gambe 8",         TonalFamily::String,    ft::kEight, PitchClass::Unison,   ChorusRole::Foundation,   chestRecit, 36, 96);
     b.addStop(recit, "Voix Céleste 8",  TonalFamily::String,    ft::kEight, PitchClass::Unison,   ChorusRole::Color,        chestRecit, 36, 96);
     b.addStop(recit, "Plein Jeu III",   TonalFamily::Mixture,   ft::kTwo,   PitchClass::Compound, ChorusRole::MixtureCrown, chestRecit, 36, 96,
@@ -1211,7 +1224,7 @@ DemoVoiceBank buildDemoRegistrationVoices(const Organ&                  organ,
             continue;
 
         Entry e;
-        e.model = spectralModelForStop(*stop);
+        e.model = spectralModelForStop(*stop, rank->isStopped());
 
         // Mixtures and mutations encode their pitch content in the partial
         // ratios relative to 8' unison, so the voice must sound at unison.

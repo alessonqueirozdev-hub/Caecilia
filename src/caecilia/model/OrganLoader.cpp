@@ -384,6 +384,7 @@ ParseResult OrganLoader::parse(std::string_view content,
         readFootage(r, o, "footage", path, k.footageNum, k.footageDen);
         r.str(o, "windchest", path, k.windchest);
         r.str(o, "spectrum",  path, k.spectrum);
+        r.boolean(o, "stopped", path, k.stopped);
         r.integer(o, "lowNote",  path, k.lowNote);
         r.integer(o, "highNote", path, k.highNote);
         r.number(o, "pan",       path, k.pan);
@@ -508,6 +509,8 @@ CompileResult OrganLoader::compile(const OrganDefinition& definition,
         r.setEngine(engineKindFromString(rd.engine).value_or(core::EngineKind::Additive));
         r.setFootage(core::Footage{rd.footageNum, rd.footageDen});
         r.setCompass(static_cast<core::MidiNote>(rd.lowNote), static_cast<core::MidiNote>(rd.highNote));
+
+        r.setStopped(rd.stopped);
 
         // A measured spectrum, if this rank names one. The reference is kept
         // whether or not it resolves, so a document that travelled without its
@@ -828,6 +831,7 @@ std::string OrganLoader::serialize(const OrganDefinition& definition,
         if (!k.windchest.empty())
             put(o, "windchest", k.windchest);
         if (! k.spectrum.empty()) put(o, "spectrum", k.spectrum);
+        if (k.stopped != rankDefaults.stopped) put(o, "stopped", k.stopped);
         if (k.lowNote  != rankDefaults.lowNote)  put(o, "lowNote",  static_cast<double>(k.lowNote));
         if (k.highNote != rankDefaults.highNote) put(o, "highNote", static_cast<double>(k.highNote));
         if (k.pan       != rankDefaults.pan)       put(o, "pan", k.pan);
@@ -985,6 +989,7 @@ OrganDefinition OrganLoader::definitionFrom(const Organ& organ)
         d.footageDen = r.footage().den;
         d.windchest  = chestName(r.windchest());
         d.spectrum   = r.spectrumFile();
+        d.stopped    = r.isStopped();
         d.lowNote    = r.lowNote();
         d.highNote   = r.highNote();
         d.pan        = r.baseSpatial().panNorm;

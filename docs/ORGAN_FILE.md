@@ -100,6 +100,7 @@ thing that makes sound. A stop is the *control* that admits wind to one.
 | `engine` | string | `"Additive"` | `Additive`, `Sample`, `Waveguide`, `Modal`. Only `Additive` sounds today; the others fall back to it. |
 | `footage` | number or `[num, den]` | `8` | Feet. `4`, `16`, or `[2, 3]` for a 2⅔. |
 | `windchest` | string | — | Name of the chest this rank stands on. Empty means chest 0. |
+| `stopped` | bool | `true` | Whether these pipes are **stopped** (plugged) rather than open. See below. |
 | `lowNote` | number | `36` | MIDI note of the lowest pipe. |
 | `highNote` | number | `96` | MIDI note of the highest pipe. |
 | `pan` | number | `0.0` | −1 left, +1 right. |
@@ -107,6 +108,26 @@ thing that makes sound. A stop is the *control* that admits wind to one.
 | `spectrum` | string | — | Path to a **measured** spectrum, relative to this document. See below. |
 | `voicing` | object | — | See below. Omitted keys keep their defaults. |
 | `sampleSet` | object | — | Only meaningful with `"engine": "Sample"`. |
+
+### Stopped or open
+
+A stopped cylindrical pipe is plugged at the top. The closed end is a pressure
+antinode, so only *odd* multiples of the fundamental fit inside it — which is why
+a Bourdon sounds hollow and an open Flûte does not. It is the single most audible
+distinction inside the flute family, and the two are not interchangeable.
+
+```json
+{ "name": "Bourdon 8",          "family": "Flute", "footage": 8 }
+{ "name": "Flûte octaviante 4", "family": "Flute", "footage": 4, "stopped": false }
+```
+
+`true` is the default because most flute ranks are stopped. A **Flûte harmonique**,
+a **Flûte octaviante**, an **Open Diapason** or anything else built open wants
+`false`. *Octaviante* means the pipe overblows at the octave, which a stopped pipe
+physically cannot do.
+
+Only the flute recipe consults it today; a Principal's series is the same either
+way in this model.
 
 ### A measured spectrum
 

@@ -45,6 +45,9 @@ public:
     [[nodiscard]] core::Footage     footage() const noexcept { return footage_; }
     [[nodiscard]] core::WindchestId windchest() const noexcept { return windchest_; }
 
+    /// Whether these pipes are stopped rather than open. @see RankDef::stopped.
+    [[nodiscard]] bool isStopped() const noexcept { return stopped_; }
+
     // --- Compass ------------------------------------------------------------
     [[nodiscard]] core::MidiNote lowNote() const noexcept { return lowNote_; }
     [[nodiscard]] core::MidiNote highNote() const noexcept { return highNote_; }
@@ -100,6 +103,7 @@ public:
     void setEngine(core::EngineKind e) noexcept { engine_ = e; }
     void setFootage(core::Footage f) noexcept { footage_ = f; }
     void setWindchest(core::WindchestId w) noexcept { windchest_ = w; }
+    void setStopped(bool s) noexcept { stopped_ = s; }
     void setCompass(core::MidiNote low, core::MidiNote high) noexcept;
     void setVoicing(const RankVoicingSpec& v) { voicing_ = v; }
     void setSampleSet(SampleSetDescriptor s) { sampleSet_ = std::move(s); }
@@ -153,6 +157,7 @@ private:
     core::EngineKind    engine_   = core::EngineKind::Additive;
     core::Footage       footage_  = core::footage::kEight;
     core::WindchestId   windchest_{};
+    bool                stopped_  = true;
     core::MidiNote      lowNote_  = 36;
     core::MidiNote      highNote_ = 96;
     RankVoicingSpec     voicing_{};

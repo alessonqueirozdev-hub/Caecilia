@@ -88,7 +88,13 @@ namespace caecilia::model
 
 /// Dispatch: pick and build the family-appropriate spectral recipe for a
 /// compiled @ref Stop (reads family / footage / mixtureComposition / role).
-[[nodiscard]] synth::SpectralModel spectralModelForStop(const Stop& stop);
+///
+/// @param stopped Whether the rank's pipes are stopped rather than open, which
+///        the flute recipe uses and the others ignore. It lives on the RANK, so
+///        a caller that has one passes it; the default is what every rank did
+///        before an organ file could say otherwise.
+[[nodiscard]] synth::SpectralModel spectralModelForStop(const Stop& stop,
+                                                        bool stopped = true);
 
 // ---------------------------------------------------------------------------
 // The demo instrument.

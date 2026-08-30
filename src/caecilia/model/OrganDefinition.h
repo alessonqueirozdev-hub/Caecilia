@@ -74,6 +74,20 @@ struct RankDef
     std::int32_t footageNum = 8;
     std::int32_t footageDen = 1;
     std::string  windchest;             ///< Name reference into @c OrganDefinition::windchests.
+
+    /// Whether these pipes are STOPPED (plugged at the top) rather than open.
+    ///
+    /// A stopped cylindrical pipe sounds an octave below an open one of the same
+    /// length and suppresses its even harmonics -- which is the whole difference
+    /// between a Bourdon and a Flûte octaviante, and is unmistakable by ear.
+    ///
+    /// Defaults to true because most flute-family ranks are stopped, and because
+    /// that is how every rank behaved before this key existed. A Flûte harmonique,
+    /// a Flûte octaviante, an Open Diapason or any Principal wants false.
+    ///
+    /// Only the flute recipe consults it today; a Principal's series is the same
+    /// either way in this model.
+    bool         stopped  = true;
     std::int32_t lowNote  = 36;
     std::int32_t highNote = 96;
     VoicingDef   voicing;
