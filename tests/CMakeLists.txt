@@ -114,6 +114,7 @@ if(TARGET Caecilia)
         plugin/HostContractTest.cpp
         plugin/MidiLearnEndToEndTest.cpp
         plugin/ProcessorOrganStateTest.cpp
+        plugin/RealTimeCostTest.cpp
         plugin/RegistrationUndoTest.cpp
         plugin/SelectorQueryTest.cpp
         plugin/OrganSwapUnderPlayTest.cpp
