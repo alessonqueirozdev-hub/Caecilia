@@ -353,6 +353,41 @@ public:
     [[nodiscard]] bool canUndoRegistration() const noexcept { return history_.canUndo(); }
     [[nodiscard]] bool canRedoRegistration() const noexcept { return history_.canRedo(); }
 
+    // --- Asking for stops by description ------------------------------------
+
+    /// What a selector expression picks out of THIS organ, right now.
+    struct SelectorResult
+    {
+        std::vector<core::StopId> stops;    ///< Sorted ascending, as StopSet gives them.
+        juce::String              error;    ///< Empty when the expression parsed.
+        int                       errorPos = 0; ///< 0-based offset of the error in the query.
+    };
+
+    /**
+     * @brief Resolve a selector expression against the loaded organ.
+     * @param query e.g. `family:reed & pitch:8 & div:swell`, or `engaged - div:pedal`.
+     *
+     * The grammar is @c registration::SelectorParser's, which is a versioned
+     * public contract shared with the factory generals and, when they are wired,
+     * with OSC and JSON-RPC. It is resolved against the LIVE registration, which
+     * is what makes `engaged` mean anything.
+     *
+     * Message thread: this parses and allocates.
+     */
+    [[nodiscard]] SelectorResult selectStops(const juce::String& query) const;
+
+    /**
+     * @brief Draw everything @p query picks out, as ONE gesture.
+     * @return How many stops the expression matched (0 if it did not parse).
+     *
+     * Additive, like typing an expression into the omnibar and pressing return has
+     * always been: it draws what you asked for and leaves the rest alone. One
+     * call to the single writer, so it is one entry in the history -- an organist
+     * who draws the reeds by description and thinks better of it takes back the
+     * whole gesture, not fourteen stops one at a time.
+     */
+    std::size_t drawSelector(const juce::String& query);
+
     /// Draw exactly this set. Message thread; moves the host parameters with it.
     void setDrawnStops(std::uint64_t bits);
 

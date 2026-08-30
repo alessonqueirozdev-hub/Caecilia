@@ -124,8 +124,9 @@ Caecilia/
 │  ├─ dsp/                   FDN reverb, master EQ, limiter, sinc interpolator, filters
 │  ├─ tuning/                historical temperaments, stretch, detune
 │  ├─ midi/                  MIDI-learn + learned controls (wired); MidiRouter is not
-│  ├─ registration/          StopSet + factory generals (wired); selector algebra, rules
-│  │                        engine and undo/redo are built and tested but unreached
+│  ├─ registration/          StopSet, factory generals, the selector grammar and
+│  │                        branching undo/redo (wired); the rules engine, pistons,
+│  │                        PlenumBuilder and Explanation are not
 │  ├─ control/               OSC + JSON-RPC over one command sink (not yet wired)
 │  ├─ plugin/                (JUCE) VST3/AU/Standalone AudioProcessor + bridges
 │  └─ ui/                    (JUCE) StateMirror; the console is a WebView page

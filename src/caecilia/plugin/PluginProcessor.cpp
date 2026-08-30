@@ -3,6 +3,8 @@
 
 #include "caecilia/plugin/PluginProcessor.h"
 
+#include "caecilia/registration/SelectorParser.h"
+
 #include "caecilia/registration/FactoryGenerals.h"
 #include "caecilia/wind/OrganWind.h"
 #include "caecilia/registration/StopSet.h"
@@ -615,6 +617,56 @@ void CaeciliaAudioProcessor::applyRegistrationState(const registration::Registra
     // reach -- every step back would add a step forward.
     applyRegistration(state.engagedStops().toMask(), RegistrationOrigin::Restore);
     applyCouplers(couplerBits, RegistrationOrigin::Restore);
+}
+
+CaeciliaAudioProcessor::SelectorResult
+CaeciliaAudioProcessor::selectStops(const juce::String& query) const
+{
+    SelectorResult out;
+
+    const registration::SelectorParser         parser;
+    const registration::SelectorParser::Result parsed = parser.parse(query.toStdString());
+
+    if (! parsed.ok)
+    {
+        // Returned, not swallowed. Somebody typing an expression is owed the
+        // reason it did not work and where -- the parser knows both, and throwing
+        // that away to return an empty set would make a typo look like an organ
+        // with no reeds.
+        out.error    = juce::String(parsed.error);
+        out.errorPos = static_cast<int>(parsed.errorPos);
+        return out;
+    }
+
+    // Against the LIVE registration, not an empty one. That is the whole
+    // difference between this and the factory generals' resolution: `engaged`
+    // means what is drawn right now, so `engaged - div:pedal` is a real thing to
+    // ask for and the console's own grammar could not express it at all.
+    const registration::StopSet set = parsed.selector.resolve(organ_, currentRegistrationState());
+
+    out.stops.reserve(set.size());
+    for (const core::StopId id : set.ids())
+        out.stops.push_back(id);
+
+    return out;
+}
+
+std::size_t CaeciliaAudioProcessor::drawSelector(const juce::String& query)
+{
+    const SelectorResult result = selectStops(query);
+    if (result.stops.empty())
+        return 0;
+
+    std::uint64_t next = registration_;
+    for (const core::StopId id : result.stops)
+        if (id.value < registration::StopSet::kMaskCapacity)
+            next |= (std::uint64_t{ 1 } << id.value);
+
+    // ONE call to the single writer, so it is one entry in the history: an
+    // organist who draws the reeds by description and thinks better of it takes
+    // back the gesture, not fourteen stops one at a time.
+    applyRegistration(next, RegistrationOrigin::Console);
+    return result.stops.size();
 }
 
 void CaeciliaAudioProcessor::undoRegistration()

@@ -260,6 +260,9 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   #organ-revert { display: none; }
   .organ-id.loaded #organ-revert { display: inline-block; }
 
+  /* An expression that will not parse says so where the count would have been. */
+  #omni-hint.bad { color: #e0603c; }
+
   /* Backwards and forwards through the registrations this organist has tried. */
   .reg-history { display: flex; gap: 4px; }
   .reg-history .tool-btn[disabled] { opacity: .3; cursor: default; }
@@ -1799,23 +1802,58 @@ setShoe("swell", 75); setShoe("cresc", 0);
 
 /* ---- Omnibar ------------------------------------------------------------ */
 const omni = $("#omni");
-function applyOmni() {
-  const q = omni.value;
-  const set = q.trim() ? selectStops(q) : null;
+/* The omnibar asks the plugin, which owns the real grammar: parentheses, set
+ * difference, typed predicates and `engaged` -- none of which the local matcher
+ * below can express. The local one stays as the fallback, because this page is
+ * also opened straight in a browser with no plugin behind it.
+ *
+ * The token makes the answers ordered: type fast enough and an old query can
+ * answer after a newer one, and painting that would show matches for a string
+ * nobody is looking at any more. */
+let omniToken = 0;
+const haveBackend = () => !!(window.__JUCE__ && window.__JUCE__.backend);
+
+function paintOmni(set, message) {
   ALL.forEach(st => {
     const node = document.querySelector(`.stop[data-id="${st.id}"]`);
     if (!node) return;
     node.classList.toggle("match", !!set && set.has(st.id));
     node.classList.toggle("dim", !!set && set.size > 0 && !set.has(st.id));
   });
-  { const T = window.__caeT || (k => k);
-    $("#omni-hint").textContent = set ? `${set.size} ${T(set.size === 1 ? "matchWord" : "matchesWord")} · ${T("enterDraw")}` : T("enterDraw"); }
+  const T = window.__caeT || (k => k);
+  const hint = $("#omni-hint");
+  hint.classList.toggle("bad", !!message);
+  hint.textContent = message ? message
+    : (set ? `${set.size} ${T(set.size === 1 ? "matchWord" : "matchesWord")} · ${T("enterDraw")}`
+           : T("enterDraw"));
 }
+
+function applyOmni() {
+  const q = omni.value;
+  if (!q.trim()) { paintOmni(null, ""); return; }
+  if (haveBackend()) { caeInvoke("caeciliaSelectStops", [q, ++omniToken]); return; }
+  paintOmni(selectStops(q), "");
+}
+
+if (window.__JUCE__ && window.__JUCE__.backend) {
+  window.__JUCE__.backend.addEventListener("caeciliaSelectorResult", (r) => {
+    if (!r || (r.token | 0) !== omniToken) return;   // an older keystroke answering late
+    if (r.error) { paintOmni(new Set(), String(r.error)); return; }
+    paintOmni(new Set(r.ids || []), "");
+  });
+}
+
 omni.addEventListener("input", applyOmni);
 omni.addEventListener("keydown", e => {
   if (e.key === "Enter") {
-    const set = selectStops(omni.value);
-    if (set.size) { setDrawn(new Set([...state.drawn, ...set]), `Selector \`${omni.value.trim()}\` → drew ${set.size} stops`); }
+    // Drawn by the plugin, not by the page: it owns the registration, and doing
+    // it in one call makes the whole expression ONE entry in the undo history.
+    if (haveBackend()) {
+      caeInvoke("caeciliaDrawSelector", [omni.value]);
+    } else {
+      const set = selectStops(omni.value);
+      if (set.size) setDrawn(new Set([...state.drawn, ...set]), `Selector \`${omni.value.trim()}\` → drew ${set.size} stops`);
+    }
     omni.value = ""; applyOmni();
   } else if (e.key === "Escape") { omni.value = ""; applyOmni(); omni.blur(); }
 });

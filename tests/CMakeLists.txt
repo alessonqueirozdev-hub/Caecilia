@@ -115,6 +115,7 @@ if(TARGET Caecilia)
         plugin/MidiLearnEndToEndTest.cpp
         plugin/ProcessorOrganStateTest.cpp
         plugin/RegistrationUndoTest.cpp
+        plugin/SelectorQueryTest.cpp
         plugin/OrganSwapUnderPlayTest.cpp
         plugin/SessionRoundTripTest.cpp)
 

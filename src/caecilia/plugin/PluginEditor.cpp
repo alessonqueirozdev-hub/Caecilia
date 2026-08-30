@@ -335,6 +335,44 @@ juce::WebBrowserComponent::Options CaeciliaEditor::makeOptions()
                 }
                 complete(juce::var());
             })
+        // --- Asking for stops by description -------------------------------------
+        //
+        // Fire-and-forget in, event out: caeInvoke has no return path, so the
+        // answer comes back the way the organ-load status does. The token is the
+        // page's, echoed unchanged, so a slow answer to an old keystroke can be
+        // ignored instead of overwriting a newer one.
+        .withNativeFunction("caeciliaSelectStops",
+            [this](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (args.size() >= 2)
+                {
+                    const auto result = processor_.selectStops(args[0].toString());
+
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty("token", args[1]);
+                    o->setProperty("error", result.error);
+                    o->setProperty("errorPos", result.errorPos);
+
+                    juce::Array<juce::var> ids;
+                    for (const core::StopId id : result.stops)
+                        ids.add(static_cast<int>(id.value));
+                    o->setProperty("ids", ids);
+
+                    web_.emitEventIfBrowserIsVisible("caeciliaSelectorResult", juce::var(o));
+                }
+                complete(juce::var());
+            })
+        .withNativeFunction("caeciliaDrawSelector",
+            [this](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion complete)
+            {
+                if (! args.isEmpty())
+                {
+                    processor_.drawSelector(args[0].toString());
+                    pushRegistration();
+                }
+                complete(juce::var());
+            })
+
         // --- Taking a registration back -----------------------------------------
         .withNativeFunction("caeciliaUndoRegistration",
             [this](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion complete)
