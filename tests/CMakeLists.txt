@@ -58,6 +58,7 @@ add_executable(caecilia_tests
     midi/MidiLearnTest.cpp
     midi/MidiRouterTest.cpp
     model/JsonTest.cpp
+    model/ExampleOrganTest.cpp
     model/OrganCapacityTest.cpp
     model/OrganFileTest.cpp
     model/OrganLoaderTest.cpp
@@ -72,6 +73,11 @@ target_link_libraries(caecilia_tests PRIVATE
     Catch2::Catch2WithMain)
 
 target_compile_features(caecilia_tests PRIVATE cxx_std_20)
+
+# Where the shipped example organ lives, so ExampleOrganTest can read the same
+# file a user copies rather than a fixture that resembles it.
+target_compile_definitions(caecilia_tests PRIVATE
+    CAECILIA_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples")
 
 # Let the test sources reach the shared support helpers via a stable include
 # root (e.g. #include "support/TestOrgan.h").

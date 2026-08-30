@@ -110,17 +110,22 @@ Caecilia/
 ├─ THIRD_PARTY_NOTICES.md    JUCE / Catch2 — their own separate licenses
 ├─ CONTRIBUTING.md           Conventional Commits, branch/PR flow, formatting
 ├─ docs/
-│  └─ ARCHITECTURE.md        Master architecture: layering, voice/wind/registration, data flow
+│  ├─ ARCHITECTURE.md        Master architecture: layering, voice/wind/registration, data flow
+│  ├─ ORGAN_FILE.md          The organ-file format: every key, every default, the limits
+│  └─ …                      DSP_DESIGN, SYNTHESIS, WIND_MODEL, TUNING, REGISTRATION, UI_DESIGN
+├─ examples/
+│  └─ caecilia-demo.organ.json   The instrument's own organ, to copy and edit
 ├─ src/caecilia/
 │  ├─ core/                  Pure, JUCE-free contract: enums, Footage, IDs, IVoice, IWindSupply, ...
 │  ├─ engine/                RT scheduler, voice pool, command ring, meters
 │  ├─ synthesis/             additive voice + partial bank (the other engines are unused)
-│  ├─ wind/                  reservoir ODE, WindState, tremulant (built, not yet wired)
+│  ├─ wind/                  reservoir ODE, WindState, tremulant (per chest, wired)
 │  ├─ model/                 Organ/Stop/Rank, the demo organ, registration composites
 │  ├─ dsp/                   FDN reverb, master EQ, limiter, sinc interpolator, filters
 │  ├─ tuning/                historical temperaments, stretch, detune
-│  ├─ midi/                  core-native MIDI routing + MIDI-learn (not yet wired)
-│  ├─ registration/          Selector algebra, rules engine, undo/redo (not yet wired)
+│  ├─ midi/                  MIDI-learn + learned controls (wired); MidiRouter is not
+│  ├─ registration/          StopSet + factory generals (wired); selector algebra, rules
+│  │                        engine and undo/redo are built and tested but unreached
 │  ├─ control/               OSC + JSON-RPC over one command sink (not yet wired)
 │  ├─ plugin/                (JUCE) VST3/AU/Standalone AudioProcessor + bridges
 │  └─ ui/                    (JUCE) StateMirror; the console is a WebView page
@@ -141,6 +146,28 @@ Caecilia/
   lint guards the core target.
 
 ---
+
+## Playing your own organ
+
+The instrument compiled into the binary is *an* organ, not *the* organ. The
+console's ⌂ button opens an organ file; ↺ goes back to the built-in one. A project
+remembers which file it was written on — the path, not a copy, because the file is
+yours and you may still be editing it.
+
+Start from the instrument's own organ, which ships as a real three-manual
+specification:
+
+```bash
+cp examples/caecilia-demo.organ.json my-organ.organ.json
+```
+
+Every key, every default and every limit is in
+[`docs/ORGAN_FILE.md`](docs/ORGAN_FILE.md). To check a file before loading it —
+same diagnostics the plugin reports, with line and column:
+
+```bash
+caecilia-organ-file --check my-organ.organ.json
+```
 
 ## Building
 

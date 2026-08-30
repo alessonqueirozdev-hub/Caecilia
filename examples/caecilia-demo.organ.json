@@ -1,0 +1,623 @@
+{
+  "name": "Caecilia Demonstration Organ",
+  "builder": "Alesson Queiroz",
+  "year": 2026,
+  "windchests": [
+    {
+      "name": "Pédale chest",
+      "pressurePa": 980
+    },
+    {
+      "name": "Grand-Orgue chest"
+    },
+    {
+      "name": "Récit chest",
+      "pressurePa": 735,
+      "tremulant": true
+    }
+  ],
+  "ranks": [
+    {
+      "name": "Contrebasse 16",
+      "family": "Principal",
+      "footage": 16,
+      "windchest": "Pédale chest",
+      "highNote": 67,
+      "voicing": {
+        "chiff": 0.15,
+        "harmonicDevelopment": 0.65,
+        "brightness": 0.6,
+        "windSensitivity": 0.45
+      }
+    },
+    {
+      "name": "Soubasse 16",
+      "family": "Flute",
+      "footage": 16,
+      "windchest": "Pédale chest",
+      "highNote": 67,
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Octavebasse 8",
+      "family": "Principal",
+      "footage": 8,
+      "windchest": "Pédale chest",
+      "highNote": 67,
+      "voicing": {
+        "chiff": 0.15,
+        "harmonicDevelopment": 0.65,
+        "brightness": 0.6,
+        "windSensitivity": 0.45
+      }
+    },
+    {
+      "name": "Bourdon 8",
+      "family": "Flute",
+      "footage": 8,
+      "windchest": "Pédale chest",
+      "highNote": 67,
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Bombarde 16",
+      "family": "Reed",
+      "footage": 16,
+      "windchest": "Pédale chest",
+      "highNote": 67,
+      "voicing": {
+        "chiff": 0.35,
+        "harmonicDevelopment": 0.9,
+        "brightness": 0.75,
+        "windSensitivity": 0.6
+      }
+    },
+    {
+      "name": "Trompette 8",
+      "family": "Reed",
+      "footage": 8,
+      "windchest": "Pédale chest",
+      "highNote": 67,
+      "voicing": {
+        "chiff": 0.35,
+        "harmonicDevelopment": 0.9,
+        "brightness": 0.75,
+        "windSensitivity": 0.6
+      }
+    },
+    {
+      "name": "Montre 16",
+      "family": "Principal",
+      "footage": 16,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.15,
+        "harmonicDevelopment": 0.65,
+        "brightness": 0.6,
+        "windSensitivity": 0.45
+      }
+    },
+    {
+      "name": "Montre 8",
+      "family": "Principal",
+      "footage": 8,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.15,
+        "harmonicDevelopment": 0.65,
+        "brightness": 0.6,
+        "windSensitivity": 0.45
+      }
+    },
+    {
+      "name": "Bourdon 16",
+      "family": "Flute",
+      "footage": 16,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Bourdon 8",
+      "family": "Flute",
+      "footage": 8,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Prestant 4",
+      "family": "Principal",
+      "footage": 4,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.15,
+        "harmonicDevelopment": 0.65,
+        "brightness": 0.6,
+        "windSensitivity": 0.45
+      }
+    },
+    {
+      "name": "Flûte 4",
+      "family": "Flute",
+      "footage": 4,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Nazard 2 2/3",
+      "family": "Flute",
+      "footage": [
+        8,
+        3
+      ],
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Doublette 2",
+      "family": "Principal",
+      "footage": 2,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.15,
+        "harmonicDevelopment": 0.65,
+        "brightness": 0.6,
+        "windSensitivity": 0.45
+      }
+    },
+    {
+      "name": "Tierce 1 3/5",
+      "family": "Flute",
+      "footage": [
+        8,
+        5
+      ],
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Fourniture IV",
+      "family": "Mixture",
+      "footage": 2,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.2,
+        "harmonicDevelopment": 0.95,
+        "brightness": 0.9,
+        "detuneScatterCents": 2
+      }
+    },
+    {
+      "name": "Trompette 8",
+      "family": "Reed",
+      "footage": 8,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.35,
+        "harmonicDevelopment": 0.9,
+        "brightness": 0.75,
+        "windSensitivity": 0.6
+      }
+    },
+    {
+      "name": "Clairon 4",
+      "family": "Reed",
+      "footage": 4,
+      "windchest": "Grand-Orgue chest",
+      "voicing": {
+        "chiff": 0.35,
+        "harmonicDevelopment": 0.9,
+        "brightness": 0.75,
+        "windSensitivity": 0.6
+      }
+    },
+    {
+      "name": "Bourdon 8",
+      "family": "Flute",
+      "footage": 8,
+      "windchest": "Récit chest",
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Flûte octaviante 4",
+      "family": "Flute",
+      "footage": 4,
+      "windchest": "Récit chest",
+      "voicing": {
+        "chiff": 0.25,
+        "harmonicDevelopment": 0.3,
+        "brightness": 0.4,
+        "windSensitivity": 0.35
+      }
+    },
+    {
+      "name": "Gambe 8",
+      "family": "String",
+      "footage": 8,
+      "windchest": "Récit chest",
+      "voicing": {
+        "chiff": 0.1,
+        "harmonicDevelopment": 0.85,
+        "brightness": 0.8,
+        "windSensitivity": 0.55,
+        "detuneScatterCents": 1.5
+      }
+    },
+    {
+      "name": "Voix Céleste 8",
+      "family": "String",
+      "footage": 8,
+      "windchest": "Récit chest",
+      "voicing": {
+        "chiff": 0.1,
+        "harmonicDevelopment": 0.85,
+        "brightness": 0.8,
+        "windSensitivity": 0.55,
+        "detuneScatterCents": 1.5
+      }
+    },
+    {
+      "name": "Plein Jeu III",
+      "family": "Mixture",
+      "footage": 2,
+      "windchest": "Récit chest",
+      "voicing": {
+        "chiff": 0.2,
+        "harmonicDevelopment": 0.95,
+        "brightness": 0.9,
+        "detuneScatterCents": 2
+      }
+    },
+    {
+      "name": "Basson-Hautbois 8",
+      "family": "Reed",
+      "footage": 8,
+      "windchest": "Récit chest",
+      "voicing": {
+        "chiff": 0.35,
+        "harmonicDevelopment": 0.9,
+        "brightness": 0.75,
+        "windSensitivity": 0.6
+      }
+    },
+    {
+      "name": "Trompette 8",
+      "family": "Reed",
+      "footage": 8,
+      "windchest": "Récit chest",
+      "voicing": {
+        "chiff": 0.35,
+        "harmonicDevelopment": 0.9,
+        "brightness": 0.75,
+        "windSensitivity": 0.6
+      }
+    },
+    {
+      "name": "Clairon 4",
+      "family": "Reed",
+      "footage": 4,
+      "windchest": "Récit chest",
+      "voicing": {
+        "chiff": 0.35,
+        "harmonicDevelopment": 0.9,
+        "brightness": 0.75,
+        "windSensitivity": 0.6
+      }
+    }
+  ],
+  "divisions": [
+    {
+      "name": "Pédale",
+      "kind": "Pedal",
+      "highNote": 67,
+      "manual": 2,
+      "midiChannel": 2
+    },
+    {
+      "name": "Grand-Orgue",
+      "kind": "Manual",
+      "midiChannel": 0
+    },
+    {
+      "name": "Récit",
+      "kind": "Manual",
+      "enclosed": true,
+      "tremulant": true,
+      "manual": 1,
+      "midiChannel": 1
+    }
+  ],
+  "stops": [
+    {
+      "name": "Contrebasse 16",
+      "family": "Principal",
+      "footage": 16,
+      "pitchClass": "Sub",
+      "division": "Pédale",
+      "rank": "Contrebasse 16"
+    },
+    {
+      "name": "Soubasse 16",
+      "family": "Flute",
+      "footage": 16,
+      "pitchClass": "Sub",
+      "division": "Pédale",
+      "rank": "Soubasse 16"
+    },
+    {
+      "name": "Octavebasse 8",
+      "family": "Principal",
+      "footage": 8,
+      "division": "Pédale",
+      "rank": "Octavebasse 8"
+    },
+    {
+      "name": "Bourdon 8",
+      "family": "Flute",
+      "footage": 8,
+      "division": "Pédale",
+      "rank": "Pédale chest/Bourdon 8"
+    },
+    {
+      "name": "Bombarde 16",
+      "family": "Reed",
+      "footage": 16,
+      "pitchClass": "Sub",
+      "division": "Pédale",
+      "rank": "Bombarde 16"
+    },
+    {
+      "name": "Trompette 8",
+      "family": "Reed",
+      "footage": 8,
+      "division": "Pédale",
+      "rank": "Pédale chest/Trompette 8"
+    },
+    {
+      "name": "Montre 16",
+      "family": "Principal",
+      "footage": 16,
+      "pitchClass": "Sub",
+      "division": "Grand-Orgue",
+      "rank": "Montre 16"
+    },
+    {
+      "name": "Montre 8",
+      "family": "Principal",
+      "footage": 8,
+      "division": "Grand-Orgue",
+      "rank": "Montre 8"
+    },
+    {
+      "name": "Bourdon 16",
+      "family": "Flute",
+      "footage": 16,
+      "pitchClass": "Sub",
+      "division": "Grand-Orgue",
+      "rank": "Bourdon 16"
+    },
+    {
+      "name": "Bourdon 8",
+      "family": "Flute",
+      "footage": 8,
+      "division": "Grand-Orgue",
+      "rank": "Grand-Orgue chest/Bourdon 8"
+    },
+    {
+      "name": "Prestant 4",
+      "family": "Principal",
+      "footage": 4,
+      "pitchClass": "Octave",
+      "role": "Chorus",
+      "division": "Grand-Orgue",
+      "rank": "Prestant 4"
+    },
+    {
+      "name": "Flûte 4",
+      "family": "Flute",
+      "footage": 4,
+      "pitchClass": "Octave",
+      "role": "Chorus",
+      "division": "Grand-Orgue",
+      "rank": "Flûte 4"
+    },
+    {
+      "name": "Nazard 2 2/3",
+      "family": "Flute",
+      "footage": [
+        8,
+        3
+      ],
+      "pitchClass": "Mutation",
+      "role": "Color",
+      "division": "Grand-Orgue",
+      "rank": "Grand-Orgue chest/Nazard 2 2/3"
+    },
+    {
+      "name": "Doublette 2",
+      "family": "Principal",
+      "footage": 2,
+      "pitchClass": "Super",
+      "role": "Chorus",
+      "division": "Grand-Orgue",
+      "rank": "Doublette 2"
+    },
+    {
+      "name": "Tierce 1 3/5",
+      "family": "Flute",
+      "footage": [
+        8,
+        5
+      ],
+      "pitchClass": "Mutation",
+      "role": "Color",
+      "division": "Grand-Orgue",
+      "rank": "Grand-Orgue chest/Tierce 1 3/5"
+    },
+    {
+      "name": "Fourniture IV",
+      "family": "Mixture",
+      "footage": 2,
+      "pitchClass": "Compound",
+      "role": "MixtureCrown",
+      "division": "Grand-Orgue",
+      "rank": "Fourniture IV",
+      "mixture": [
+        2,
+        [
+          4,
+          3
+        ],
+        1,
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "Trompette 8",
+      "family": "Reed",
+      "footage": 8,
+      "division": "Grand-Orgue",
+      "rank": "Grand-Orgue chest/Trompette 8"
+    },
+    {
+      "name": "Clairon 4",
+      "family": "Reed",
+      "footage": 4,
+      "pitchClass": "Octave",
+      "role": "Chorus",
+      "division": "Grand-Orgue",
+      "rank": "Grand-Orgue chest/Clairon 4"
+    },
+    {
+      "name": "Bourdon 8",
+      "family": "Flute",
+      "footage": 8,
+      "division": "Récit",
+      "rank": "Récit chest/Bourdon 8"
+    },
+    {
+      "name": "Flûte octaviante 4",
+      "family": "Flute",
+      "footage": 4,
+      "pitchClass": "Octave",
+      "role": "Chorus",
+      "division": "Récit",
+      "rank": "Flûte octaviante 4"
+    },
+    {
+      "name": "Gambe 8",
+      "family": "String",
+      "footage": 8,
+      "division": "Récit",
+      "rank": "Gambe 8"
+    },
+    {
+      "name": "Voix Céleste 8",
+      "family": "String",
+      "footage": 8,
+      "role": "Color",
+      "division": "Récit",
+      "rank": "Voix Céleste 8"
+    },
+    {
+      "name": "Plein Jeu III",
+      "family": "Mixture",
+      "footage": 2,
+      "pitchClass": "Compound",
+      "role": "MixtureCrown",
+      "division": "Récit",
+      "rank": "Plein Jeu III",
+      "mixture": [
+        2,
+        [
+          4,
+          3
+        ],
+        1
+      ]
+    },
+    {
+      "name": "Basson-Hautbois 8",
+      "family": "Reed",
+      "footage": 8,
+      "role": "Color",
+      "division": "Récit",
+      "rank": "Basson-Hautbois 8"
+    },
+    {
+      "name": "Trompette 8",
+      "family": "Reed",
+      "footage": 8,
+      "division": "Récit",
+      "rank": "Récit chest/Trompette 8"
+    },
+    {
+      "name": "Clairon 4",
+      "family": "Reed",
+      "footage": 4,
+      "pitchClass": "Octave",
+      "role": "Chorus",
+      "division": "Récit",
+      "rank": "Récit chest/Clairon 4"
+    }
+  ],
+  "couplers": [
+    {
+      "name": "Récit/Grand-Orgue",
+      "from": "Récit",
+      "to": "Grand-Orgue"
+    },
+    {
+      "name": "Grand-Orgue/Pédale",
+      "from": "Grand-Orgue",
+      "to": "Pédale"
+    },
+    {
+      "name": "Récit/Pédale",
+      "from": "Récit",
+      "to": "Pédale"
+    }
+  ]
+}
