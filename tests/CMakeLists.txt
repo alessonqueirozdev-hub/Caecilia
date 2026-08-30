@@ -105,7 +105,8 @@ target_include_directories(caecilia_tests PRIVATE
 # ---------------------------------------------------------------------------
 if(TARGET Caecilia)
     add_executable(caecilia_plugin_tests
-        plugin/ProcessorOrganStateTest.cpp)
+        plugin/ProcessorOrganStateTest.cpp
+        plugin/SessionRoundTripTest.cpp)
 
     # `Caecilia` IS the static library that carries the processor's objects --
     # juce_add_plugin builds one shared-code library under that name and gives it

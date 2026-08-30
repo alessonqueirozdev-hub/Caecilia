@@ -1677,6 +1677,14 @@ void CaeciliaAudioProcessor::setStateInformation(const void* data, int sizeInByt
         // agree with them.
         applyRegistration(parameters_.stopBits(), RegistrationOrigin::Restore);
 
+        // The couplers, for the same reason and in the same breath. They were not
+        // here, and the per-block diff does eventually notice them -- so this was
+        // never lost state, only late state. Late is still wrong: a console that
+        // opens before the host has played a block draws the coupler jamb
+        // disagreeing with the host's own parameters, and how long that lasts is
+        // decided by whether anyone presses play.
+        applyCouplers(parameters_.couplerBits(), RegistrationOrigin::Restore);
+
         // Force the next block to re-send the restored parameter state to the engine.
         commandBridge_.resetChangeTracking();
         updateLatency();
