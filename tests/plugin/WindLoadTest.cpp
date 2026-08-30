@@ -180,3 +180,29 @@ TEST_CASE("Letting the keys go gives the wind back", "[plugin][wind]")
     // progressively flat through a piece.
     CHECK(after > underLoad);
 }
+
+TEST_CASE("PROBE: how far the wind actually falls", "[.windmagnitude]")
+{
+    JuceScope scope;
+
+    struct Case { const char* what; std::vector<int> keys; };
+    for (const Case& c : std::vector<Case>{
+             { "1 key",   {} },
+             { "3 keys",  { 64, 67 } },
+             { "9 keys",  { 64, 67, 72, 76, 79, 83, 86, 89 } },
+             { "13 keys", { 48, 55, 64, 67, 72, 76, 79, 83, 86, 89, 91, 93 } } })
+    {
+        CaeciliaAudioProcessor processor;
+        prepare(processor);
+        drawEverything(processor);
+        render(processor, 8, notesOn({ kHeld }));
+        render(processor, 40);
+        render(processor, 8, c.keys.empty() ? juce::MidiBuffer{} : notesOn(c.keys));
+        render(processor, 90);
+
+        const auto m = processor.meters().snapshot();
+        WARN(std::string(c.what) + "  voices " + std::to_string(m.activeVoices)
+             + "  pressure " + std::to_string(m.windPressurePa)
+             + "  sag " + std::to_string(100.0f * m.windSagNorm) + "%");
+    }
+}

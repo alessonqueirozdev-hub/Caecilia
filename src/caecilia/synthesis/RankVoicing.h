@@ -51,6 +51,20 @@ struct RankVoicing
 
     SpectralModel     spectrum;   ///< 8'-referenced and calibrated.
     SpeechProfile     speech{};   ///< How fast this family and length speaks.
+
+    /// How strongly this rank breathes with its chest, from the organ file.
+    ///
+    /// Scales the whole per-family wind response -- pitch, level, brightness and
+    /// speech alike. 0.5 is the default and means the family curve unchanged, so
+    /// an organ that says nothing sounds exactly as it did; 1 is twice as
+    /// responsive, 0 is a rank that does not notice the wind at all.
+    ///
+    /// It is the voicer's control, not a physical constant: how much a rank
+    /// breathes is something an organ builder regulates, and different
+    /// instruments differ enormously. The file has carried this number since the
+    /// format existed and nothing read it -- a rank that asked to breathe twice
+    /// as hard breathed exactly as much as one that asked not to.
+    float             windSensitivity = 0.5f;
 };
 
 } // namespace caecilia::synth

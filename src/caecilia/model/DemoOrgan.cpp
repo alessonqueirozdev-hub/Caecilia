@@ -645,7 +645,13 @@ RankVoicing buildRankVoicing(const Organ& organ, core::StopId stop)
     // would have reached nothing, and no division would have sagged under its own
     // load. Caught by "The tremulant reaches the pipes".
     if (const Rank* rank = organ.rank(s->rank()))
+    {
         v.chest = rank->windchest();
+
+        // The organ file's own answer to how hard this rank breathes. It has been
+        // in the format since the format existed and reached nothing at all.
+        v.windSensitivity = rank->voicing().windSensitivity;
+    }
 
     // Exactly what buildRegistrationCompositeSpectrum does for one rank, in the
     // same order and with the same numbers. Not "equivalent": the same code path,

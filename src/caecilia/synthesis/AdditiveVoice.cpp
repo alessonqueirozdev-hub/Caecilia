@@ -139,9 +139,20 @@ void AdditiveVoice::adoptRank(const void* voicing) noexcept
     // with. The Récit's tremulant reached nothing, and a Trompette breathed like a
     // Montre. Both are invisible in a spectrum and only show up as a rendered
     // pressure response, which is what "The tremulant reaches the pipes" measures.
-    bank_.setWindCoupling(context_.wind,
-                          context_.chest,
-                          wind::defaultResponseFor(context_.family));
+    // Scaled by the rank's own sensitivity, which is what the organ file's
+    // voicing.windSensitivity finally reaches. 0.5 leaves the family curve alone,
+    // so an organ that does not mention it sounds exactly as it did.
+    wind::WindResponseCurve curve = wind::defaultResponseFor(context_.family);
+    {
+        const float k = 2.0f * (v.windSensitivity < 0.0f ? 0.0f
+                                                         : (v.windSensitivity > 1.0f ? 1.0f
+                                                                                     : v.windSensitivity));
+        curve.centsPerDeviation      *= k;
+        curve.dbPerDeviation         *= k;
+        curve.brightnessPerDeviation *= k;
+        curve.attackPerDeviation     *= k;
+    }
+    bank_.setWindCoupling(context_.wind, context_.chest, curve);
 
     bank_.setSpeechProfile(v.speech);
 
