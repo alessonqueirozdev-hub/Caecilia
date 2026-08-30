@@ -9,8 +9,10 @@
 #include "caecilia/model/PipeSpatial.h"
 #include "caecilia/model/RankVoicingSpec.h"
 #include "caecilia/model/SampleSetDescriptor.h"
+#include "caecilia/synthesis/SpectralModel.h"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -70,6 +72,25 @@ public:
     [[nodiscard]] const SampleSetDescriptor& sampleSet() const noexcept { return sampleSet_; }
     [[nodiscard]] bool hasSamples() const noexcept { return sampleSet_.isValid(); }
 
+    // --- Measured timbre ----------------------------------------------------
+    //
+    // A rank may be voiced from a RECORDING rather than from the procedural
+    // recipe: caecilia-partial-extractor FFTs a real pipe into a partial bank, and
+    // a rank that names one sounds from what was measured instead of from family
+    // and footage. Everything else still applies on top -- the footage fold, the
+    // level calibration, the pipe-to-pipe scatter that makes a rank out of one
+    // pipe -- because a measurement is one pipe and a rank is sixty-one.
+
+    /// The measured spectrum, if this rank named one that could be read.
+    [[nodiscard]] const std::optional<synth::SpectralModel>& measuredSpectrum() const noexcept
+    {
+        return measuredSpectrum_;
+    }
+
+    /// The reference as written in the organ file, kept so a round trip preserves
+    /// it whether or not the file behind it could be resolved.
+    [[nodiscard]] const std::string& spectrumFile() const noexcept { return spectrumFile_; }
+
     // --- Off-thread construction (used by OrganLoader::compile) --------------
     /// @name Builders (NOT real-time safe; called only during load/compile).
     /// @{
@@ -82,6 +103,8 @@ public:
     void setCompass(core::MidiNote low, core::MidiNote high) noexcept;
     void setVoicing(const RankVoicingSpec& v) { voicing_ = v; }
     void setSampleSet(SampleSetDescriptor s) { sampleSet_ = std::move(s); }
+    void setSpectrumFile(std::string path) { spectrumFile_ = std::move(path); }
+    void setMeasuredSpectrum(synth::SpectralModel m) { measuredSpectrum_ = std::move(m); }
     void setBaseSpatial(const PipeSpatial& s) { baseSpatial_ = s; }
 
     /// @return Where this rank sits in the case, before the per-pipe scatter.
@@ -124,6 +147,8 @@ public:
 private:
     core::RankId        id_{};
     std::string         name_;
+    std::string         spectrumFile_;
+    std::optional<synth::SpectralModel> measuredSpectrum_;
     core::TonalFamily   family_   = core::TonalFamily::Undefined;
     core::EngineKind    engine_   = core::EngineKind::Additive;
     core::Footage       footage_  = core::footage::kEight;

@@ -104,8 +104,42 @@ thing that makes sound. A stop is the *control* that admits wind to one.
 | `highNote` | number | `96` | MIDI note of the highest pipe. |
 | `pan` | number | `0.0` | −1 left, +1 right. |
 | `distanceM` | number | `8.0` | Metres from the listener; feeds the spatial model. |
+| `spectrum` | string | — | Path to a **measured** spectrum, relative to this document. See below. |
 | `voicing` | object | — | See below. Omitted keys keep their defaults. |
 | `sampleSet` | object | — | Only meaningful with `"engine": "Sample"`. |
+
+### A measured spectrum
+
+A rank can sound from a **recording of a real pipe** instead of from the
+procedural recipe. `caecilia-partial-extractor` turns a steady recording into a
+partial bank:
+
+```bash
+caecilia-partial-extractor --input montre-c4.wav --output spectra/montre-8.json
+```
+
+and the rank names it:
+
+```json
+{ "name": "Montre 8", "family": "Principal", "footage": 8,
+  "spectrum": "spectra/montre-8.json" }
+```
+
+What the measurement supplies is the **shape** of the spectrum, not its level. The
+absolute level of a recording is whatever the person with the microphone chose;
+the partials are normalised so the loudest sits at 0 dB, and the organ's own
+balance decides loudness from there. Everything else still applies on top — the
+footage fold, the level calibration, and the pipe-to-pipe scatter that makes a
+rank of sixty-one pipes out of one measured one.
+
+The path is **relative to the organ document, and can only be relative**. An organ
+file is something that travels — you download one, or are sent one — and a
+reference that could name an absolute path, or climb out with `..`, would be a
+document that reads its recipient's disk. Both are refused.
+
+A spectrum that cannot be opened is a **warning**, not an error: the rank still
+speaks, from the recipe, and the reference is kept so a document that travelled
+without its spectra does not lose them the next time it is saved.
 
 ### Voicing
 

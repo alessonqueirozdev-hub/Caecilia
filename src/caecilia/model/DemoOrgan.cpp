@@ -590,6 +590,36 @@ synth::SpeechProfile speechProfileFor(core::TonalFamily family, core::Footage fo
     return p;
 }
 
+/// A measured spectrum, level-normalised, or the procedural recipe.
+///
+/// Normalised because a recording's absolute level is whatever the person with
+/// the microphone chose, and it is not this rank's place in the organ. The recipe
+/// puts its fundamental at 0 dB and lets compositeRankGainDb decide loudness, so
+/// a measurement joins on the same terms: it contributes the SHAPE of the
+/// spectrum, and the organ keeps its own balance. Without this, drawing a
+/// measured Montre beside a procedural Bourdon would sound like whichever of them
+/// was recorded louder.
+synth::SpectralModel measuredOrProceduralSpectrum(const Organ& organ, const Stop& s)
+{
+    const Rank* rank = organ.rank(s.rank());
+    if (rank == nullptr || ! rank->measuredSpectrum().has_value())
+        return spectralModelForStop(s);
+
+    synth::SpectralModel model = *rank->measuredSpectrum();
+    if (model.partials.empty())
+        return spectralModelForStop(s);
+
+    float peak = model.partials.front().ampDb;
+    for (const synth::PartialTrack& p : model.partials)
+        if (p.ampDb > peak)
+            peak = p.ampDb;
+
+    for (synth::PartialTrack& p : model.partials)
+        p.ampDb -= peak;
+
+    return model;
+}
+
 RankVoicing buildRankVoicing(const Organ& organ, core::StopId stop)
 {
     RankVoicing v;
@@ -621,7 +651,10 @@ RankVoicing buildRankVoicing(const Organ& organ, core::StopId stop)
     const double fold = (unisonReferenced || feet <= 0.0) ? 1.0 : 8.0 / feet;
     const float  gainDb = compositeRankGainDb(*s);
 
-    const synth::SpectralModel recipe = spectralModelForStop(*s);
+    // Measured before procedural. A rank that names a spectrum file sounds from
+    // the pipe somebody recorded; one that does not sounds from family and
+    // footage, which is every rank that existed before this.
+    const synth::SpectralModel recipe = measuredOrProceduralSpectrum(organ, *s);
     adoptFormants(v.spectrum, recipe);
     for (const synth::PartialTrack& p : recipe.partials)
     {

@@ -881,8 +881,33 @@ void CaeciliaAudioProcessor::adoptOrgan(model::Organ&& organ, juce::String path)
         prepareToPlay(getSampleRate(), getBlockSize());
 }
 
+/// Resolve a document's relative references inside @p root, and nowhere else.
+///
+/// An organ file is a document that travels: somebody downloads one, or is sent
+/// one. A reference that could name an absolute path, or climb out of its own
+/// directory with .., would be a document that reads its recipient's disk. So the
+/// reference is resolved as a child of the organ's own folder and then CHECKED to
+/// have stayed there -- getChildFile resolves the .. itself, and isAChildOf is
+/// what notices where it landed.
+static model::ResourceResolver resolverRootedAt(const juce::File& root)
+{
+    return [root](std::string_view relative) -> std::optional<std::string>
+    {
+        const juce::String rel(std::string{ relative });
+        if (rel.isEmpty() || juce::File::isAbsolutePath(rel))
+            return std::nullopt;
+
+        const juce::File target = root.getChildFile(rel);
+        if (! target.isAChildOf(root) || ! target.existsAsFile())
+            return std::nullopt;
+
+        return target.loadFileAsString().toStdString();
+    };
+}
+
 model::LoadDiagnostics CaeciliaAudioProcessor::loadOrganDocument(const juce::String& document,
-                                                                 const juce::String& sourceName)
+                                                                 const juce::String& sourceName,
+                                                                 const model::ResourceResolver& resolve)
 {
     // Parse and compile FIRST, and only then touch the instrument. A document that
     // does not load leaves the organ that was playing exactly where it was: a
@@ -890,7 +915,7 @@ model::LoadDiagnostics CaeciliaAudioProcessor::loadOrganDocument(const juce::Str
     // a filename should not lose the instrument they were using.
     model::CompileResult result =
         model::OrganLoader::load(document.toStdString(), model::OrganFileFormat::Auto,
-                                 sourceName.toStdString());
+                                 sourceName.toStdString(), resolve);
     if (! result.ok())
         return result.diagnostics;
 
@@ -921,7 +946,10 @@ model::LoadDiagnostics CaeciliaAudioProcessor::loadOrganFile(const juce::File& f
         return diagnostics;
     }
 
-    return loadOrganDocument(text, file.getFullPathName());
+    // Rooted at the organ's own folder, so "montre-8.partials.json" beside it is
+    // what that reference means -- and is all it can mean.
+    return loadOrganDocument(text, file.getFullPathName(),
+                             resolverRootedAt(file.getParentDirectory()));
 }
 
 void CaeciliaAudioProcessor::loadBuiltInOrgan()

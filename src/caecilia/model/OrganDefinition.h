@@ -78,6 +78,20 @@ struct RankDef
     std::int32_t highNote = 96;
     VoicingDef   voicing;
     std::optional<SampleSetDef> sampleSet;
+
+    /// Path to a measured spectrum, RELATIVE to this organ document.
+    ///
+    /// What `caecilia-partial-extractor` writes from a recording of a real pipe.
+    /// When present and resolvable it replaces the procedural recipe as this
+    /// rank's timbre; the footage fold, the level calibration and the pipe-to-pipe
+    /// scatter still apply on top, because a measurement is one pipe and a rank is
+    /// sixty-one.
+    ///
+    /// Relative, and only relative: an organ file is a document that travels, and
+    /// one that could name C:\ or /etc would be a document that reads its
+    /// author's disk on somebody else's machine.
+    std::string  spectrum;
+
     float        pan         = 0.0f;
     float        distanceM   = 8.0f;
 };

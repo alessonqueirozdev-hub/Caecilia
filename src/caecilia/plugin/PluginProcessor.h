@@ -17,6 +17,7 @@
 #include "caecilia/model/DemoOrgan.h"
 #include "caecilia/model/Diagnostics.h"
 #include "caecilia/model/Organ.h"
+#include "caecilia/model/OrganLoader.h"
 #include "caecilia/registration/RegistrationHistory.h"
 #include "caecilia/plugin/CommandBridge.h"
 #include "caecilia/plugin/MeterBridge.h"
@@ -140,7 +141,8 @@ public:
      * prepareToPlay builds, which is exactly what a different organ needs.
      */
     model::LoadDiagnostics loadOrganDocument(const juce::String& document,
-                                             const juce::String& sourceName);
+                                             const juce::String& sourceName,
+                                             const model::ResourceResolver& resolve = {});
 
     /// @copydoc loadOrganDocument but reading the bytes from a file first.
     model::LoadDiagnostics loadOrganFile(const juce::File& file);

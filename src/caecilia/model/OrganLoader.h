@@ -7,6 +7,7 @@
 #include "caecilia/model/Organ.h"
 #include "caecilia/model/OrganDefinition.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -57,6 +58,22 @@ struct CompileResult
  * The file format is Caecilia's own schema (see the module README); it never
  * ingests a GPL'd GrandOrgue / Hauptwerk organ definition.
  */
+/**
+ * @brief How a document's relative resource references become content.
+ * @param relativePath The reference exactly as the document wrote it.
+ * @return The file's text, or nullopt if it cannot be provided.
+ *
+ * The model layer knows nothing about filesystems and must not: it is compiled
+ * into a library that links only the standard library, and an organ document is
+ * something that arrives as text from anywhere. So resolution is the caller's --
+ * the plugin resolves beside the organ file, the command-line tool beside the
+ * path it was given, and a test resolves out of a map in memory.
+ *
+ * A caller that supplies none is saying this document has no resources to reach,
+ * and a rank that names one is then reported rather than silently ignored.
+ */
+using ResourceResolver = std::function<std::optional<std::string>(std::string_view)>;
+
 class OrganLoader
 {
 public:
@@ -67,8 +84,7 @@ public:
      * @param sourceName Optional label used in diagnostics (e.g. a file name).
      * @return The parsed definition plus any diagnostics.
      *
-     * Not real-time safe (allocates, parses). // TODO(phase model): implement the
-     * JSON/YAML reader; the scaffold reports "not yet implemented".
+     * Not real-time safe (allocates, parses).
      */
     [[nodiscard]] static ParseResult parse(std::string_view content,
                                            OrganFileFormat format = OrganFileFormat::Auto,
@@ -83,7 +99,8 @@ public:
      * its array index, materialises every rank's pipes, and re-runs structural
      * validation. Not real-time safe.
      */
-    [[nodiscard]] static CompileResult compile(const OrganDefinition& definition);
+    [[nodiscard]] static CompileResult compile(const OrganDefinition& definition,
+                                               const ResourceResolver& resolve = {});
 
     /**
      * @brief Convenience: @ref parse then @ref compile.
@@ -91,14 +108,15 @@ public:
      */
     [[nodiscard]] static CompileResult load(std::string_view content,
                                             OrganFileFormat format = OrganFileFormat::Auto,
-                                            std::string_view sourceName = {});
+                                            std::string_view sourceName = {},
+                                            const ResourceResolver& resolve = {});
 
     /**
      * @brief Serialise a definition back to document text (round-trip / export).
-     * @return Always an empty string today: no writer exists for any format, and
-     *         unlike @ref parse this reports no diagnostic at all.
+     * @return The document. Only non-default values are written, so a file stays
+     *         the size of what its author actually said.
      *
-     * Not real-time safe. // TODO(phase model): implement the writer.
+     * Not real-time safe.
      */
     [[nodiscard]] static std::string serialize(const OrganDefinition& definition,
                                                OrganFileFormat format = OrganFileFormat::Json);

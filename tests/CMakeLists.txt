@@ -59,6 +59,7 @@ add_executable(caecilia_tests
     midi/MidiRouterTest.cpp
     model/JsonTest.cpp
     model/ExampleOrganTest.cpp
+    model/SpectralFileTest.cpp
     model/OrganCapacityTest.cpp
     model/OrganFileTest.cpp
     model/OrganLoaderTest.cpp
@@ -117,6 +118,7 @@ if(TARGET Caecilia)
         plugin/RealTimeCostTest.cpp
         plugin/RegistrationUndoTest.cpp
         plugin/SelectorQueryTest.cpp
+        plugin/SpectrumResourceTest.cpp
         plugin/OrganSwapUnderPlayTest.cpp
         plugin/SessionRoundTripTest.cpp)
 

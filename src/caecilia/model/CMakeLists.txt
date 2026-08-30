@@ -22,6 +22,7 @@ target_sources(caecilia_core PRIVATE
     OrganDefinition.cpp
     Json.cpp
     OrganLoader.cpp
+    SpectralModelFile.cpp
     DemoOrgan.cpp)
 
 # Public headers consumed via the project-wide include root (<root>/src):

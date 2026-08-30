@@ -3,6 +3,8 @@
 
 #include "caecilia/model/OrganLoader.h"
 
+#include "caecilia/model/SpectralModelFile.h"
+
 #include "caecilia/model/Json.h"
 
 #include <algorithm>
@@ -381,6 +383,7 @@ ParseResult OrganLoader::parse(std::string_view content,
         r.token(o, "engine", path, k.engine, engineKindFromString, "engine kind");
         readFootage(r, o, "footage", path, k.footageNum, k.footageDen);
         r.str(o, "windchest", path, k.windchest);
+        r.str(o, "spectrum",  path, k.spectrum);
         r.integer(o, "lowNote",  path, k.lowNote);
         r.integer(o, "highNote", path, k.highNote);
         r.number(o, "pan",       path, k.pan);
@@ -465,7 +468,8 @@ ParseResult OrganLoader::parse(std::string_view content,
     return result;
 }
 
-CompileResult OrganLoader::compile(const OrganDefinition& definition)
+CompileResult OrganLoader::compile(const OrganDefinition& definition,
+                                   const ResourceResolver& resolve)
 {
     CompileResult result;
 
@@ -504,6 +508,40 @@ CompileResult OrganLoader::compile(const OrganDefinition& definition)
         r.setEngine(engineKindFromString(rd.engine).value_or(core::EngineKind::Additive));
         r.setFootage(core::Footage{rd.footageNum, rd.footageDen});
         r.setCompass(static_cast<core::MidiNote>(rd.lowNote), static_cast<core::MidiNote>(rd.highNote));
+
+        // A measured spectrum, if this rank names one. The reference is kept
+        // whether or not it resolves, so a document that travelled without its
+        // spectra round-trips unchanged rather than quietly losing the reference
+        // on the first save.
+        if (! rd.spectrum.empty())
+        {
+            r.setSpectrumFile(rd.spectrum);
+            const std::string ctx = "rank '" + rd.name + "' spectrum '" + rd.spectrum + "'";
+
+            if (! resolve)
+            {
+                result.diagnostics.warning(
+                    "This rank names a measured spectrum, but nothing here can open "
+                    "one. It will sound from the procedural recipe.", ctx);
+            }
+            else if (const std::optional<std::string> text = resolve(rd.spectrum))
+            {
+                SpectralModelLoad loaded = loadSpectralModel(*text, rd.spectrum);
+                result.diagnostics.merge(loaded.diagnostics);
+                if (loaded.model.has_value())
+                    r.setMeasuredSpectrum(std::move(*loaded.model));
+            }
+            else
+            {
+                // A warning and not an error: the rank still speaks, from the
+                // recipe. Refusing the whole organ because one spectrum file was
+                // left behind would be the worse trade -- but saying nothing would
+                // leave an organist wondering why their measured Montre sounds
+                // like everyone else's.
+                result.diagnostics.warning("Could not open it; this rank will sound "
+                                           "from the procedural recipe.", ctx);
+            }
+        }
         r.setVoicing(toVoicingSpec(rd.voicing));
         if (rd.sampleSet)
             r.setSampleSet(toSampleDescriptor(*rd.sampleSet));
@@ -664,7 +702,8 @@ CompileResult OrganLoader::compile(const OrganDefinition& definition)
 
 CompileResult OrganLoader::load(std::string_view content,
                                 OrganFileFormat format,
-                                std::string_view sourceName)
+                                std::string_view sourceName,
+                                const ResourceResolver& resolve)
 {
     CompileResult result;
 
@@ -673,7 +712,7 @@ CompileResult OrganLoader::load(std::string_view content,
     if (!parsed.ok())
         return result;
 
-    CompileResult compiled = compile(*parsed.definition);
+    CompileResult compiled = compile(*parsed.definition, resolve);
     result.diagnostics.merge(compiled.diagnostics);
     result.organ = std::move(compiled.organ);
     return result;
@@ -788,6 +827,7 @@ std::string OrganLoader::serialize(const OrganDefinition& definition,
         putFootage(o, "footage", k.footageNum, k.footageDen);
         if (!k.windchest.empty())
             put(o, "windchest", k.windchest);
+        if (! k.spectrum.empty()) put(o, "spectrum", k.spectrum);
         if (k.lowNote  != rankDefaults.lowNote)  put(o, "lowNote",  static_cast<double>(k.lowNote));
         if (k.highNote != rankDefaults.highNote) put(o, "highNote", static_cast<double>(k.highNote));
         if (k.pan       != rankDefaults.pan)       put(o, "pan", k.pan);
@@ -944,6 +984,7 @@ OrganDefinition OrganLoader::definitionFrom(const Organ& organ)
         d.footageNum = r.footage().num;
         d.footageDen = r.footage().den;
         d.windchest  = chestName(r.windchest());
+        d.spectrum   = r.spectrumFile();
         d.lowNote    = r.lowNote();
         d.highNote   = r.highNote();
         d.pan        = r.baseSpatial().panNorm;
