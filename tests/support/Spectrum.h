@@ -26,6 +26,7 @@
 #include "caecilia/model/Organ.h"
 #include "caecilia/synthesis/AdditiveVoice.h"
 #include "caecilia/synthesis/RankVoicing.h"
+#include "caecilia/synthesis/VoiceContext.h"
 
 #include <algorithm>
 #include <cmath>
@@ -56,12 +57,21 @@ namespace caecilia::testing
 [[nodiscard]] inline std::vector<float> renderRankNote(const synth::RankVoicing& voicing,
                                                        int    note,
                                                        double seconds     = 0.5,
-                                                       double sampleRate  = 48000.0)
+                                                       double sampleRate  = 48000.0,
+                                                       const synth::VoiceContext* context = nullptr)
 {
     constexpr std::size_t kBlock = 256;
 
     synth::AdditiveVoice voice;
     voice.bank().setMaxPartials(synth::RankVoicing::kMaxPartials);
+
+    // With no context the voice falls back to equal temperament and a null wind
+    // supply, which is what every spectral test here wants. A tuning test hands
+    // one in, because a temperament that never reaches a voice is exactly the
+    // failure it is looking for.
+    if (context != nullptr)
+        voice.setContext(*context);
+
     voice.prepare(sampleRate, kBlock);
     voice.adoptRank(&voicing);
     voice.noteOn(core::PipeId{ 0, static_cast<std::uint8_t>(note), 1 }, 100);
@@ -170,6 +180,44 @@ namespace caecilia::testing
     if (!(f0 > 0.0) || !(fn > 0.0))
         return -120.0;
     return 20.0 * std::log10(fn / f0);
+}
+
+/**
+ * @brief The frequency of the strongest partial near @p aroundHz, to a fraction
+ *        of a cent.
+ *
+ * Two passes: a coarse scan to find the partial, then a fine one to find its
+ * peak. Measuring a temperament means resolving a difference of fourteen cents
+ * between a pure major third and an equal one, and a bin that is itself a cent
+ * wide cannot do it.
+ */
+[[nodiscard]] inline double estimateHz(const std::vector<float>& signal,
+                                       double aroundHz, double sampleRate = 48000.0)
+{
+    const auto scan = [&](double centreHz, double spanCents, double stepCents)
+    {
+        double bestHz = centreHz;
+        double best   = -1.0;
+        for (double c = -spanCents; c <= spanCents; c += stepCents)
+        {
+            const double hz  = centreHz * std::pow(2.0, c / 1200.0);
+            const double mag = magnitudeAt(signal, hz, sampleRate);
+            if (mag > best)
+            {
+                best   = mag;
+                bestHz = hz;
+            }
+        }
+        return bestHz;
+    };
+
+    return scan(scan(aroundHz, 60.0, 2.0), 3.0, 0.05);
+}
+
+/// @return The interval between two frequencies, in cents.
+[[nodiscard]] inline double centsBetween(double lowHz, double highHz)
+{
+    return 1200.0 * std::log2(highHz / lowHz);
 }
 
 /// @return The voicing of the stop named @p name, or an empty one.
