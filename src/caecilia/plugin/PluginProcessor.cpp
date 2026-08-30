@@ -788,9 +788,7 @@ void CaeciliaAudioProcessor::prepareToPlay(double sampleRate, int maxBlockSample
     const auto channels = static_cast<std::size_t>(juce::jmax(1, getTotalNumOutputChannels()));
 
     // The single allocation point: size every RT buffer from the host contract.
-    // TODO(phase0.1): windchest count comes from the loaded OrganSpec. Until then
-    // every windchest of the demo organ collapses onto bus 0, so per-chest metering
-    // and per-chest wind have nowhere to land.
+    //
     // The wind, before the engine is given a pointer to it. Compiled from the
     // organ's own chests, so the Récit's tremulant belongs to the Récit and a rank
     // reads the pressure of the chest that actually feeds it.

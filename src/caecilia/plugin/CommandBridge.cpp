@@ -67,8 +67,12 @@ void CommandBridge::pushNote(const juce::MidiMessage& msg, core::DivisionId divi
 {
     // The pipe carries its division. Without it every manual shared one identity
     // space, so a note-off on one released the same note on all of them.
-    // TODO(phase0.7): fan the key out to every engaged stop's rank pipe via the
-    // model's Rank->PipeId activation mapping, instead of one representative pipe.
+    // ONE command per key, whatever is drawn. The fan-out to a voice per engaged
+    // rank happens in the engine, where expandKey reads the rank table that the
+    // registration publishes -- so a key release stays one command on the ring
+    // however many stops are out, and the bridge does not have to know the
+    // registration at all. This used to carry a TODO proposing the opposite; that
+    // is the design the engine deliberately does not use.
     const core::PipeId pipe{ 0,
                              static_cast<std::uint8_t>(msg.getNoteNumber()),
                              static_cast<std::uint8_t>(division.value) };

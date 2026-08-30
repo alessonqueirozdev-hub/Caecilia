@@ -46,9 +46,9 @@ class CaeciliaParameterMirror;
  * blocking or allocating.
  *
  * @note MIDI is decoded to core-native intent here at the seam; nothing pushed
- *       onto the ring carries a JUCE type. Off-thread registration @c StateDelta
- *       delivery (the message-thread rules engine) is a separate inbound path
- *       wired in a later phase — see // TODO(phase0.7) in the source.
+ *       onto the ring carries a JUCE type. A registration change does NOT come
+ *       through here: it is published as a rank table from the message thread, and
+ *       the engine fans one key command out across whatever is drawn.
  */
 class CommandBridge
 {
@@ -117,9 +117,18 @@ public:
      * block was applied on-then-off before a sample existed and came out bit-exactly
      * silent -- at the block sizes an offline bounce uses, every short note.
      *
-     * // TODO(phase0.8): route learned CC/PC and si5/do6 sequencer navigation
-     * through the shared MIDI router instead of note on/off, sustain, expression
-     * and all-notes-off here.
+     * @note A learned control never reaches this function: the processor inspects
+     *       every event against midi::LearnedControls first and swallows the ones
+     *       that are bound, so what arrives here is only what is meant to play.
+     *
+     *       What remains open is that there are two decoders. This one works on
+     *       juce::MidiMessage; midi::MidiRouter works on midi::MidiEvent and is
+     *       reached only by the learned-control path. Unifying them would also
+     *       switch on the router's velocity curve and per-channel transpose, which
+     *       are tested and unreached -- but it would first have to answer what an
+     *       unmapped channel does, because the router ignores one where this falls
+     *       back to the default division, and a plugin that goes silent on a
+     *       single-keyboard controller is a plugin that looks broken.
      *
      * RT-safe: no allocation, no locks, no exceptions.
      */
