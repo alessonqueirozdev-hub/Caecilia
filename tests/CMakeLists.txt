@@ -107,6 +107,7 @@ if(TARGET Caecilia)
     add_executable(caecilia_plugin_tests
         plugin/MidiLearnEndToEndTest.cpp
         plugin/ProcessorOrganStateTest.cpp
+        plugin/OrganSwapUnderPlayTest.cpp
         plugin/SessionRoundTripTest.cpp)
 
     # `Caecilia` IS the static library that carries the processor's objects --

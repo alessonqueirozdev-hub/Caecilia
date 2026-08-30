@@ -36,6 +36,20 @@ struct JuceScope
 constexpr double kSampleRate = 48000.0;
 constexpr int    kBlock      = 256;
 
+/// Prepare the processor the way a host does.
+///
+/// prepareToPlay is the CALLBACK; a host calls setRateAndBufferSizeDetails first,
+/// and that is what makes getSampleRate() answer. Calling only the callback leaves
+/// the processor believing it has no sample rate -- which is not academic here,
+/// because adoptOrgan asks getSampleRate() whether it is worth rebuilding the
+/// engine, and silently did not.
+void prepare(CaeciliaAudioProcessor& processor)
+{
+    processor.setRateAndBufferSizeDetails(kSampleRate, kBlock);
+    processor.prepareToPlay(kSampleRate, kBlock);
+}
+
+
 /// One block of audio carrying @p message, then the work it queued.
 ///
 /// The learn and the fire both happen on the message thread, reached from the
@@ -66,7 +80,7 @@ TEST_CASE("A control taught to draw a stop draws it", "[plugin][midi]")
 {
     JuceScope              scope;
     CaeciliaAudioProcessor processor;
-    processor.prepareToPlay(kSampleRate, kBlock);
+    prepare(processor);
 
     const core::StopId stop{ 3 };
 
@@ -96,7 +110,7 @@ TEST_CASE("A learned control survives the session that saved it", "[plugin][midi
     juce::MemoryBlock session;
     {
         CaeciliaAudioProcessor first;
-        first.prepareToPlay(kSampleRate, kBlock);
+        prepare(first);
         first.armMidiLearnStop(core::StopId{ 3 });
         playBlock(first, cc(21, 127));
         REQUIRE(first.midiMap().bindingCount() == 1);
@@ -118,7 +132,7 @@ TEST_CASE("A learned control survives the session that saved it", "[plugin][midi
     CHECK(static_cast<int>(b.source.data1) == 21);
 
     // And it still works, which is the part a count cannot tell you.
-    second.prepareToPlay(kSampleRate, kBlock);
+    prepare(second);
     const bool before = second.isStopEngaged(core::StopId{ 3 });
     playBlock(second, cc(21, 0));
     playBlock(second, cc(21, 127));
@@ -129,7 +143,7 @@ TEST_CASE("Teaching a control twice leaves one binding", "[plugin][midi]")
 {
     JuceScope              scope;
     CaeciliaAudioProcessor processor;
-    processor.prepareToPlay(kSampleRate, kBlock);
+    prepare(processor);
 
     processor.armMidiLearnStop(core::StopId{ 3 });
     playBlock(processor, cc(21, 127));
@@ -149,7 +163,7 @@ TEST_CASE("A stop answers to one control", "[plugin][midi]")
 {
     JuceScope              scope;
     CaeciliaAudioProcessor processor;
-    processor.prepareToPlay(kSampleRate, kBlock);
+    prepare(processor);
 
     processor.armMidiLearnStop(core::StopId{ 3 });
     playBlock(processor, cc(21, 127));
@@ -195,7 +209,7 @@ TEST_CASE("A tab bound to a key does not also sound its pipe", "[plugin][midi]")
 {
     JuceScope              scope;
     CaeciliaAudioProcessor processor;
-    processor.prepareToPlay(kSampleRate, kBlock);
+    prepare(processor);
 
     // Many consoles send NOTES for their stop tabs, from a keyboard the organist
     // has set aside for the job. That is the case that matters here: a controller
@@ -208,7 +222,7 @@ TEST_CASE("A tab bound to a key does not also sound its pipe", "[plugin][midi]")
     REQUIRE(peakAfter(processor, juce::MidiMessage::noteOn(1, 60, 0.8f)) > 0.0f);
 
     CaeciliaAudioProcessor bound;
-    bound.prepareToPlay(kSampleRate, kBlock);
+    prepare(bound);
     bound.armMidiLearnStop(core::StopId{ 3 });
     playBlock(bound, juce::MidiMessage::noteOn(1, 41, 0.8f));
     REQUIRE(bound.midiMap().bindingCount() == 1);
