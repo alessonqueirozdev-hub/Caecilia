@@ -121,6 +121,7 @@ if(TARGET Caecilia)
         plugin/RegistrationUndoTest.cpp
         plugin/SelectorQueryTest.cpp
         plugin/SpectrumResourceTest.cpp
+        plugin/WindLoadTest.cpp
         plugin/OrganSwapUnderPlayTest.cpp
         plugin/SessionRoundTripTest.cpp)
 
