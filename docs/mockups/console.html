@@ -248,6 +248,26 @@ of inline SVG data-URI textures. Open directly in any modern browser.
   .cluster > .cap b { color: var(--ink-dim); font-family: var(--font-mono); font-weight: 500; letter-spacing:.5px; }
   .cluster > .cap .reads { display: flex; gap: 12px; align-items: center; }
 
+  /* Is this console actually driving the instrument?
+   *
+   * A panel that silently commands nothing is the worst failure a console can
+   * have: every knob turns, every drawstop lights, and the organ does not hear a
+   * word of it. This says which of the three states it is in, permanently.
+   */
+  .link { display: flex; align-items: center; gap: 5px; }
+  .link i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #e0603c; box-shadow: 0 0 6px rgba(224,96,60,.7);
+  }
+  .link b {
+    font: 600 10px var(--font-mono); letter-spacing: .4px; color: #e0603c;
+    text-transform: uppercase;
+  }
+  .link.waiting i { background: #d9ad57; box-shadow: 0 0 6px rgba(217,173,87,.7); }
+  .link.waiting b { color: #d9ad57; }
+  .link.live i { background: #4f9d69; box-shadow: 0 0 6px rgba(79,157,105,.7); }
+  .link.live b { color: #4f9d69; }
+
   /* Which organ is loaded. The name, and two ways to change it. */
   .organ-id { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .organ-id b {
@@ -697,6 +717,9 @@ of inline SVG data-URI textures. Open directly in any modern browser.
         <input id="omni" type="text" data-i18n-ph="selectorPlaceholder" spellcheck="false" autocomplete="off"
                placeholder="selector:  reed &amp; 8   ·   principal | mixture   ·   rec &amp; !reed">
         <span class="hint" id="omni-hint">Enter to draw</span>
+      </div>
+      <div class="link" id="link" title="Whether this console is driving the instrument">
+        <i></i><b id="link-text">offline</b>
       </div>
       <div class="organ-id" id="organ-id">
         <b id="organ-name">Caecilia</b>
@@ -1281,6 +1304,35 @@ GENERALS.forEach((g, i) => {
   genHost.append(b);
 });
 
+/* ---- Is this console driving anything? ------------------------------------
+ * Three states, and the difference between the last two matters. The backend
+ * object existing only means the page was loaded inside the plugin; it does not
+ * mean anything is getting through. LIVE is set by the first state frame to
+ * arrive, which is proof of traffic in at least one direction.
+ */
+(function () {
+  const box = document.getElementById("link");
+  const txt = document.getElementById("link-text");
+  if (!box || !txt) return;
+
+  const set = (cls, label, tip) => {
+    box.classList.remove("waiting", "live");
+    if (cls) box.classList.add(cls);
+    txt.textContent = label;
+    box.title = tip;
+  };
+
+  if (!(window.__JUCE__ && window.__JUCE__.backend)) {
+    set("", "offline", "This page is not inside the plugin. Controls change the "
+                     + "picture and nothing else.");
+    return;
+  }
+
+  set("waiting", "linking", "Inside the plugin, but nothing has arrived from it yet.");
+  window.__caeLinkLive = () => set("live", "live",
+      "The instrument is answering. Controls reach it.");
+})();
+
 /* ---- Taking a registration back -------------------------------------------
  * An organist pulls the wrong knob in the middle of a phrase and wants the sound
  * they had. The buttons draw their enabled state from the frame rather than from
@@ -1498,6 +1550,10 @@ if (CAE_BRIDGE) {
         const m = +k.dataset.midi;
         k.classList.toggle("held", lit.has(m) || state.held.has(ld + ":" + m));
       });
+      // The first frame to arrive is what proves the link, so it is marked here
+      // rather than on the mere existence of a backend object.
+      if (window.__caeLinkLive) { window.__caeLinkLive(); window.__caeLinkLive = null; }
+
       // Whether there is anywhere to go, backwards or forwards. A button that
       // looks pressable and does nothing is worse than one that is visibly not.
       if (typeof st.canUndo === "boolean") {
@@ -2496,7 +2552,7 @@ console.log(`Caecilia console mockup — ${ALL.length} stops across ${DIVISIONS.
     space.onchange = () => { S.space = space.value; window.__caeApplySettings(); emitReverb(); };
     // (Master/reverb are pushed by the top rotary CONTROL panel, which is the
     // authoritative source on load; the Settings sliders remain a live secondary.)
-    trem.onclick = () => { S.trem = !S.trem; try { if (window.state) window.state.trem = S.trem; } catch(e){} emit("caeciliaSetTremulant", S.trem?1:0); refresh(); applyLang(); };
+    trem.onclick = () => { S.trem = !S.trem; try { if (window.state) window.state.trem = S.trem; } catch(e){} emit("caeciliaSetTremulant", [S.trem?1:0]); refresh(); applyLang(); };
 
     function applyLang(){
       langSel.value = lang;
