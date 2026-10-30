@@ -1,7 +1,9 @@
 //! What a host sees and automates.
 
 use caecilia_model::Organ;
-use caecilia_registration::MASK_CAPACITY;
+use caecilia_registration::{MASK_CAPACITY, Piston, factory_generals};
+
+use crate::console::ConsoleMemory;
 use manguebyte_params::{BoolParam, FloatParam, FloatRange, Param, ParamSet};
 
 /// Couplers the host can draw.
@@ -27,6 +29,8 @@ pub struct CaeciliaParams {
     pub stops: Vec<BoolParam>,
     /// Couplers, by coupler id.
     pub couplers: Vec<BoolParam>,
+    /// General pistons and MIDI-learned controls, saved with the session.
+    pub console: ConsoleMemory,
 }
 
 /// The parameter id of stop `n`. Stable across versions: a host keys its
@@ -88,6 +92,7 @@ impl CaeciliaParams {
             ),
             stops,
             couplers,
+            console: factory_console(organ),
         }
     }
 
@@ -110,6 +115,17 @@ impl CaeciliaParams {
     }
 }
 
+/// A console with the factory generals in its first pistons.
+fn factory_console(organ: &Organ) -> ConsoleMemory {
+    let console = ConsoleMemory::default();
+    for (n, (_, piston)) in factory_generals(organ).into_iter().enumerate() {
+        if let Piston::Snapshot(state) = piston {
+            console.set_general(n, state.stops.to_mask(), 0);
+        }
+    }
+    console
+}
+
 impl ParamSet for CaeciliaParams {
     fn visit<'a>(&'a self, visitor: &mut dyn FnMut(&'a dyn Param)) {
         visitor(&self.level);
@@ -123,6 +139,19 @@ impl ParamSet for CaeciliaParams {
         }
         for p in &self.couplers {
             visitor(p);
+        }
+    }
+
+    fn save_extra(&self, section: &mut dyn FnMut(&str, &str)) {
+        section("generals", &self.console.generals_text());
+        section("midi-learn", &self.console.bindings_text());
+    }
+
+    fn load_extra(&self, name: &str, text: &str) -> bool {
+        match name {
+            "generals" => self.console.load_generals(text),
+            "midi-learn" => self.console.load_bindings(text) || text.trim().is_empty(),
+            _ => false,
         }
     }
 }

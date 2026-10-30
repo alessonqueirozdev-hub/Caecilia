@@ -23,8 +23,19 @@ manguebyte-plugin.workspace = true
 manguebyte-midi.workspace = true
 manguebyte-clap.workspace = true
 manguebyte-vst3.workspace = true
+# Only for the standalone application.
+manguebyte-standalone = { workspace = true, optional = true }
+
+[features]
+## Builds the standalone application (src/bin/caecilia.rs).
+standalone = ["dep:manguebyte-standalone"]
+
+[[bin]]
+name = "caecilia"
+required-features = ["standalone"]
 
 [dev-dependencies]
+caecilia-registration.workspace = true
 # Loads the built bundles the way a host does (examples/host_check.rs).
 manguebyte-host = { path = "C:/manguebyte/crates/manguebyte-host", default-features = false, features = ["clap", "vst3"] }
 

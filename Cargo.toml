@@ -32,6 +32,7 @@ manguebyte-plugin = { path = "C:/manguebyte/crates/manguebyte-plugin" }
 manguebyte-midi = { path = "C:/manguebyte/crates/manguebyte-midi" }
 manguebyte-clap = { path = "C:/manguebyte/crates/manguebyte-clap" }
 manguebyte-vst3 = { path = "C:/manguebyte/crates/manguebyte-vst3" }
+manguebyte-standalone = { path = "C:/manguebyte/crates/manguebyte-standalone" }
 
 serde_json = "1"
 

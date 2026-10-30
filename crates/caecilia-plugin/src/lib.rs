@@ -7,25 +7,38 @@
 //! parameters, so a host can automate a registration and save it with the
 //! session; changes land at the next block, as a drawstop takes a moment.
 //!
+//! The console: sixteen general pistons (the factory crescendo, then the
+//! organist's own), recalled by program change 0-15 or a learned control;
+//! MIDI learn binds any controller or spare key to a stop, a coupler, a
+//! piston, the sequencer's next and previous, or cancel. Both are saved with
+//! the session. Behind it all a [`RegistrationController`] offers selectors,
+//! undo and redo across everything that changed the registration (the host's
+//! automation and the pistons included), `explain`, and capturing pistons.
+//!
 //! # Real time
 //!
 //! `prepare` builds the engine and allocates. `process` allocates nothing:
 //! `tests/realtime.rs` plays it under a counting allocator.
 
+mod console;
+mod controller;
 mod params;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use caecilia_engine::{Command, DEFAULT_POLYPHONY, EngagedTable, OrganEngine, Timed};
 use caecilia_model::{CouplerId, DivisionId, Organ, StopId, demo_organ};
 use caecilia_registration::MASK_CAPACITY;
 use caecilia_wind::MAX_TREMULANT_DEPTH_FRACTION;
 use manguebyte_core::AudioBuffer;
+use manguebyte_core::spsc::{Producer, channel};
 use manguebyte_dsp::event::EventKind;
 use manguebyte_dsp::{Limiter, ProcessContext, ProcessSpec, Processor, Reverb};
 use manguebyte_midi::MidiMessage;
 use manguebyte_plugin::{AudioLayout, Plugin, PluginInfo, PluginKind, apply_param_events};
 
+pub use console::{Action, Binding, ConsoleMemory, GENERALS, LEARN_SLOTS, Source};
+pub use controller::{Origin, Played, RegistrationController};
 pub use params::{CaeciliaParams, MAX_COUPLERS, coupler_param_id, stop_param_id};
 
 /// Commands one block can carry.
@@ -49,12 +62,93 @@ pub struct Caecilia {
     reverb: Reverb,
     limiter: Limiter,
     gain: f32,
+    controller: Arc<Mutex<RegistrationController>>,
+    played: Producer<Played>,
+    /// Keys a learned control swallowed, per channel, so their note-offs go too.
+    swallowed: [u128; 16],
+    /// Each controller's last value, for firing learned controls on the press.
+    controller_values: [[u8; 128]; 16],
+    /// Who changed the registration this block, if the console did.
+    origin: Option<Origin>,
 }
 
 impl Caecilia {
     /// The organ it plays.
     pub fn organ(&self) -> &Organ {
         &self.organ
+    }
+
+    /// The registration controller: undo, redo, selectors, pistons, learn.
+    /// Off the audio thread.
+    pub fn controller(&self) -> Arc<Mutex<RegistrationController>> {
+        Arc::clone(&self.controller)
+    }
+
+    /// Recall general `n` here, on the audio thread: the host parameters
+    /// change, and the host hears about it before the next block.
+    fn recall_general(&mut self, n: usize) {
+        if let Some((stops, couplers)) = self.params.console.general(n) {
+            self.set_masks(stops, couplers);
+            self.params.console.set_current_general(n);
+            self.origin = Some(Origin::General(n as u16));
+        }
+    }
+
+    fn set_masks(&self, stops: u64, couplers: u32) {
+        for (n, p) in self.params.stops.iter().enumerate() {
+            p.set(stops & (1 << n) != 0);
+        }
+        for (n, p) in self.params.couplers.iter().enumerate() {
+            p.set(couplers & (1 << n) != 0);
+        }
+    }
+
+    fn perform(&mut self, action: Action) {
+        match action {
+            Action::ToggleStop(n) => {
+                if let Some(p) = self.params.stops.get(usize::from(n)) {
+                    p.set(!p.value());
+                    self.origin.get_or_insert(Origin::Control);
+                }
+            }
+            Action::ToggleCoupler(n) => {
+                if let Some(p) = self.params.couplers.get(usize::from(n)) {
+                    p.set(!p.value());
+                    self.origin.get_or_insert(Origin::Control);
+                }
+            }
+            Action::General(n) => self.recall_general(usize::from(n)),
+            Action::NextGeneral | Action::PreviousGeneral => {
+                let next = match (self.params.console.current_general(), action) {
+                    (None, _) => 0,
+                    (Some(c), Action::NextGeneral) => (c + 1).min(GENERALS - 1),
+                    (Some(c), _) => c.saturating_sub(1),
+                };
+                self.recall_general(next);
+            }
+            Action::Cancel => {
+                self.set_masks(0, 0);
+                self.origin.get_or_insert(Origin::Control);
+            }
+        }
+    }
+
+    /// A key or controller the console takes rather than the pipes: learning
+    /// captures it, a learned binding fires it. Returns whether it was taken.
+    fn console_takes(&mut self, source: Source, pressed: bool) -> bool {
+        let console = &self.params.console;
+        if console.armed().is_some() {
+            return console.capture(source);
+        }
+        match console.lookup(source) {
+            Some(action) => {
+                if pressed {
+                    self.perform(action);
+                }
+                true
+            }
+            None => false,
+        }
     }
 
     /// The engine, once prepared.
@@ -148,6 +242,12 @@ impl Plugin for Caecilia {
     fn new() -> Self {
         let organ = Arc::new(demo_organ());
         let params = Arc::new(CaeciliaParams::new(&organ));
+        let (played, from_audio) = channel(256);
+        let controller = Arc::new(Mutex::new(RegistrationController::new(
+            Arc::clone(&organ),
+            Arc::clone(&params),
+            from_audio,
+        )));
         let primary = organ.primary_manual();
         let mut division_of_channel = [primary; 16];
         for m in organ.manuals() {
@@ -179,6 +279,11 @@ impl Plugin for Caecilia {
             reverb,
             limiter,
             gain: 1.0,
+            controller,
+            played,
+            swallowed: [0; 16],
+            controller_values: [[0; 128]; 16],
+            origin: None,
         }
     }
 
@@ -211,6 +316,44 @@ impl Plugin for Caecilia {
         self.events.clear();
         apply_param_events(&*self.params, context.events);
 
+        // The console first: pistons and learned controls change the
+        // registration, which then applies to this block from its top.
+        self.origin = None;
+        for event in context.events {
+            match event.kind {
+                EventKind::Midi(MidiMessage::ProgramChange { program, .. }) => {
+                    if usize::from(program) < GENERALS {
+                        self.recall_general(usize::from(program));
+                    }
+                }
+                EventKind::NoteOn { note, .. } => {
+                    let source = Source::Key {
+                        channel: note.channel,
+                        note: note.key,
+                    };
+                    if self.console_takes(source, true) {
+                        self.swallowed[usize::from(note.channel & 0x0F)] |= 1 << (note.key & 0x7F);
+                    }
+                }
+                EventKind::Midi(MidiMessage::ControlChange {
+                    channel,
+                    controller,
+                    value,
+                }) if !matches!(controller, 120 | 123) => {
+                    let (c, n) = (usize::from(channel & 0x0F), usize::from(controller & 0x7F));
+                    let rising = value >= 64 && self.controller_values[c][n] < 64;
+                    self.controller_values[c][n] = value;
+                    let source = Source::Controller {
+                        channel,
+                        number: controller,
+                    };
+                    // Swell and sustain stay what they are unless learning took them.
+                    self.console_takes(source, rising);
+                }
+                _ => {}
+            }
+        }
+
         // The registration, at the top of the block.
         let (stops, couplers) = (self.params.stop_mask(), self.params.coupler_mask());
         if stops != self.stop_mask || couplers != self.coupler_mask {
@@ -218,38 +361,67 @@ impl Plugin for Caecilia {
             self.coupler_mask = couplers;
             let table = self.table(&engine);
             engine.set_engaged(table);
+            // Into the history, off this thread. A full ring drops the note
+            // rather than wait: the sound has changed either way.
+            let origin = self.origin.unwrap_or(Origin::Host);
+            let _ = self.played.push(Played {
+                stops,
+                couplers,
+                origin,
+            });
         }
         self.follow_parameters();
 
         for event in context.events {
             let channel_division = |c: u8| self.division_of_channel[usize::from(c & 0x0F)];
             let command = match event.kind {
-                EventKind::NoteOn { note, .. } => Some(Command::NoteOn {
-                    division: channel_division(note.channel),
-                    note: note.key,
-                }),
+                EventKind::NoteOn { note, .. } => {
+                    let bit = 1u128 << (note.key & 0x7F);
+                    if self.swallowed[usize::from(note.channel & 0x0F)] & bit != 0 {
+                        None
+                    } else {
+                        Some(Command::NoteOn {
+                            division: channel_division(note.channel),
+                            note: note.key,
+                        })
+                    }
+                }
                 EventKind::NoteOff { note, .. } | EventKind::NoteChoke { note } => {
-                    Some(Command::NoteOff {
-                        division: channel_division(note.channel),
-                        note: note.key,
-                    })
+                    let c = usize::from(note.channel & 0x0F);
+                    let bit = 1u128 << (note.key & 0x7F);
+                    if self.swallowed[c] & bit != 0 {
+                        self.swallowed[c] &= !bit;
+                        None
+                    } else {
+                        Some(Command::NoteOff {
+                            division: channel_division(note.channel),
+                            note: note.key,
+                        })
+                    }
                 }
                 EventKind::Midi(MidiMessage::ControlChange {
                     channel,
                     controller,
                     value,
-                }) => match controller {
-                    11 => Some(Command::Expression {
-                        division: channel_division(channel),
-                        position: f32::from(value) / 127.0,
-                    }),
-                    64 => Some(Command::Sustain {
-                        division: channel_division(channel),
-                        down: value >= 64,
-                    }),
-                    120 | 123 => Some(Command::Panic),
-                    _ => None,
-                },
+                }) => {
+                    let learned = self.params.console.lookup(Source::Controller {
+                        channel,
+                        number: controller,
+                    });
+                    match controller {
+                        _ if learned.is_some() => None,
+                        11 => Some(Command::Expression {
+                            division: channel_division(channel),
+                            position: f32::from(value) / 127.0,
+                        }),
+                        64 => Some(Command::Sustain {
+                            division: channel_division(channel),
+                            down: value >= 64,
+                        }),
+                        120 | 123 => Some(Command::Panic),
+                        _ => None,
+                    }
+                }
                 _ => None,
             };
             if let Some(command) = command {

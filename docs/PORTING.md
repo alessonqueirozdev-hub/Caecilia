@@ -276,7 +276,7 @@ Caecilia does not write its own version of anything listed here.
 | Map and references | Done: this document, `tools/reference`, `reference/cpp-1.x`. |
 | Sound engine | Done: model, wind, partial bank on the framework's SIMD `PartialBank`, engine; within 0.0001 dB of 1.x under `Calibration::OneX`, and calibrated past it under `V2`. A 200-voice tutti costs 0.19 of a core. |
 | Registration | Done: selectors and grammar 1.0, commands, branching history with provenance, plenum, explain, graded `port()` across traditions, pistons, factory generals. |
-| Plugin | CLAP and VST3 build, load in Manguebyte's host and play (`examples/host_check.rs`); stops and couplers as host parameters, MIDI channels to divisions, CC 11/64/120/123, tremulant, swell, reverb, safety limiter, state; `process` proven allocation-free. Not yet: the registration engine behind the host parameters (pistons, undo, MIDI learn), program change to generals, LV2/AU, standalone, the organ file. |
+| Plugin | CLAP and VST3 build, load in Manguebyte's host and play (`examples/host_check.rs`); stops and couplers as host parameters, MIDI channels to divisions, CC 11/64/120/123, tremulant, swell, reverb, safety limiter. Console: 16 general pistons (factory crescendo + 8 of the organist's), program change 0-15, MIDI learn of any controller or spare key (stop, coupler, piston, next/previous, cancel), all saved with the session; a `RegistrationController` with selectors, undo/redo across the host's automation and the pistons, `explain` and piston capture. Standalone app (`--features standalone --bin caecilia`), built, not run by tests. `process` proven allocation-free through all of it. Not yet: LV2/AU, the organ file. |
 | Console | Not started (mockup first). |
 
 ## 8. Stages

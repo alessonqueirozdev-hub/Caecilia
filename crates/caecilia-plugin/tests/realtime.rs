@@ -5,7 +5,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use caecilia_plugin::{Caecilia, coupler_param_id, stop_param_id};
+use caecilia_plugin::{Action, Binding, Caecilia, Source, coupler_param_id, stop_param_id};
 use manguebyte_core::AudioBuffer;
 use manguebyte_dsp::event::{Event, EventBuffer, EventKind, NoteRef};
 use manguebyte_dsp::{ProcessContext, ProcessSpec, Transport};
@@ -128,6 +128,47 @@ fn processing_never_allocates() {
         }),
     });
 
+    // The console in the watched blocks: a program change recalls a general,
+    // a learned controller toggles a stop, and an armed learn captures one.
+    params.console.bind(Binding {
+        source: Source::Controller {
+            channel: 0,
+            number: 80,
+        },
+        action: Action::ToggleStop(3),
+    });
+    params.console.arm(Action::General(2));
+    for (offset, m) in [
+        (
+            50,
+            MidiMessage::ProgramChange {
+                channel: 0,
+                program: 4,
+            },
+        ),
+        (
+            51,
+            MidiMessage::ControlChange {
+                channel: 0,
+                controller: 80,
+                value: 127,
+            },
+        ),
+        (
+            52,
+            MidiMessage::ControlChange {
+                channel: 0,
+                controller: 81,
+                value: 127,
+            },
+        ),
+    ] {
+        let _ = events.push(Event {
+            offset,
+            kind: EventKind::Midi(m),
+        });
+    }
+
     let transport = Transport::default();
     let mut buffer = AudioBuffer::<f32>::new(2, 256);
     let run = |plugin: &mut Caecilia, buffer: &mut AudioBuffer<f32>, ev: &EventBuffer| {
@@ -152,4 +193,9 @@ fn processing_never_allocates() {
     WATCHING.with(|w| w.set(false));
     let calls = HEAP_CALLS.with(Cell::get);
     assert_eq!(calls, 0, "process used the heap {calls} time(s)");
+    assert!(
+        params.console.armed().is_none(),
+        "the armed learn was captured"
+    );
+    assert_eq!(params.console.bindings().len(), 2);
 }
