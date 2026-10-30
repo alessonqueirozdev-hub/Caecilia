@@ -897,50 +897,62 @@ fn wind_trace(nominal: f32, sag: f32, tremulant: Option<f32>) -> Vec<f32> {
         .collect()
 }
 
-/// A balanced shoe seen from the bench: its tread, and beside it how far
-/// it is open.
-#[allow(clippy::too_many_arguments)]
-fn shoe(
-    scene: &mut Scene,
-    look: &Look,
-    rect: Rect,
-    position: f32,
-    title: &str,
-    value: &str,
-    label_left: bool,
-) {
-    let shape = RoundedRect::new(rect, 9.0);
+/// A closed outline through `points`.
+fn polygon(points: &[Point]) -> manguebyte_gfx::Path {
+    let mut p = manguebyte_gfx::Path::new();
+    for (i, at) in points.iter().enumerate() {
+        if i == 0 {
+            p.move_to(*at);
+        } else {
+            p.line_to(*at);
+        }
+    }
+    p.close();
+    p
+}
+
+/// A balanced shoe seen from the bench, its toe away from the player and
+/// narrower for it; beside it how far it is open, below it its name.
+fn shoe(scene: &mut Scene, look: &Look, rect: Rect, position: f32, title: &str, value: &str) {
+    let inset = rect.width * 0.12;
+    let outline = polygon(&[
+        Point::new(rect.x + inset, rect.y),
+        Point::new(rect.right() - inset, rect.y),
+        Point::new(rect.right(), rect.bottom()),
+        Point::new(rect.x, rect.bottom()),
+    ]);
     scene.shadow(
-        shape,
+        &outline,
         Shadow::new(Color::hex_rgba(0x0000_00B0))
-            .with_offset(0.0, 5.0)
+            .with_offset(0.0, 6.0)
             .with_blur(9.0),
     );
     let metal = [
-        Stop::new(0.0, look.brass_light),
-        Stop::new(0.5, look.brass),
-        Stop::new(1.0, look.brass_dark),
+        Stop::new(0.0, look.brass_dark),
+        Stop::new(0.35, look.brass),
+        Stop::new(1.0, look.brass_light),
     ];
-    scene.fill(shape, vertical(rect, &metal));
-    for k in 0..7 {
-        let y = rect.y + 10.0 + k as f32 * (rect.height - 20.0) / 6.0;
+    scene.fill(&outline, vertical(rect, &metal));
+    scene.stroke(&outline, Stroke::new(1.0), look.brass_dark);
+    // The tread, closer together toward the toe.
+    for k in 1..9 {
+        let t = k as f32 / 9.0;
+        let v = t * t;
+        let y = rect.bottom() - 6.0 - (rect.height - 12.0) * (1.0 - v);
+        let half = rect.width / 2.0 - inset * (1.0 - (y - rect.y) / rect.height) - 7.0;
         let mut p = manguebyte_gfx::Path::new();
-        p.move_to(Point::new(rect.x + 10.0, y));
-        p.line_to(Point::new(rect.right() - 10.0, y));
-        scene.stroke(&p, Stroke::round(2.0), look.brass_dark.with_alpha(0xB0));
+        p.move_to(Point::new(rect.center().x - half, y));
+        p.line_to(Point::new(rect.center().x + half, y));
+        scene.stroke(&p, Stroke::round(1.6), look.brass_dark.with_alpha(0xB0));
     }
-    // How far open: a level beside the shoe.
-    let bar = Rect::new(
-        if label_left {
-            rect.x - 16.0
-        } else {
-            rect.right() + 10.0
-        },
-        rect.y,
-        6.0,
-        rect.height,
+    // The heel's edge, toward the player.
+    scene.fill(
+        Rect::new(rect.x, rect.bottom() - 3.0, rect.width, 5.0),
+        look.brass_dark,
     );
-    scene.fill(RoundedRect::new(bar, 3.0), Color::hex_rgba(0x0000_0070));
+    // How far open.
+    let bar = Rect::new(rect.right() + 6.0, rect.y + 4.0, 5.0, rect.height - 4.0);
+    scene.fill(RoundedRect::new(bar, 2.5), Color::hex_rgba(0x0000_0070));
     let lit = Rect::new(
         bar.x,
         bar.bottom() - bar.height * position,
@@ -948,28 +960,24 @@ fn shoe(
         bar.height * position,
     );
     scene.shadow(
-        RoundedRect::new(lit, 3.0),
+        RoundedRect::new(lit, 2.5),
         Shadow::glow(8.0, look.accent.with_alpha(0x90)),
     );
-    scene.fill(RoundedRect::new(lit, 3.0), look.accent);
-    let (x, anchor) = if label_left {
-        (bar.x - 12.0, 1.0)
-    } else {
-        (bar.right() + 12.0, 0.0)
-    };
+    scene.fill(RoundedRect::new(lit, 2.5), look.accent);
+    let x = rect.center().x + 4.0;
     text(
         scene,
         title,
-        style(12.5, 680.0, look.text),
-        Point::new(x, rect.center().y - 17.0),
-        anchor,
+        style(11.0, 700.0, look.text),
+        Point::new(x, rect.bottom() + 10.0),
+        0.5,
     );
     text(
         scene,
         value,
-        style(10.5, 600.0, look.wood_accent),
-        Point::new(x, rect.center().y + 2.0),
-        anchor,
+        style(10.0, 600.0, look.wood_accent),
+        Point::new(x, rect.bottom() + 25.0),
+        0.5,
     );
 }
 
@@ -1434,122 +1442,177 @@ fn key_slip(console: Rc<Console>) -> View {
     .into_view()
 }
 
-/// Above the pedalboard: the Récit's swell shoe and the crescendo.
+/// Left of the pedalboard, under the plates: the Récit's swell shoe and the
+/// crescendo.
 fn shoes(console: Rc<Console>) -> View {
-    canvas("Shoes", Size::new(1200.0, 76.0), move |cx, scene| {
+    canvas("Shoes", Size::new(PLATE, PEDALS), move |cx, scene| {
         let look = console.look;
         let size = cx.size();
-        let mid = PLATE + 14.0 + (size.width - PLATE - 14.0) / 2.0;
-        let h = size.height - 12.0;
-        shoe(
+        plate(
             scene,
             &look,
-            Rect::new(mid - 90.0, 6.0, 64.0, h),
-            0.62,
-            "R\u{e9}cit",
-            "box 62 % open",
-            true,
+            Rect::new(0.0, 4.0, size.width, 26.0),
+            "P\u{c9}DALE",
+            "ch 3",
         );
-        shoe(
-            scene,
-            &look,
-            Rect::new(mid + 26.0, 6.0, 64.0, h),
-            0.5,
-            "Crescendo",
-            "step 4 of 8 \u{b7} mf",
-            false,
-        );
+        let w = 46.0;
+        let h = size.height - 92.0;
+        let slot = size.width / 2.0;
+        for (i, (position, title, value)) in [
+            (0.62, "R\u{e9}cit", "62 %"),
+            (0.5, "Crescendo", "4 \u{b7} mf"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let x = slot * i as f32 + slot / 2.0 - w / 2.0 - 4.0;
+            shoe(
+                scene,
+                &look,
+                Rect::new(x, 44.0, w, h),
+                *position,
+                title,
+                value,
+            );
+        }
     })
-    .height(76.0)
+    .width(PLATE)
+    .height(PEDALS)
     .into_view()
 }
 
-/// The pedalboard: oak naturals, ebony-capped sharps between them, the
-/// notes held lit.
+/// The pedalboard's height.
+const PEDALS: f32 = 176.0;
+
+/// The pedalboard as the organist sees it from the bench: long oak naturals
+/// running away under the console, narrowing with the distance, their front
+/// edges toward the feet, and the sharps raised at the far end in the gaps,
+/// ebony on top. Every note held is lit.
 fn pedalboard(console: Rc<Console>, held: Vec<u8>) -> View {
     canvas(
         "P\u{e9}dalier",
-        Size::new(1200.0, 104.0),
+        Size::new(1200.0, PEDALS),
         move |cx, scene| {
             let look = console.look;
             let size = cx.size();
             let rect = Rect::new(0.0, 0.0, size.width, size.height);
+            // Where a point of the board is: `u` across, 0 to 1; `v` away from
+            // the player, 0 at the front edge, 1 under the console.
+            let near_y = rect.bottom() - 16.0;
+            let far_y = rect.y + 10.0;
+            let near_half = rect.width / 2.0 - 8.0;
+            let far_half = near_half * 0.94;
+            let cx0 = rect.center().x;
+            let at = |u: f32, v: f32| {
+                let half = near_half + (far_half - near_half) * v;
+                Point::new(cx0 + (u - 0.5) * 2.0 * half, near_y + (far_y - near_y) * v)
+            };
+            let quad = |u0: f32, u1: f32, v0: f32, v1: f32| {
+                polygon(&[at(u0, v1), at(u1, v1), at(u1, v0), at(u0, v0)])
+            };
+            // The well the keys lie in.
+            let well = polygon(&[
+                at(-0.01, 1.04),
+                at(1.01, 1.04),
+                Point::new(at(1.01, 0.0).x, rect.bottom()),
+                Point::new(at(-0.01, 0.0).x, rect.bottom()),
+            ]);
             scene.fill(
-                RoundedRect::new(rect, 8.0),
-                Color::hex_rgba(if look.night { 0x0000_0080 } else { 0x2A1A_0C50 }),
+                &well,
+                Color::hex_rgba(if look.night { 0x0000_00A0 } else { 0x2A1A_0C60 }),
             );
             let (low, high) = (36u8, 67u8);
             let naturals: Vec<u8> = (low..=high).filter(|n| !is_sharp(*n)).collect();
-            let slot = (rect.width - 16.0) / naturals.len() as f32;
-            let x_of = |index: usize| rect.x + 8.0 + slot * index as f32;
+            let slot = 1.0 / naturals.len() as f32;
             let oak = [
-                Stop::new(0.0, Color::hex(0xB08A5A)),
-                Stop::new(0.35, Color::hex(0xD9BC8C)),
-                Stop::new(1.0, Color::hex(0xE8D2A8)),
+                Stop::new(0.0, Color::hex(0x8A6438)),
+                Stop::new(0.5, Color::hex(0xB98F5C)),
+                Stop::new(1.0, Color::hex(0xD8B47E)),
             ];
+            let board = Rect::new(rect.x, far_y, rect.width, near_y - far_y);
             for (i, &note) in naturals.iter().enumerate() {
-                let key = Rect::new(
-                    x_of(i) + slot * 0.27,
-                    rect.y + 6.0,
-                    slot * 0.46,
-                    rect.height - 12.0,
-                );
-                let shape = RoundedRect::new(key, 3.0);
+                let (u0, u1) = (slot * (i as f32 + 0.17), slot * (i as f32 + 0.83));
+                let top = quad(u0, u1, 0.0, 1.0);
                 scene.shadow(
-                    shape,
+                    &top,
                     Shadow::new(Color::hex_rgba(0x0000_00A0))
                         .with_offset(0.0, 3.0)
-                        .with_blur(4.0),
+                        .with_blur(5.0),
                 );
-                scene.fill(shape, vertical(key, &oak));
+                scene.fill(&top, vertical(board, &oak));
+                scene.stroke(&top, Stroke::new(0.8), Color::hex_rgba(0x3A24_1080));
+                // The front edge, the key's thickness toward the feet.
+                let (a, b) = (at(u0, 0.0), at(u1, 0.0));
+                let front =
+                    polygon(&[a, b, Point::new(b.x, b.y + 9.0), Point::new(a.x, a.y + 9.0)]);
+                scene.fill(&front, Color::hex(0x6B4A26));
                 if held.contains(&note) {
-                    scene.shadow(shape, Shadow::glow(12.0, look.accent.with_alpha(0xA0)));
-                    scene.fill(shape, look.accent.with_alpha(0x90));
+                    scene.shadow(&top, Shadow::glow(12.0, look.accent.with_alpha(0xA0)));
+                    scene.fill(&top, look.accent.with_alpha(0x99));
+                    scene.fill(&front, look.accent.with_alpha(0x70));
                 }
                 if note % 12 == 0 {
+                    let p = at((u0 + u1) / 2.0, 0.08);
                     text(
                         scene,
                         &format!("C{}", note / 12 - 1),
-                        style(9.5, 650.0, Color::hex(0x5A3D1C)),
-                        Point::new(key.center().x, key.bottom() - 16.0),
+                        style(9.5, 700.0, Color::hex(0x4A3018)),
+                        Point::new(p.x, p.y - 14.0),
                         0.5,
                     );
                 }
             }
-            // A sharp sits over the gap after the natural below it.
+            // A sharp stands in the gap after the natural below it, raised:
+            // its top, and its face toward the player.
             let mut index = 0;
             for note in low..=high {
-                if is_sharp(note) {
-                    let x = x_of(index) - slot * 0.23;
-                    let key = Rect::new(x, rect.y + 2.0, slot * 0.46, rect.height * 0.44);
-                    let shape = RoundedRect::new(key, 3.0);
-                    scene.shadow(
-                        shape,
-                        Shadow::new(Color::hex_rgba(0x0000_00C0))
-                            .with_offset(0.0, 4.0)
-                            .with_blur(5.0),
-                    );
-                    let ebony = [
-                        Stop::new(0.0, Color::hex(0x4A3C32)),
-                        Stop::new(0.25, Color::hex(0x1E1712)),
-                        Stop::new(1.0, Color::hex(0x0E0A08)),
-                    ];
-                    scene.fill(shape, vertical(key, &ebony));
-                    scene.stroke(shape, Stroke::new(1.0), Color::hex(0x6E5A48));
-                    scene.fill(
-                        Rect::new(key.x + 3.0, key.y + 3.0, key.width - 6.0, 2.0),
-                        Color::hex_rgba(0xFFF0_D840),
-                    );
-                    if held.contains(&note) {
-                        scene.fill(shape, look.accent.with_alpha(0xA0));
-                    }
-                } else {
+                if !is_sharp(note) {
                     index += 1;
+                    continue;
+                }
+                let centre = slot * index as f32;
+                let (u0, u1) = (centre - slot * 0.27, centre + slot * 0.27);
+                let (v0, v1) = (0.5, 1.0);
+                let lift = 9.0;
+                let raise = |p: Point| Point::new(p.x, p.y - lift);
+                let top = polygon(&[
+                    raise(at(u0, v1)),
+                    raise(at(u1, v1)),
+                    raise(at(u1, v0)),
+                    raise(at(u0, v0)),
+                ]);
+                let face = polygon(&[raise(at(u0, v0)), raise(at(u1, v0)), at(u1, v0), at(u0, v0)]);
+                scene.shadow(
+                    &quad(u0, u1, v0, v1),
+                    Shadow::new(Color::hex_rgba(0x0000_00D0))
+                        .with_offset(0.0, 6.0)
+                        .with_blur(6.0),
+                );
+                let ebony = [
+                    Stop::new(0.0, Color::hex(0x120D0A)),
+                    Stop::new(1.0, Color::hex(0x3A2E26)),
+                ];
+                scene.fill(&face, Color::hex(0x5A4636));
+                scene.fill(
+                    &top,
+                    vertical(
+                        Rect::new(
+                            rect.x,
+                            at(0.0, v1).y - lift,
+                            rect.width,
+                            at(0.0, v0).y - at(0.0, v1).y,
+                        ),
+                        &ebony,
+                    ),
+                );
+                scene.stroke(&top, Stroke::new(1.0), Color::hex(0x6E5A48));
+                if held.contains(&note) {
+                    scene.fill(&top, look.accent.with_alpha(0xA0));
                 }
             }
         },
     )
-    .height(104.0)
+    .height(PEDALS)
     .into_view()
 }
 
@@ -1685,7 +1748,7 @@ fn screen(console: &Rc<Console>, keys: &[KeyboardState; 2], pedals: Vec<u8>) -> 
     .spacing(12.0)
     .flex(1.0);
     let pedal_row = row((
-        keyboard_plate(look, "P\u{c9}DALE", "ch 3"),
+        shoes(Rc::clone(console)),
         pedalboard(Rc::clone(console), pedals).flex(1.0),
     ))
     .spacing(14.0)
@@ -1700,7 +1763,6 @@ fn screen(console: &Rc<Console>, keys: &[KeyboardState; 2], pedals: Vec<u8>) -> 
             "Grand-Orgue",
             &keys[1],
         ),
-        shoes(Rc::clone(console)),
         pedal_row,
     ))
     .spacing(4.0);
