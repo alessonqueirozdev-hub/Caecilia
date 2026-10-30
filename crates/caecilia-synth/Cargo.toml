@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 caecilia-model.workspace = true
 caecilia-wind.workspace = true
+manguebyte-dsp.workspace = true
 
 [lints]
 workspace = true

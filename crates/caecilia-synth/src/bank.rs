@@ -5,10 +5,11 @@ use caecilia_model::{
     mixture_series_index,
 };
 use caecilia_wind::{WindModel, WindResponseCurve};
+use manguebyte_dsp::PartialBank as Kernel;
 
 use crate::math::{
     Phasor, TABLES, cents_to_ratio_approx, db_to_linear, equal_power_pan, fast_sine_turns, hash32,
-    next_bipolar, partial_accumulate, random_phasor, smoothstep01,
+    next_bipolar, random_phasor, smoothstep01,
 };
 
 /// Frames one render chunk covers. Fixed rather than the host's block, because
@@ -52,12 +53,7 @@ struct Partial {
     amplitude: f32,
     wind_sensitivity: f32,
     onset_seconds: f32,
-    osc: Phasor,
-    cos_inc: f32,
-    sin_inc: f32,
     block_gain: f32,
-    cur_gain: f32,
-    gain_inc: f32,
     seed: u32,
     rng: u32,
     drift_cents: f32,
@@ -142,6 +138,9 @@ impl Default for Liveliness {
 #[derive(Clone, Debug)]
 pub struct PartialBank {
     partials: Vec<Partial>,
+    /// The framework's SIMD bank: it owns the phasors, rotations, gain ramps
+    /// and pans, and renders them; this bank decides what they are.
+    kernel: Kernel,
     count: usize,
     chunk_l: Vec<f32>,
     chunk_r: Vec<f32>,
@@ -195,8 +194,15 @@ impl PartialBank {
     /// A silent bank able to hold `max_partials`. Allocates: off the audio thread.
     pub fn new(sample_rate: f64, max_partials: usize) -> Self {
         LazyTouch::touch();
+        let mut kernel = Kernel::new(max_partials);
+        kernel.set_sample_rate(if sample_rate > 1.0 {
+            sample_rate
+        } else {
+            48000.0
+        });
         let mut b = Self {
             partials: vec![Partial::default(); max_partials],
+            kernel,
             count: 0,
             chunk_l: vec![0.0; CHUNK_FRAMES],
             chunk_r: vec![0.0; CHUNK_FRAMES],
@@ -258,6 +264,8 @@ impl PartialBank {
         let count = model.partials.len().min(self.partials.len());
         let sounding = self.stage != Stage::Idle;
         self.derive_break_mode(model, count);
+        // Partials leaving use fall silent; partials entering it are set below.
+        self.kernel.set_len(count);
 
         for (i, t) in model.partials[..count].iter().enumerate() {
             let p = &mut self.partials[i];
@@ -275,16 +283,12 @@ impl PartialBank {
             p.log_ratio = t.ratio.max(1.0e-6).log2();
             p.log_sounding = p.log_ratio;
             p.block_gain = 0.0;
-            p.gain_inc = 0.0;
             if !sounding || i >= self.count {
                 let turns = t.phase * (1.0 / std::f32::consts::TAU);
-                p.cur_gain = 0.0;
-                p.osc = Phasor {
-                    cos: fast_sine_turns(turns + 0.25),
-                    sin: fast_sine_turns(turns),
-                };
-                p.cos_inc = 1.0;
-                p.sin_inc = 0.0;
+                self.kernel
+                    .set_phasor(i, fast_sine_turns(turns + 0.25), fast_sine_turns(turns));
+                self.kernel.set_gain(i, 0.0);
+                self.kernel.set_rotation(i, 1.0, 0.0);
             }
             // The identity comes from the spectrum, not the array index, so a
             // registration sounds the same whatever order its stops were drawn.
@@ -313,7 +317,6 @@ impl PartialBank {
         for p in &mut self.partials[count..self.count.max(count)] {
             p.block_gain = 0.0;
             p.amplitude = 0.0;
-            p.cur_gain = 0.0;
         }
         self.count = count;
         if !sounding {
@@ -476,12 +479,12 @@ impl PartialBank {
             let mut p = Partial {
                 rng: h | 1,
                 drift_cents: 0.0,
-                gain_inc: 0.0,
                 ..p
             };
             if !retrigger {
-                p.osc = random_phasor(h >> 8);
-                p.cur_gain = 0.0;
+                let start: Phasor = random_phasor(h >> 8);
+                self.kernel.set_phasor(i, start.cos, start.sin);
+                self.kernel.set_gain(i, 0.0);
             }
 
             // Mixture break-back moves the whole rank, harmonics included.
@@ -513,6 +516,7 @@ impl PartialBank {
             let rank_offset =
                 (((p.seed >> 8) & 0xFFFF) as f32 / 65535.0 - 0.5) * self.stereo_spread * 1.1;
             (p.pan_l, p.pan_r) = equal_power_pan((note_pan + rank_offset).clamp(-1.0, 1.0));
+            self.kernel.set_pan_gains(i, p.pan_l, p.pan_r);
             self.partials[i] = p;
         }
 
@@ -568,10 +572,9 @@ impl PartialBank {
         self.chiff_lp = 0.0;
         self.chiff_len_samp = 0;
         self.note_time = 0.0;
-        for p in &mut self.partials[..self.count] {
-            p.cur_gain = 0.0;
+        for (i, p) in self.partials[..self.count].iter_mut().enumerate() {
             p.block_gain = 0.0;
-            p.gain_inc = 0.0;
+            self.kernel.set_gain(i, 0.0);
         }
     }
 
@@ -705,7 +708,7 @@ impl PartialBank {
             self.note_time,
             self.fundamental_hz,
         );
-        for p in &mut self.partials[..self.count] {
+        for (i, p) in self.partials[..self.count].iter_mut().enumerate() {
             p.drift_cents += drift_coef * (next_bipolar(&mut p.rng) * instability - p.drift_cents);
             let drift_ratio = cents_to_ratio_approx(p.drift_cents);
             let partial_pitch = 1.0 + (pitch_ratio - 1.0) * f64::from(p.wind_sensitivity + 1.0);
@@ -718,8 +721,7 @@ impl PartialBank {
             // Fade the top toward Nyquist with a smoothstep; freeze what is past it.
             let aa = smoothstep01(((nyquist - freq) / (nyquist * 0.4)) as f32);
             if freq >= nyquist || aa <= 0.0 {
-                p.cos_inc = 1.0;
-                p.sin_inc = 0.0;
+                self.kernel.set_rotation(i, 1.0, 0.0);
                 p.block_gain = 0.0;
                 continue;
             }
@@ -736,15 +738,9 @@ impl PartialBank {
             // Two transcendentals per partial per BLOCK. 2 pi stays an f32 on
             // purpose: it is what 1.x rotated by.
             let w = (f64::from(std::f32::consts::TAU) * freq / sr) as f32;
-            p.cos_inc = w.cos();
-            p.sin_inc = w.sin();
-
-            // The recursive rotation drifts off the unit circle in f32; one Newton
-            // step a block pins it back.
-            let mag = p.osc.cos * p.osc.cos + p.osc.sin * p.osc.sin;
-            let renorm = 1.5 - 0.5 * mag;
-            p.osc.cos *= renorm;
-            p.osc.sin *= renorm;
+            self.kernel.set_rotation(i, w.cos(), w.sin());
+            // The kernel brings its phasors back to the unit circle itself, every
+            // 64 frames rendered, with the Newton step 1.x took once a block.
 
             p.block_gain = p.amplitude
                 * aa
@@ -791,9 +787,8 @@ impl PartialBank {
                 frame_in_block + pos
             };
             self.recompute_block_coefficients(n, wind, wind_frame);
-            let inv = 1.0 / n as f32;
-            for p in &mut self.partials[..self.count] {
-                p.gain_inc = (p.block_gain - p.cur_gain) * inv;
+            for (i, p) in self.partials[..self.count].iter().enumerate() {
+                self.kernel.ramp_to(i, p.block_gain, n);
             }
             self.render_segment(&mut left[pos..pos + n], &mut right[pos..pos + n]);
             self.note_time += n as f64 / self.sample_rate;
@@ -852,19 +847,7 @@ impl PartialBank {
             let (cl, cr) = (&mut self.chunk_l[..count], &mut self.chunk_r[..count]);
             cl.fill(0.0);
             cr.fill(0.0);
-            for p in &mut self.partials[..self.count] {
-                partial_accumulate(
-                    cl,
-                    cr,
-                    &mut p.osc,
-                    p.cos_inc,
-                    p.sin_inc,
-                    &mut p.cur_gain,
-                    p.gain_inc,
-                    p.pan_l,
-                    p.pan_r,
-                );
-            }
+            self.kernel.render_add(cl, cr);
 
             for k in 0..count {
                 let env = self.chunk_env[k];

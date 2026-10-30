@@ -165,12 +165,18 @@ renders each case under both and asserts the change:
 | Character per family (drift, glide, bloom, tilt) | every rank a Principal | each family its own | Applied when a voice adopts a rank. |
 
 The cost, measured (`tests/cost.rs`, ignored by default): a 10-key tutti with
-the couplers drawn -- 200 voices -- takes **0.90 of a core** under OneX and
-**1.03** under V2 with the scalar partial kernel. The kernel is latency-bound
-(each partial is a sample-by-sample recurrence), which is why 1.x shipped SSE2
-and AVX2 backends. Real time at full organ therefore needs the framework's SIMD
-partial bank (§6 #1) and the real-time pool across cores (§6 #3): both are now
-measured necessities, not nice-to-haves.
+the couplers drawn -- 200 voices, about 3000 partials:
+
+| Partial kernel | 1.x calibration | 2.0 calibration |
+|---|---:|---:|
+| Scalar (Caecilia's own, now the test reference) | 0.90 of a core | 1.03 |
+| Manguebyte `PartialBank`, AVX2 | **0.148** | **0.187** |
+
+The framework's bank renders each partial bit for bit as the scalar kernel did
+(`the_framework_bank_renders_a_partial_exactly_as_the_reference_kernel`); only
+the order the partials are summed in differs, and every reference test still
+passes at its tolerance. The rest -- several cores for the largest
+registrations -- is the real-time pool (§6 #3).
 
 ## 4. Problems to solve, and how 2.0 solves them
 

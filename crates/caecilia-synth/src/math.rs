@@ -123,11 +123,13 @@ pub(crate) fn equal_power_pan(pan: f32) -> (f32, f32) {
     (a.cos + (b.cos - a.cos) * f, a.sin + (b.sin - a.sin) * f)
 }
 
-/// The partial kernel: one partial's run of frames, accumulated into L and R.
+/// The scalar partial kernel 1.x rendered with, kept as the reference the
+/// framework's SIMD bank is tested against: one partial's run of frames,
+/// accumulated into L and R.
 ///
 /// A quadrature phasor rotated per sample, under a per-sample gain ramp. The
 /// scalar reference; the framework's SIMD bank replaces it behind this shape.
-#[inline]
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn partial_accumulate(
     left: &mut [f32],
@@ -165,6 +167,48 @@ mod tests {
             let t = i as f32 / 997.0 - 0.3;
             let err = (fast_sine_turns(t) - (std::f32::consts::TAU * t).sin()).abs();
             assert!(err < 2e-6, "{t}: {err}");
+        }
+    }
+
+    #[test]
+    fn the_framework_bank_renders_a_partial_exactly_as_the_reference_kernel() {
+        use manguebyte_dsp::{Partial, PartialBank};
+        let (c, s) = (0.999_314_4_f32, 0.037_018_02_f32);
+        let (pl, pr) = equal_power_pan(-0.3);
+        let mut bank = PartialBank::new(16);
+        bank.set_sample_rate(48000.0);
+        bank.set_len(1);
+        bank.set(
+            0,
+            Partial {
+                freq_hz: 0.0,
+                gain: 0.0,
+                pan: 0.0,
+            },
+        );
+        bank.set_rotation(0, c, s);
+        bank.set_pan_gains(0, pl, pr);
+        let start = random_phasor(0xBEEF);
+        bank.set_phasor(0, start.cos, start.sin);
+        let (mut osc, mut gain) = (start, 0.0f32);
+        // Blocks of 64: the kernel's normalisation interval, so both take the
+        // same steps at the same frames.
+        for block in 0..8 {
+            let (mut a, mut b) = (vec![0.0f32; 64], vec![0.0f32; 64]);
+            let (mut x, mut y) = (vec![0.0f32; 64], vec![0.0f32; 64]);
+            let target = 0.3 + 0.1 * block as f32;
+            bank.ramp_to(0, target, 64);
+            bank.render_add(&mut a, &mut b);
+            // The Newton step 1.x took before each block, which the kernel takes
+            // every 64 frames rendered.
+            let mag = osc.cos * osc.cos + osc.sin * osc.sin;
+            let renorm = 1.5 - 0.5 * mag;
+            osc.cos *= renorm;
+            osc.sin *= renorm;
+            let inc = (target - gain) * (1.0 / 64.0);
+            partial_accumulate(&mut x, &mut y, &mut osc, c, s, &mut gain, inc, pl, pr);
+            assert_eq!(a, x, "left, bit for bit");
+            assert_eq!(b, y, "right, bit for bit");
         }
     }
 
