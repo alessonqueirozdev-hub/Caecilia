@@ -1,0 +1,20 @@
+[package]
+name = "caecilia-engine"
+description = "The organ engine: keys to ranks to voices to chest buses, with the wind stepped per block"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+caecilia-model.workspace = true
+caecilia-wind.workspace = true
+caecilia-synth.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -3,10 +3,28 @@
 version = 4
 
 [[package]]
+name = "caecilia-engine"
+version = "2.0.0-alpha.0"
+dependencies = [
+ "caecilia-model",
+ "caecilia-synth",
+ "caecilia-wind",
+ "serde_json",
+]
+
+[[package]]
 name = "caecilia-model"
 version = "2.0.0-alpha.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "caecilia-synth"
+version = "2.0.0-alpha.0"
+dependencies = [
+ "caecilia-model",
+ "caecilia-wind",
 ]
 
 [[package]]

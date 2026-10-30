@@ -119,9 +119,27 @@ These are 1.x defects measured, not suspected — each is a 2.0 requirement:
 - **Release ignores how long a key was held.** Release time depends only on
   pitch (100–414 ms across the compass), the same after a staccato as after a
   held chord.
+- **Every rank lives like a Principal.** The per-family "living pipe"
+  character (drift, speech glide, bloom, treble tilt) is applied once, when the
+  pool is built with a Principal context, and `AdditiveVoice::adoptRank` never
+  re-applies it -- so a Gambe drifts and a Bourdon tilts exactly like a Montre.
+  The port reproduces this to match the references
+  (`AdditiveVoice::set_per_family_liveliness` is the fix, off until the
+  calibration stage turns it on with its own tests).
 - **Distinct stops sound identical.** Basson-Hautbois 8' and Trompette 8' give
   the same level and harmonic profile to two decimals; the three Bourdon 8'
   likewise. A voicing per stop, not per family, is a 2.0 requirement.
+
+### How close the port is
+
+The Rust engine (`crates/caecilia-engine/tests/reference.rs`) renders every
+case of `reference.json` the way the C++ did and measures it the same way. The
+largest level difference across all 78 rank notes is **0.0001 dB**; attack and
+release land in the same 5 ms window; harmonic profiles agree within 0.05 dB;
+chest pressures within 0.001 Pa block by block; the voice count of the chord is
+identical block by block; the tremulant's pressure trajectory within 0.001 Pa.
+The tests hold the port to those tolerances, so any later change that moves the
+sound has to say so.
 
 ## 4. Problems to solve, and how 2.0 solves them
 
