@@ -60,7 +60,7 @@ the shipping plugin; "unwired" means written and unit-tested but not reached.
 | `midi` | 2.6k | Router, channel→division map, MIDI learn, learned controls, combination store, sequencer (page turn), velocity curve, program-change map | Learn + channel map live; router, sequencer, store unwired | `caecilia-engine` (router), `caecilia-plugin` (learn) | `manguebyte-midi` (MIDI 1/2, UMP, SMF for test scores) | Router, learn table, sequencer |
 | `control` | 1.5k | OSC and JSON-RPC codecs over one command sink | Unwired; no transport listens | `caecilia-control` | `manguebyte-osc` (sample-accurate) | JSON-RPC over a local socket; the sink |
 | `plugin` | 5.0k | JUCE processor, parameter pool for stops, command bridge, WebView2 editor, state document | Live | `caecilia-plugin` | `Plugin` trait, `export_clap!/vst3!/au!/lv2!`, `manguebyte-standalone`, `manguebyte-params`, `save_state`/`load_state`, `Harness`, `cargo-mangue bundle` | The glue |
-| `ui` | 0.2k (+ 2.5k `console.html`) | `StateMirror` frame for the console; the console is a web page in WebView2 | Live | `caecilia-ui` | `manguebyte-ui` (retained tree, accessibility, golden tests), `manguebyte-gui` `Editor` | The console in the new design |
+| `ui` | 0.2k (+ 2.5k `console.html`) | `StateMirror` frame for the console; the console is a web page in WebView2 | Live | `caecilia-ui` | `manguebyte-ui` (retained tree, design system of ADR 0011: dark-with-glow default and editorial light theme, cached shadows, motion, keyboard-only focus; accessibility; golden tests), `manguebyte-gui` `Editor`; tabs/pages, action button and dialog (scheduled); `TextSource` for live language switching | The organ widgets: drawstop, piston, expression shoe, wind gauge — written in Caecilia on the toolkit. No WebView, no JavaScript |
 | `tests` | 16.1k | Catch2: ~60 files across every module, including whole-instrument tests through the processor | — | `tests/` of each crate | `Harness`, the counting-allocator pattern (`tests/realtime.rs`) | Ports of every behavioural test that still applies, plus the reference tests |
 | `tools` | 4.5k | WAV I/O, fingerprint, bench, verify-registration, organ-file, analyzers (mostly scaffolds), IR tool, `reference` | — | `caecilia-tools` (bins) | `manguebyte-formats` WAV, `manguebyte-analysis` | fingerprint, bench, reference comparison |
 
@@ -227,7 +227,17 @@ Caecilia does not write its own version of anything listed here.
    to the engine.
 4. **Plugin formats** — CLAP, VST3, AU, LV2, standalone; state; host tests with
    the framework's `Harness`.
-5. **Console** — `manguebyte-ui`, new design, accessibility.
+5. **Console** — native, on `manguebyte-ui`/`manguebyte-gui`; no WebView2 and
+   no JavaScript (owner's decision, 2026-10-29). It must be far better and more
+   beautiful than the 1.x web console: `docs/UI_DESIGN.md` and the 1.x mockups
+   are the starting point, not the target. A modern organ console — drawstops
+   that animate, pistons, expression shoes, wind gauges that fall under
+   polyphony, divisions on pages. An idle console costs ~0 CPU, proven by a
+   test, and never touches the audio thread. **A mockup comes first**, rendered
+   headless by the toolkit itself (as `manguebyte-ui/examples/sampler_screen.rs`
+   does), and is shown to the owner for approval before any UI code is
+   written. Anything GENERAL the widgets need (a drawing primitive, images,
+   gradients, an input behaviour, a reusable widget) is asked of the framework.
 6. **Beyond 1.x** — sample tier with streaming, multicore, multichannel, Scala,
    per-stop voicing in the organ file, physical tier.
 7. **Release** — framework by `git` + `rev`, C++ removed, 2.0 merged when the
