@@ -268,6 +268,15 @@ fn vertical(rect: Rect, stops: &[Stop]) -> LinearGradient<'_> {
     }
 }
 
+fn horizontal(rect: Rect, stops: &[Stop]) -> LinearGradient<'_> {
+    LinearGradient {
+        start: Point::new(rect.x, rect.y),
+        end: Point::new(rect.right(), rect.y),
+        stops,
+        extend: Extend::Pad,
+    }
+}
+
 /// A turned wooden jamb: the wood's gradient, its grain, a bevelled edge.
 fn jamb(scene: &mut Scene, look: &Look, rect: Rect) {
     let shape = RoundedRect::new(rect, 14.0);
@@ -326,6 +335,18 @@ fn jamb(scene: &mut Scene, look: &Look, rect: Rect) {
         Stroke::new(1.0),
         look.sheen,
     );
+    // The gilded beading a case maker runs round a panel, and its shadow.
+    let bead = RoundedRect::new(
+        Rect::new(
+            rect.x + 7.0,
+            rect.y + 7.0,
+            rect.width - 14.0,
+            rect.height - 14.0,
+        ),
+        9.0,
+    );
+    scene.stroke(bead, Stroke::new(2.4), Color::hex_rgba(0x0000_0060));
+    scene.stroke(bead, Stroke::new(1.2), look.brass.with_alpha(0xB0));
 }
 
 /// A panel between the jambs: leather in the night, paper in the day.
@@ -351,6 +372,19 @@ fn panel(scene: &mut Scene, look: &Look, rect: Rect) {
     scene.fill(
         Rect::new(rect.x + 12.0, rect.y + 1.0, rect.width - 24.0, 1.0),
         look.sheen,
+    );
+    scene.stroke(
+        RoundedRect::new(
+            Rect::new(
+                rect.x + 5.0,
+                rect.y + 5.0,
+                rect.width - 10.0,
+                rect.height - 10.0,
+            ),
+            8.0,
+        ),
+        Stroke::new(1.0),
+        look.brass.with_alpha(0x55),
     );
 }
 
@@ -1448,15 +1482,8 @@ fn shoes(console: Rc<Console>) -> View {
     canvas("Shoes", Size::new(PLATE, PEDALS), move |cx, scene| {
         let look = console.look;
         let size = cx.size();
-        plate(
-            scene,
-            &look,
-            Rect::new(0.0, 4.0, size.width, 26.0),
-            "P\u{c9}DALE",
-            "ch 3",
-        );
         let w = 46.0;
-        let h = size.height - 92.0;
+        let h = size.height - 42.0;
         let slot = size.width / 2.0;
         for (i, (position, title, value)) in [
             (0.62, "R\u{e9}cit", "62 %"),
@@ -1469,7 +1496,7 @@ fn shoes(console: Rc<Console>) -> View {
             shoe(
                 scene,
                 &look,
-                Rect::new(x, 44.0, w, h),
+                Rect::new(x, 4.0, w, h),
                 *position,
                 title,
                 value,
@@ -1482,7 +1509,7 @@ fn shoes(console: Rc<Console>) -> View {
 }
 
 /// The pedalboard's height.
-const PEDALS: f32 = 176.0;
+const PEDALS: f32 = 124.0;
 
 /// The pedalboard as the organist sees it from the bench: long oak naturals
 /// running away under the console, narrowing with the distance, their front
@@ -1498,10 +1525,10 @@ fn pedalboard(console: Rc<Console>, held: Vec<u8>) -> View {
             let rect = Rect::new(0.0, 0.0, size.width, size.height);
             // Where a point of the board is: `u` across, 0 to 1; `v` away from
             // the player, 0 at the front edge, 1 under the console.
-            let near_y = rect.bottom() - 16.0;
-            let far_y = rect.y + 10.0;
-            let near_half = rect.width / 2.0 - 8.0;
-            let far_half = near_half * 0.94;
+            let near_y = rect.bottom() - 12.0;
+            let far_y = rect.y + 8.0;
+            let near_half = rect.width * 0.37;
+            let far_half = near_half * 0.92;
             let cx0 = rect.center().x;
             let at = |u: f32, v: f32| {
                 let half = near_half + (far_half - near_half) * v;
@@ -1531,7 +1558,7 @@ fn pedalboard(console: Rc<Console>, held: Vec<u8>) -> View {
             ];
             let board = Rect::new(rect.x, far_y, rect.width, near_y - far_y);
             for (i, &note) in naturals.iter().enumerate() {
-                let (u0, u1) = (slot * (i as f32 + 0.17), slot * (i as f32 + 0.83));
+                let (u0, u1) = (slot * (i as f32 + 0.2), slot * (i as f32 + 0.8));
                 let top = quad(u0, u1, 0.0, 1.0);
                 scene.shadow(
                     &top,
@@ -1544,7 +1571,7 @@ fn pedalboard(console: Rc<Console>, held: Vec<u8>) -> View {
                 // The front edge, the key's thickness toward the feet.
                 let (a, b) = (at(u0, 0.0), at(u1, 0.0));
                 let front =
-                    polygon(&[a, b, Point::new(b.x, b.y + 9.0), Point::new(a.x, a.y + 9.0)]);
+                    polygon(&[a, b, Point::new(b.x, b.y + 6.0), Point::new(a.x, a.y + 6.0)]);
                 scene.fill(&front, Color::hex(0x6B4A26));
                 if held.contains(&note) {
                     scene.shadow(&top, Shadow::glow(12.0, look.accent.with_alpha(0xA0)));
@@ -1557,7 +1584,7 @@ fn pedalboard(console: Rc<Console>, held: Vec<u8>) -> View {
                         scene,
                         &format!("C{}", note / 12 - 1),
                         style(9.5, 700.0, Color::hex(0x4A3018)),
-                        Point::new(p.x, p.y - 14.0),
+                        Point::new(p.x, p.y - 12.0),
                         0.5,
                     );
                 }
@@ -1571,9 +1598,9 @@ fn pedalboard(console: Rc<Console>, held: Vec<u8>) -> View {
                     continue;
                 }
                 let centre = slot * index as f32;
-                let (u0, u1) = (centre - slot * 0.27, centre + slot * 0.27);
+                let (u0, u1) = (centre - slot * 0.25, centre + slot * 0.25);
                 let (v0, v1) = (0.5, 1.0);
-                let lift = 9.0;
+                let lift = 6.0;
                 let raise = |p: Point| Point::new(p.x, p.y - lift);
                 let top = polygon(&[
                     raise(at(u0, v1)),
@@ -1610,6 +1637,54 @@ fn pedalboard(console: Rc<Console>, held: Vec<u8>) -> View {
                     scene.fill(&top, look.accent.with_alpha(0xA0));
                 }
             }
+            let left = at(0.0, 0.0).x;
+            plate(
+                scene,
+                &look,
+                Rect::new(left - 156.0, rect.center().y - 13.0, 140.0, 26.0),
+                "P\u{c9}DALE",
+                "ch 3",
+            );
+            // Toe studs: generals 1 to 8, for the feet.
+            let right = at(1.0, 0.0).x + 40.0;
+            for n in 0..8 {
+                let (row, col) = (n / 4, n % 4);
+                let c = Point::new(
+                    right + col as f32 * 30.0,
+                    rect.center().y - 16.0 + row as f32 * 34.0,
+                );
+                scene.shadow(
+                    Circle::new(c, 10.0),
+                    Shadow::new(Color::hex_rgba(0x0000_00B0))
+                        .with_offset(0.0, 3.0)
+                        .with_blur(4.0),
+                );
+                let brass = [
+                    Stop::new(0.0, look.brass_light),
+                    Stop::new(0.6, look.brass),
+                    Stop::new(1.0, look.brass_dark),
+                ];
+                scene.fill(
+                    Circle::new(c, 10.0),
+                    RadialGradient {
+                        center: Point::new(c.x - 3.0, c.y - 4.0),
+                        radius: 16.0,
+                        stops: &brass,
+                        extend: Extend::Pad,
+                    },
+                );
+                if n == console.general {
+                    scene.shadow(
+                        Circle::new(c, 11.0),
+                        Shadow::glow(10.0, look.accent.with_alpha(0xB0)),
+                    );
+                    scene.stroke(Circle::new(c, 11.5), Stroke::new(1.5), look.brass_light);
+                }
+                let label = format!("{}", n + 1);
+                let s = style(9.5, 760.0, look.plate_ink);
+                let h = TextLayout::new(&label, &s, None).size().height;
+                text(scene, &label, s, Point::new(c.x, c.y - h / 2.0), 0.5);
+            }
         },
     )
     .height(PEDALS)
@@ -1644,6 +1719,163 @@ fn logo(look: Look) -> View {
     })
     .width(34.0)
     .height(34.0)
+}
+
+/// A key cheek: the carved block of the case at each end of a manual.
+fn cheek(look: Look, right: bool) -> View {
+    canvas("", Size::new(18.0, 96.0), move |cx, scene| {
+        let size = cx.size();
+        let rect = Rect::new(0.0, 0.0, size.width, size.height);
+        // The scroll: the top curls toward the keys.
+        let (outer, inner) = if right {
+            (rect.right(), rect.x)
+        } else {
+            (rect.x, rect.right())
+        };
+        let mut shape = manguebyte_gfx::Path::new();
+        shape.move_to(Point::new(outer, rect.bottom()));
+        shape.line_to(Point::new(outer, rect.y + 10.0));
+        shape.quad_to(
+            Point::new(outer, rect.y),
+            Point::new((outer + inner) / 2.0, rect.y),
+        );
+        shape.quad_to(Point::new(inner, rect.y), Point::new(inner, rect.y + 18.0));
+        shape.line_to(Point::new(inner, rect.bottom()));
+        shape.close();
+        scene.shadow(
+            &shape,
+            Shadow::new(Color::hex_rgba(0x0000_0090))
+                .with_offset(0.0, 3.0)
+                .with_blur(5.0),
+        );
+        let wood = [
+            Stop::new(0.0, look.wood_top),
+            Stop::new(1.0, look.wood_bottom),
+        ];
+        scene.fill(&shape, vertical(rect, &wood));
+        scene.stroke(&shape, Stroke::new(1.0), look.sheen);
+        // A gilded rosette in the scroll, a groove down the face.
+        let c = Point::new(rect.center().x, rect.y + 16.0);
+        scene.fill(Circle::new(c, 4.0), look.brass);
+        scene.fill(
+            Circle::new(Point::new(c.x - 1.0, c.y - 1.0), 1.6),
+            look.brass_light,
+        );
+        let mut groove = manguebyte_gfx::Path::new();
+        groove.move_to(Point::new(rect.center().x, rect.y + 28.0));
+        groove.line_to(Point::new(rect.center().x, rect.bottom() - 8.0));
+        scene.stroke(&groove, Stroke::round(2.0), Color::hex_rgba(0x0000_0055));
+        scene.stroke(&groove, Stroke::round(0.8), look.brass.with_alpha(0x60));
+    })
+    .width(18.0)
+    .height(96.0)
+}
+
+/// One façade pipe: its body, the mouth with its gilded upper lip, the
+/// conical foot down to the toe.
+fn pipe(scene: &mut Scene, look: &Look, x: f32, base: f32, d: f32, h: f32) {
+    let foot_h = (h * 0.26).max(d * 1.6);
+    let body = Rect::new(x - d / 2.0, base - h, d, h - foot_h);
+    let tin = if look.night {
+        [
+            Stop::new(0.0, Color::hex(0x45484D)),
+            Stop::new(0.3, Color::hex(0xAEB3B9)),
+            Stop::new(0.45, Color::hex(0xD2D6DB)),
+            Stop::new(0.75, Color::hex(0x80858B)),
+            Stop::new(1.0, Color::hex(0x34363A)),
+        ]
+    } else {
+        [
+            Stop::new(0.0, Color::hex(0x80858B)),
+            Stop::new(0.3, Color::hex(0xD5D9DD)),
+            Stop::new(0.45, Color::hex(0xEEF0F2)),
+            Stop::new(0.75, Color::hex(0xA9AEB3)),
+            Stop::new(1.0, Color::hex(0x70747A)),
+        ]
+    };
+    let foot = polygon(&[
+        Point::new(x - d / 2.0, base - foot_h),
+        Point::new(x + d / 2.0, base - foot_h),
+        Point::new(x + d * 0.14, base),
+        Point::new(x - d * 0.14, base),
+    ]);
+    scene.fill(&foot, horizontal(body, &tin));
+    scene.fill(body, horizontal(body, &tin));
+    // The mouth, and the gilded lip arched over it.
+    let mouth = Rect::new(x - d * 0.28, body.bottom() - d * 0.22, d * 0.56, d * 0.22);
+    scene.fill(mouth, Color::hex(0x0B0807));
+    let mut lip = manguebyte_gfx::Path::new();
+    lip.move_to(Point::new(mouth.x, mouth.y));
+    lip.quad_to(
+        Point::new(x, mouth.y - d * 0.55),
+        Point::new(mouth.right(), mouth.y),
+    );
+    lip.close();
+    scene.fill(&lip, look.brass);
+    scene.stroke(&lip, Stroke::new(0.6), look.brass_dark);
+    // The top's rim.
+    scene.fill(
+        Rect::new(body.x, body.y, body.width, 1.2),
+        Color::hex_rgba(0x0000_0070),
+    );
+}
+
+/// The organ's front, between the name and the controls: a tower at each
+/// end and in the middle, flats of pipes between, standing on the impost.
+fn facade(look: Look) -> View {
+    canvas("", Size::new(700.0, 92.0), move |cx, scene| {
+        let size = cx.size();
+        let w = size.width.min(760.0);
+        let x0 = (size.width - w) / 2.0;
+        let base = size.height - 12.0;
+        let room = base - 8.0;
+        // (pipes, tallest, step, tower)
+        let groups: [(usize, f32, f32, bool); 5] = [
+            (5, 0.82, 0.07, true),
+            (9, 0.52, -0.035, false),
+            (7, 1.0, 0.075, true),
+            (9, 0.52, -0.035, false),
+            (5, 0.82, 0.07, true),
+        ];
+        let pitches = groups.iter().map(|g| g.0).sum::<usize>() as f32 + 4.0 * 1.4;
+        let pitch = w / pitches;
+        let d = pitch * 0.7;
+        // The case behind the pipes.
+        let case = Rect::new(x0 - 6.0, 2.0, w + 12.0, base);
+        scene.fill(
+            RoundedRect::new(case, 6.0),
+            Color::hex_rgba(if look.night { 0x0000_0070 } else { 0x2A1A_0C22 }),
+        );
+        let mut x = x0 + pitch / 2.0;
+        for (n, top, step, tower) in groups {
+            let mid = (n as f32 - 1.0) / 2.0;
+            let left = x - pitch / 2.0;
+            for k in 0..n {
+                let from_mid = (k as f32 - mid).abs();
+                let frac = (top - step * from_mid).clamp(0.25, 1.0);
+                pipe(scene, &look, x, base, d, room * frac);
+                x += pitch;
+            }
+            if tower {
+                // A gilded cap over the tower.
+                let right = x - pitch / 2.0;
+                let cap_y = base - room * top - 6.0;
+                let cap = Rect::new(left - 2.0, cap_y, right - left + 4.0, 4.0);
+                scene.fill(RoundedRect::new(cap, 2.0), look.brass);
+                scene.fill(Rect::new(cap.x, cap.y, cap.width, 1.0), look.brass_light);
+            }
+            x += pitch * 1.4;
+        }
+        // The impost the feet stand on.
+        let impost = Rect::new(x0 - 10.0, base, w + 20.0, 7.0);
+        let wood = [
+            Stop::new(0.0, look.wood_top),
+            Stop::new(1.0, look.wood_bottom),
+        ];
+        scene.fill(RoundedRect::new(impost, 2.0), vertical(impost, &wood));
+        scene.fill(Rect::new(impost.x, impost.y, impost.width, 1.2), look.brass);
+    })
+    .height(92.0)
 }
 
 /// Behind it all: the room, and a warm light over the music desk.
@@ -1703,9 +1935,14 @@ fn manual(
 ) -> View {
     row((
         keyboard_plate(look, title, note),
-        piano_keyboard(name, KeySpan::new(36, 96), keys.clone())
-            .height(96.0)
-            .flex(1.0),
+        row((
+            cheek(look, false),
+            piano_keyboard(name, KeySpan::new(36, 96), keys.clone())
+                .height(96.0)
+                .flex(1.0),
+            cheek(look, true),
+        ))
+        .flex(1.0),
     ))
     .spacing(14.0)
     .align(Align::Center)
@@ -1727,7 +1964,7 @@ fn screen(console: &Rc<Console>, keys: &[KeyboardState; 2], pedals: Vec<u8>) -> 
             ))
             .caption(),
         )),
-        canvas("", Size::new(0.0, 0.0), |_, _| {}).flex(1.0),
+        facade(look).flex(1.0),
         pill("Werckmeister III \u{b7} A 415").dot(look.accent),
         pill("Wind steady").dot(look.good),
         pill("CPU 11 % \u{b7} 214 voices"),
