@@ -54,7 +54,7 @@ the shipping plugin; "unwired" means written and unit-tested but not reached.
 | `synthesis` | 3.8k | `PartialBank` (wind-modulated additive sustain, staggered onsets, drift, mixture break-back, chiff), `AdditiveVoice`, `RankVoicing`, `SpeechProfile`, `VoiceFactory`, `SampleVoice`, `PhysicalPipeVoice` (jet/reed + waveguide/modal) | Additive live; sample and physical voices silent placeholders | `caecilia-synth` | `Voice` trait shape, `Noise`, `Adsr` where it fits | Partial bank, rank voicing, the sample tier, the physical tier |
 | `wind` | 1.6k | Bellows ODE (first order, or second order with plate mass), windchests with trunk drop, tremulant on the pressure, per-family response curves, rank→chest routing | Live | `caecilia-wind` | — | All of it (domain physics) |
 | `engine` | 3.8k | `AudioEngine`: command ring, one voice per (rank, note), engaged-rank table, couplers, held-key reconciliation, chest buses, swell boxes, CPU governor, meters | Live | `caecilia-engine` | `EventBuffer` + `split_at_events` for sample-accurate events; `ProcessContext` | The organ engine: key expansion over ranks and couplers, chest buses, enclosure, governor (unless §6) |
-| `tuning` | 1.1k | Six temperaments, A4, stretch, per-pipe detune, `LiveTuning` handed over by triple buffer | Live | `caecilia-tuning` | `triple_buffer` | Temperaments, Scala (unless §6) |
+| `tuning` | 1.1k | Six temperaments, A4, stretch, per-pipe detune, `LiveTuning` handed over by triple buffer | Live | the framework's tuning module (§6 #7) | temperaments, Scala `.scl/.kbm` → 128-note table, stretch; `triple_buffer` | Only the per-pipe detune and the live handover; 12-TET until the module lands |
 | `model` | 5.8k | Organ definition → immutable `Organ`; organ-file JSON with a hand-written parser (`Json.cpp`); the demo organ and its voicing recipes (`DemoOrgan.cpp`, 1.1k) | Live | `caecilia-model` | — | Organ model; organ file via `serde_json` (already a framework dependency); the demo organ |
 | `registration` | 3.0k | Selector algebra and versioned parser, `RegistrationEngine`, branching undo/redo, plenum builder, provenance (`explain`), `port()` of an intent across organs, pistons | Plugin uses a stop bitmask; the engine is unwired | `caecilia-registration` | `manguebyte-state` `Document`/`Tx` for persistence and linear undo of edits | The brain itself, wired end to end this time |
 | `midi` | 2.6k | Router, channel→division map, MIDI learn, learned controls, combination store, sequencer (page turn), velocity curve, program-change map | Learn + channel map live; router, sequencer, store unwired | `caecilia-engine` (router), `caecilia-plugin` (learn) | `manguebyte-midi` (MIDI 1/2, UMP, SMF for test scores) | Router, learn table, sequencer |
@@ -150,7 +150,7 @@ Market instruments are cited by documented behaviour only.
 Cargo.toml                    workspace; manguebyte-* by path (git+rev at release)
 crates/
   caecilia-model/             ids, Footage, Organ, organ file (serde_json), demo organ
-  caecilia-tuning/            temperaments, A4, stretch, detune, Scala
+                              (tuning: the framework's module; Caecilia adds per-pipe detune)
   caecilia-wind/              bellows, chests, tremulant, response curves
   caecilia-synth/             partial bank, rank voicing, sample tier, physical tier
   caecilia-engine/            the organ engine: keys → ranks → voices → chest buses → master
@@ -169,6 +169,16 @@ and a reset, asserting zero heap calls.
 ## 6. What the framework needs to give (requested from Manguebyte)
 
 In priority order — the order the engine reaches them. The API is a proposal.
+The framework's owner adopted the list (2026-10-29) and scheduled it as follows;
+Caecilia does not write its own version of anything listed here.
+
+| Items | Status in Manguebyte |
+|---|---|
+| 2, 5, 6 | In progress (sampler/streaming work). Streaming ships as an independent `SampleStore`/`StreamCursor` layer that honours and reports `ram_budget`, with the `Sampler` built on it; the per-sample variable-ratio sinc reader is a public type the sampler's voices also use. |
+| 1, 4 | Next free slot: `PartialBank` and the general kernels on `core::vector` (x86/NEON/wasm, runtime detection), tested against the scalar reference with a stated error. Until then Caecilia renders with a local scalar kernel and swaps. |
+| 3 | Right after 1 and 4: `RtPool`, fixed-order sum, bit-identical to single-threaded. |
+| 7 | The framework owns tuning (Parabolic uses it too): historical temperaments, Scala, stretch. Caecilia uses 12-TET until it lands and then tests it against the `tuning` tables in `reference/cpp-1.x`. |
+| 8, 9 | After those. |
 
 1. **Sine/partial-bank kernel** (`manguebyte-dsp`): N phasors with per-partial
    frequency, gain and pan ramps over a block, accumulated into a stereo buffer;
@@ -194,8 +204,8 @@ In priority order — the order the engine reaches them. The API is a proposal.
 6. **High-quality polyphase sinc interpolation, variable ratio**, with the ratio
    modulated per sample (the wind's FM): `SincResampler::new(taps, phases)`
    / `read(source, ratio_per_sample: &[f32], out)`.
-7. **Temperaments and Scala** (`.scl` / `.kbm` parse into a 128-note table) —
-   if the framework wants a tuning module; otherwise Caecilia writes it.
+7. **Temperaments and Scala** (`.scl` / `.kbm` parse into a 128-note table,
+   historical temperaments, stretch) — a framework module.
 8. **Multichannel outputs per division**: plugin layouts with named auxiliary
    output buses in every wrapper, and the standalone mapping them to device
    channels.
@@ -208,7 +218,8 @@ In priority order — the order the engine reaches them. The API is a proposal.
 
 1. **Map and references** — this document, `tools/reference`, `reference/cpp-1.x`.
 2. **Sound engine** — `caecilia-model` (with the demo organ's voicing reproduced
-   exactly against the reference), `caecilia-tuning` (exact tables),
+   exactly against the reference), 12-TET (the framework's tuning module, tested
+   against the reference tables, when it lands),
    `caecilia-wind`, `caecilia-synth` (partial bank), `caecilia-engine`; tests
    against `rankNotes`, `windChord`, `tremulant`, and real-time tests. Then the
    wind and tremulant calibrated past 1.x, with the tests saying by how much.
