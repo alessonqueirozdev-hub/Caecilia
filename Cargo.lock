@@ -73,6 +73,7 @@ dependencies = [
  "caecilia-model",
  "caecilia-synth",
  "caecilia-wind",
+ "manguebyte-core",
  "serde_json",
 ]
 

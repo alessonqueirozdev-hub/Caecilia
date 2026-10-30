@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use caecilia_engine::{Command, OrganEngine, Timed};
+use caecilia_engine::{Command, OrganEngine, PoolConfig, Timed};
 use caecilia_model::{Calibration, CouplerId, DivisionId, StopId, demo_organ};
 
 #[test]
@@ -14,10 +14,15 @@ fn tutti_real_time_factor() {
     let all: Vec<StopId> = organ.stops().iter().map(|s| s.id).collect();
     let couplers: Vec<CouplerId> = organ.couplers().iter().map(|c| c.id).collect();
     let keys = [36u8, 43, 48, 52, 55, 60, 64, 67, 72, 76];
-    for cal in [Calibration::OneX, Calibration::V2] {
+    let cores = std::thread::available_parallelism().map_or(1, usize::from);
+    for (cal, threads, label) in [
+        (Calibration::OneX, PoolConfig::offline(), "one thread"),
+        (Calibration::V2, PoolConfig::offline(), "one thread"),
+        (Calibration::V2, PoolConfig::all_cores(), "all cores"),
+    ] {
         let mut best = f64::MAX;
         for _ in 0..3 {
-            let mut e = OrganEngine::with_calibration(&organ, 48000.0, 256, 1024, cal);
+            let mut e = OrganEngine::with_config(&organ, 48000.0, 256, 1024, cal, threads);
             let t = e.table_for(&organ, &all, &couplers);
             e.set_engaged(t);
             let on: Vec<Timed> = keys
@@ -46,7 +51,7 @@ fn tutti_real_time_factor() {
             assert_eq!(e.active_voices(), 200);
         }
         eprintln!(
-            "{cal:?}: tutti, 10 keys, couplers drawn: {:.3} of a core",
+            "{cal:?}, {label} ({cores} cores): tutti, 10 keys, couplers drawn: {:.3} of the block's time",
             best
         );
     }

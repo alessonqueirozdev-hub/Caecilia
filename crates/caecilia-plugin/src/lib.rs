@@ -26,8 +26,8 @@ mod params;
 
 use std::sync::{Arc, Mutex};
 
-use caecilia_engine::{Command, DEFAULT_POLYPHONY, EngagedTable, OrganEngine, Timed};
-use caecilia_model::{CouplerId, DivisionId, Organ, StopId, demo_organ};
+use caecilia_engine::{Command, DEFAULT_POLYPHONY, EngagedTable, OrganEngine, PoolConfig, Timed};
+use caecilia_model::{Calibration, CouplerId, DivisionId, Organ, StopId, demo_organ};
 use caecilia_registration::MASK_CAPACITY;
 use caecilia_wind::MAX_TREMULANT_DEPTH_FRACTION;
 use manguebyte_core::AudioBuffer;
@@ -292,11 +292,20 @@ impl Plugin for Caecilia {
     }
 
     fn prepare(&mut self, spec: &ProcessSpec) {
-        let engine = OrganEngine::new(
+        // Every core but the audio thread's renders voices. A worker may hold a
+        // job for at most half the block before the audio thread gives up on it:
+        // a late group is a block of silence for its voices, a late callback is
+        // a click for everything.
+        let block = std::time::Duration::from_secs_f64(
+            spec.max_block_size as f64 / spec.sample_rate.max(1.0),
+        );
+        let engine = OrganEngine::with_config(
             &self.organ,
             spec.sample_rate,
             spec.max_block_size,
             DEFAULT_POLYPHONY,
+            Calibration::V2,
+            PoolConfig::all_cores().wait_limit(block / 2),
         );
         self.engine = Some(engine);
         // Everything is sent again on the first block.

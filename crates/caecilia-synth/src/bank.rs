@@ -4,7 +4,7 @@ use caecilia_model::{
     FormantPeak, MAX_FORMANTS, MIXTURE_SERIES, PipeId, SpectralModel, SpeechProfile, WindchestId,
     mixture_series_index,
 };
-use caecilia_wind::{WindModel, WindResponseCurve};
+use caecilia_wind::{WindResponseCurve, WindSnapshot};
 use manguebyte_dsp::PartialBank as Kernel;
 
 use crate::math::{
@@ -419,7 +419,7 @@ impl PartialBank {
     /// envelope and phasors, so a steal is a pitch change under a gain ramp
     /// rather than a click. Reads the wind once: a pipe on slack wind speaks
     /// more slowly.
-    pub fn trigger(&mut self, pipe: PipeId, frequency_hz: f64, wind: Option<&WindModel>) {
+    pub fn trigger(&mut self, pipe: PipeId, frequency_hz: f64, wind: Option<&WindSnapshot>) {
         self.fundamental_hz = frequency_hz;
         self.note_time = 0.0;
         // Per-voice salt, so two voices of one pitch (a unison coupler, the same
@@ -677,7 +677,7 @@ impl PartialBank {
     fn recompute_block_coefficients(
         &mut self,
         frames: usize,
-        wind: Option<&WindModel>,
+        wind: Option<&WindSnapshot>,
         wind_frame: usize,
     ) {
         let sr = self.sample_rate;
@@ -765,7 +765,7 @@ impl PartialBank {
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
-        wind: Option<&WindModel>,
+        wind: Option<&WindSnapshot>,
         frame_in_block: usize,
     ) {
         let frames = left.len().min(right.len());

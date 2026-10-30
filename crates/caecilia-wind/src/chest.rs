@@ -12,7 +12,7 @@ use crate::config::WindchestConfig;
 /// pressures on purpose (here 980 Pa on the Pédale, 812 on the Grand-Orgue,
 /// 735 on the Récit): a heavy pedal chord makes the Récit flinch without
 /// dragging it down to the Pédale's wind.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Windchest {
     config: WindchestConfig,
     start_pa: f32,

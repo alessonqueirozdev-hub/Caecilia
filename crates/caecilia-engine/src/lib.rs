@@ -22,7 +22,8 @@ use caecilia_model::{
     Calibration, DivisionId, MidiNote, Organ, PipeId, RankVoicing, StopId, WindchestId,
     build_rank_voicing,
 };
-use caecilia_wind::{WindModel, config_from_organ, flow_per_voice};
+use caecilia_wind::{WindModel, WindSnapshot, config_from_organ, flow_per_voice};
+pub use manguebyte_core::pool::PoolConfig;
 
 pub use engaged::{EngagedCoupler, EngagedRank, EngagedTable, MAX_COUPLERS, MAX_RANKS};
 use pool::Pool;
@@ -155,7 +156,10 @@ pub struct OrganEngine {
     voicings: Vec<RankVoicing>,
     tuning: [f64; 128],
     wind: WindModel,
+    /// The wind of this block, frozen after the step, for every voice to read.
+    snapshot: WindSnapshot,
     pool: Pool,
+    missed_jobs: u64,
     table: EngagedTable,
     held: [HeldKey; MAX_HELD_KEYS],
     held_count: usize,
@@ -186,13 +190,35 @@ impl OrganEngine {
         Self::with_calibration(organ, sample_rate, max_block, polyphony, Calibration::V2)
     }
 
-    /// An engine for `organ` under a chosen calibration (`OneX` reproduces 1.x).
+    /// An engine for `organ` under a chosen calibration (`OneX` reproduces 1.x),
+    /// rendering on the calling thread alone.
     pub fn with_calibration(
         organ: &Organ,
         sample_rate: f64,
         max_block: usize,
         polyphony: usize,
         calibration: Calibration,
+    ) -> Self {
+        Self::with_config(
+            organ,
+            sample_rate,
+            max_block,
+            polyphony,
+            calibration,
+            PoolConfig::offline(),
+        )
+    }
+
+    /// An engine whose voices render on a pool of threads as well as the
+    /// calling one. The output is bit for bit the single-threaded output:
+    /// voices render in fixed groups and the groups are summed in order.
+    pub fn with_config(
+        organ: &Organ,
+        sample_rate: f64,
+        max_block: usize,
+        polyphony: usize,
+        calibration: Calibration,
+        threads: PoolConfig,
     ) -> Self {
         let sample_rate = if sample_rate > 0.0 {
             sample_rate
@@ -240,7 +266,16 @@ impl OrganEngine {
             voicings,
             tuning: equal_temperament(),
             wind: WindModel::new(sample_rate, &config_from_organ(organ)),
-            pool: Pool::new(sample_rate, polyphony, calibration),
+            snapshot: WindSnapshot::default(),
+            pool: Pool::new(
+                sample_rate,
+                polyphony,
+                calibration,
+                chest_count,
+                max_block,
+                threads,
+            ),
+            missed_jobs: 0,
             table: EngagedTable::default(),
             held: [HeldKey::default(); MAX_HELD_KEYS],
             held_count: 0,
@@ -280,6 +315,13 @@ impl OrganEngine {
         self.tuning[usize::from(note & 0x7F)]
     }
 
+    /// Render jobs that missed their block since the engine was made: a
+    /// worker held one past the wait limit, and its voices were silent for
+    /// that block.
+    pub fn missed_jobs(&self) -> u64 {
+        self.missed_jobs
+    }
+
     /// The last block's meters.
     pub fn meters(&self) -> Meters {
         self.meters
@@ -302,6 +344,7 @@ impl OrganEngine {
             f.reset();
         }
         self.wind.reset();
+        self.snapshot = self.wind.snapshot();
         self.frame = 0;
         self.meters = Meters::default();
     }
@@ -400,21 +443,14 @@ impl OrganEngine {
 
     /// Book the flow of every sounding pipe on its chest, then integrate.
     fn step_wind(&mut self, frames: usize) {
-        let mut per_chest = [0.0f32; MAX_CHESTS];
-        for s in self.pool.slots.iter().filter(|s| s.active) {
-            let c = if s.chest.index() < self.chest_count {
-                s.chest.index()
-            } else {
-                0
-            };
-            per_chest[c] += s.flow;
-        }
+        let per_chest = self.pool.flows(self.chest_count);
         for (c, &flow) in per_chest[..self.chest_count].iter().enumerate() {
             if flow > 0.0 {
                 self.wind.register_demand(WindchestId(c as u16), flow);
             }
         }
         self.wind.step(frames);
+        self.snapshot = self.wind.snapshot();
     }
 
     fn step_expression(&mut self, frames: usize) {
@@ -437,27 +473,15 @@ impl OrganEngine {
         }
         self.step_expression(frames);
 
-        self.pool.refresh();
-        for s in self.pool.slots.iter_mut().filter(|s| s.active) {
-            if !s.voice.is_active() {
-                continue;
-            }
-            let (start, inc) = self
-                .expr_ramp
-                .get(usize::from(s.pipe.division))
-                .copied()
-                .unwrap_or((1.0, 0.0));
-            s.voice.set_expression(start, inc);
-            let c = if s.chest.index() < self.chest_count {
-                s.chest.index()
-            } else {
-                0
-            };
-            s.voice.render_add(
+        let report = self
+            .pool
+            .render(frames, offset, &self.snapshot, &self.expr_ramp);
+        self.missed_jobs += report.missed as u64;
+        for c in 0..self.chest_count {
+            self.pool.mix_chest(
+                c,
                 &mut self.bus_l[c][..frames],
                 &mut self.bus_r[c][..frames],
-                Some(&self.wind),
-                offset,
             );
         }
 
@@ -581,20 +605,19 @@ impl OrganEngine {
             note,
             division: rank.division.0 as u8,
         };
-        let Some(i) = self.pool.acquire(pipe, self.frame) else {
-            return false;
-        };
         // A pipe draws in proportion to its length: twice an 8' for a 16', and
         // an octave lower draws twice again. Referenced to middle C on an 8'.
         let octaves_below_middle_c = (60.0 - f32::from(note)) * (1.0 / 12.0);
         let freq = self.tuning[usize::from(note & 0x7F)];
-        let slot = &mut self.pool.slots[i];
+        let Some(slot) = self.pool.acquire(pipe, self.frame) else {
+            return false;
+        };
         slot.flow = rank.wind_flow * octaves_below_middle_c.exp2() * self.flow_per_voice;
         slot.chest = rank.chest;
         if let Some(v) = self.voicings.get(rank.stop.index()) {
             slot.voice.adopt_rank(v);
         }
-        slot.voice.note_on(pipe, freq, Some(&self.wind));
+        slot.voice.note_on(pipe, freq, Some(&self.snapshot));
         true
     }
 

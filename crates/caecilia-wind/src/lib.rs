@@ -18,6 +18,7 @@ mod chest;
 mod config;
 mod model;
 mod response;
+mod snapshot;
 mod tremulant;
 
 pub use bellows::Bellows;
@@ -29,4 +30,5 @@ pub use config::{
 };
 pub use model::WindModel;
 pub use response::{WindResponseCurve, default_response_for, response_for};
+pub use snapshot::{MAX_SNAPSHOT_CHESTS, WindSnapshot};
 pub use tremulant::Tremulant;

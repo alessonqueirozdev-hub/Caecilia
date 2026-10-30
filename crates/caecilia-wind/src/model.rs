@@ -5,6 +5,7 @@ use caecilia_model::{RankId, WindchestId};
 use crate::bellows::Bellows;
 use crate::chest::Windchest;
 use crate::config::{DEFAULT_NOMINAL_PRESSURE_PA, WindModelConfig};
+use crate::snapshot::{WindSnapshot, chest_pressure};
 use crate::tremulant::Tremulant;
 
 /// Reservoirs, chests, tremulants and the rank-to-chest routing.
@@ -117,14 +118,23 @@ impl WindModel {
             return DEFAULT_NOMINAL_PRESSURE_PA;
         };
         let c = &self.chests[i];
-        let mut p = c.sag_pressure_at(frame);
-        if let Some(t) = c
+        let t = c
             .tremulant()
-            .and_then(|t| self.tremulants.get(usize::from(t)))
-        {
-            p += t.pressure_delta_pa(frame);
+            .and_then(|t| self.tremulants.get(usize::from(t)));
+        chest_pressure(c, t, frame)
+    }
+
+    /// The block's pressures, frozen: what a voice on another thread reads.
+    pub fn snapshot(&self) -> WindSnapshot {
+        let mut s = WindSnapshot::default();
+        for (i, c) in self.chests.iter().enumerate() {
+            let t = c
+                .tremulant()
+                .and_then(|t| self.tremulants.get(usize::from(t)))
+                .copied();
+            s.set(i, *c, t);
         }
-        p.max(0.0)
+        s
     }
 
     /// `(pressure - nominal) / nominal` at a frame.

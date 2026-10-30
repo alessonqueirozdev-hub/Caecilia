@@ -1,7 +1,7 @@
 //! The additive rank voice: one pipe of one rank, sounded by a partial bank.
 
 use caecilia_model::{Calibration, MAX_PARTIALS, PipeId, RankVoicing, StopId, TonalFamily};
-use caecilia_wind::{WindModel, response_for};
+use caecilia_wind::{WindSnapshot, response_for};
 
 use crate::bank::{Liveliness, PartialBank, ReleaseStyle};
 
@@ -105,7 +105,7 @@ impl AdditiveVoice {
 
     /// Sound `pipe` at `frequency_hz` (the key's 8' frequency: the rank's
     /// footage is already in its spectrum).
-    pub fn note_on(&mut self, pipe: PipeId, frequency_hz: f64, wind: Option<&WindModel>) {
+    pub fn note_on(&mut self, pipe: PipeId, frequency_hz: f64, wind: Option<&WindSnapshot>) {
         self.pipe = pipe;
         self.bank.set_master_gain(VOICE_HEADROOM);
         self.bank.trigger(pipe, frequency_hz, wind);
@@ -132,7 +132,7 @@ impl AdditiveVoice {
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
-        wind: Option<&WindModel>,
+        wind: Option<&WindSnapshot>,
         frame_in_block: usize,
     ) {
         self.bank.render_add(left, right, wind, frame_in_block);

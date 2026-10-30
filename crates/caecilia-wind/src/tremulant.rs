@@ -13,7 +13,7 @@ fn wrap01(phase: f64) -> f64 {
 /// Phase advances once per block and per-frame values are evaluated
 /// analytically, so it is sample-accurate. Engaging, disengaging and changing
 /// depth all glide, so none of them clicks.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Tremulant {
     config: TremulantConfig,
     depth_pa: f32,
