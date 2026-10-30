@@ -268,15 +268,6 @@ fn vertical(rect: Rect, stops: &[Stop]) -> LinearGradient<'_> {
     }
 }
 
-fn horizontal(rect: Rect, stops: &[Stop]) -> LinearGradient<'_> {
-    LinearGradient {
-        start: Point::new(rect.x, rect.y),
-        end: Point::new(rect.right(), rect.y),
-        stops,
-        extend: Extend::Pad,
-    }
-}
-
 /// A turned wooden jamb: the wood's gradient, its grain, a bevelled edge.
 fn jamb(scene: &mut Scene, look: &Look, rect: Rect) {
     let shape = RoundedRect::new(rect, 14.0);
@@ -1771,113 +1762,6 @@ fn cheek(look: Look, right: bool) -> View {
     .height(96.0)
 }
 
-/// One façade pipe: its body, the mouth with its gilded upper lip, the
-/// conical foot down to the toe.
-fn pipe(scene: &mut Scene, look: &Look, x: f32, base: f32, d: f32, h: f32) {
-    let foot_h = (h * 0.26).max(d * 1.6);
-    let body = Rect::new(x - d / 2.0, base - h, d, h - foot_h);
-    let tin = if look.night {
-        [
-            Stop::new(0.0, Color::hex(0x45484D)),
-            Stop::new(0.3, Color::hex(0xAEB3B9)),
-            Stop::new(0.45, Color::hex(0xD2D6DB)),
-            Stop::new(0.75, Color::hex(0x80858B)),
-            Stop::new(1.0, Color::hex(0x34363A)),
-        ]
-    } else {
-        [
-            Stop::new(0.0, Color::hex(0x80858B)),
-            Stop::new(0.3, Color::hex(0xD5D9DD)),
-            Stop::new(0.45, Color::hex(0xEEF0F2)),
-            Stop::new(0.75, Color::hex(0xA9AEB3)),
-            Stop::new(1.0, Color::hex(0x70747A)),
-        ]
-    };
-    let foot = polygon(&[
-        Point::new(x - d / 2.0, base - foot_h),
-        Point::new(x + d / 2.0, base - foot_h),
-        Point::new(x + d * 0.14, base),
-        Point::new(x - d * 0.14, base),
-    ]);
-    scene.fill(&foot, horizontal(body, &tin));
-    scene.fill(body, horizontal(body, &tin));
-    // The mouth, and the gilded lip arched over it.
-    let mouth = Rect::new(x - d * 0.28, body.bottom() - d * 0.22, d * 0.56, d * 0.22);
-    scene.fill(mouth, Color::hex(0x0B0807));
-    let mut lip = manguebyte_gfx::Path::new();
-    lip.move_to(Point::new(mouth.x, mouth.y));
-    lip.quad_to(
-        Point::new(x, mouth.y - d * 0.55),
-        Point::new(mouth.right(), mouth.y),
-    );
-    lip.close();
-    scene.fill(&lip, look.brass);
-    scene.stroke(&lip, Stroke::new(0.6), look.brass_dark);
-    // The top's rim.
-    scene.fill(
-        Rect::new(body.x, body.y, body.width, 1.2),
-        Color::hex_rgba(0x0000_0070),
-    );
-}
-
-/// The organ's front, between the name and the controls: a tower at each
-/// end and in the middle, flats of pipes between, standing on the impost.
-fn facade(look: Look) -> View {
-    canvas("", Size::new(700.0, 92.0), move |cx, scene| {
-        let size = cx.size();
-        let w = size.width.min(760.0);
-        let x0 = (size.width - w) / 2.0;
-        let base = size.height - 12.0;
-        let room = base - 8.0;
-        // (pipes, tallest, step, tower)
-        let groups: [(usize, f32, f32, bool); 5] = [
-            (5, 0.82, 0.07, true),
-            (9, 0.52, -0.035, false),
-            (7, 1.0, 0.075, true),
-            (9, 0.52, -0.035, false),
-            (5, 0.82, 0.07, true),
-        ];
-        let pitches = groups.iter().map(|g| g.0).sum::<usize>() as f32 + 4.0 * 1.4;
-        let pitch = w / pitches;
-        let d = pitch * 0.7;
-        // The case behind the pipes.
-        let case = Rect::new(x0 - 6.0, 2.0, w + 12.0, base);
-        scene.fill(
-            RoundedRect::new(case, 6.0),
-            Color::hex_rgba(if look.night { 0x0000_0070 } else { 0x2A1A_0C22 }),
-        );
-        let mut x = x0 + pitch / 2.0;
-        for (n, top, step, tower) in groups {
-            let mid = (n as f32 - 1.0) / 2.0;
-            let left = x - pitch / 2.0;
-            for k in 0..n {
-                let from_mid = (k as f32 - mid).abs();
-                let frac = (top - step * from_mid).clamp(0.25, 1.0);
-                pipe(scene, &look, x, base, d, room * frac);
-                x += pitch;
-            }
-            if tower {
-                // A gilded cap over the tower.
-                let right = x - pitch / 2.0;
-                let cap_y = base - room * top - 6.0;
-                let cap = Rect::new(left - 2.0, cap_y, right - left + 4.0, 4.0);
-                scene.fill(RoundedRect::new(cap, 2.0), look.brass);
-                scene.fill(Rect::new(cap.x, cap.y, cap.width, 1.0), look.brass_light);
-            }
-            x += pitch * 1.4;
-        }
-        // The impost the feet stand on.
-        let impost = Rect::new(x0 - 10.0, base, w + 20.0, 7.0);
-        let wood = [
-            Stop::new(0.0, look.wood_top),
-            Stop::new(1.0, look.wood_bottom),
-        ];
-        scene.fill(RoundedRect::new(impost, 2.0), vertical(impost, &wood));
-        scene.fill(Rect::new(impost.x, impost.y, impost.width, 1.2), look.brass);
-    })
-    .height(92.0)
-}
-
 /// Behind it all: the room, and a warm light over the music desk.
 fn backdrop(look: Look) -> View {
     canvas("", Size::new(1.0, 1.0), move |cx, scene| {
@@ -1964,7 +1848,7 @@ fn screen(console: &Rc<Console>, keys: &[KeyboardState; 2], pedals: Vec<u8>) -> 
             ))
             .caption(),
         )),
-        facade(look).flex(1.0),
+        canvas("", Size::new(0.0, 0.0), |_, _| {}).flex(1.0),
         pill("Werckmeister III \u{b7} A 415").dot(look.accent),
         pill("Wind steady").dot(look.good),
         pill("CPU 11 % \u{b7} 214 voices"),
