@@ -82,7 +82,13 @@ caecilia_add_tool(caecilia-verify-registration
 caecilia_add_tool(caecilia-organ-file
     organ-file/Main.cpp)
 
+# 6) Reference render for the 2.0 port: the voicing data, tuning tables and the
+#    measured sound of held notes, a chord on the wind and a tremulant, as JSON
+#    the Rust engine's tests check themselves against.
+caecilia_add_tool(caecilia-reference
+    reference/Main.cpp)
+
 message(STATUS "Caecilia: offline tools enabled "
                "(caecilia-sampleset-analyzer, caecilia-partial-extractor, "
                "caecilia-ir-tool, caecilia-verify-registration, "
-               "caecilia-organ-file)")
+               "caecilia-organ-file, caecilia-reference)")
