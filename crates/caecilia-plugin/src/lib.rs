@@ -29,6 +29,8 @@ mod console;
 mod controller;
 mod params;
 mod switch;
+mod telemetry;
+mod ui;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -51,6 +53,8 @@ pub use params::{
     CaeciliaParams, KEY_NAMES, MAX_COUPLERS, TEMPERAMENT_NAMES, coupler_param_id, stop_param_id,
 };
 pub use switch::{FADE_SECONDS, OrganLoadError, OrganSlot};
+pub use telemetry::{TELEMETRY_CHESTS, Telemetry};
+pub use ui::EDITOR_SIZE;
 
 use switch::{Swap, SwitchAudio, build_engine, channels_of};
 
@@ -155,6 +159,9 @@ pub struct Caecilia {
     held: [u128; 16],
     /// The organ slot's generation of the organ playing.
     generation: u32,
+    /// What the console shows of the audio thread.
+    telemetry: Arc<Telemetry>,
+    sample_rate: f64,
 }
 
 /// Every temperament of [`TEMPERAMENT_NAMES`] on every key, at A4 = 440.
@@ -263,6 +270,21 @@ impl Caecilia {
             }
             None => false,
         }
+    }
+
+    /// What the audio thread reports to the console: wind, keys, voices,
+    /// load.
+    pub fn telemetry(&self) -> Arc<Telemetry> {
+        Arc::clone(&self.telemetry)
+    }
+
+    /// The console, as `editor` offers it; tests open it headless.
+    pub fn editor_spec(&self) -> manguebyte_gui::Editor {
+        ui::editor(ui::Shared {
+            params: Arc::clone(&self.params),
+            controller: Arc::clone(&self.controller),
+            telemetry: Arc::clone(&self.telemetry),
+        })
     }
 
     /// The engine, once prepared.
@@ -488,6 +510,8 @@ impl Plugin for Caecilia {
             retired: None,
             held: [0; 16],
             generation: 0,
+            telemetry: Arc::default(),
+            sample_rate: 48_000.0,
         }
     }
 
@@ -518,6 +542,7 @@ impl Plugin for Caecilia {
         self.fade_left = vec![0.0; spec.max_block_size];
         self.fade_right = vec![0.0; spec.max_block_size];
         self.held = [0; 16];
+        self.sample_rate = spec.sample_rate;
         // Everything is sent again on the first block.
         self.stop_mask = u64::MAX;
         self.coupler_mask = u32::MAX;
@@ -529,6 +554,7 @@ impl Plugin for Caecilia {
     }
 
     fn process(&mut self, buffer: &mut AudioBuffer<f32>, context: &ProcessContext<'_, f32>) {
+        let started = std::time::Instant::now();
         self.events.clear();
         self.take_new_organ();
         let Some(mut engine) = self.engine.take() else {
@@ -690,6 +716,12 @@ impl Plugin for Caecilia {
 
         let (left, right) = buffer.channel_pair_mut(0, 1);
         engine.process(left, right, &self.events);
+        let chests = self.organ.windchests();
+        for (i, chest) in chests.iter().take(telemetry::TELEMETRY_CHESTS).enumerate() {
+            self.telemetry
+                .set_pressure(i, engine.wind().pressure_at(chest.id, 0));
+        }
+        self.telemetry.set_voices(engine.active_voices());
         self.engine = Some(engine);
         self.fade_out(buffer);
 
@@ -699,6 +731,13 @@ impl Plugin for Caecilia {
         buffer.apply_gain_ramp(self.gain, target);
         self.gain = target;
         self.limiter.process(buffer);
+
+        self.telemetry.set_held(&self.held);
+        let block = buffer.num_frames() as f64 / self.sample_rate.max(1.0);
+        if block > 0.0 {
+            let share = started.elapsed().as_secs_f64() / block;
+            self.telemetry.add_load(share as f32);
+        }
     }
 
     fn reset(&mut self) {
@@ -715,6 +754,10 @@ impl Plugin for Caecilia {
         self.swell = None;
         self.reverb.reset();
         self.limiter.reset();
+    }
+
+    fn editor(&self) -> Option<Box<dyn manguebyte_plugin::editor::EditorSpec>> {
+        Some(Box::new(self.editor_spec()))
     }
 
     fn latency_samples(&self) -> usize {

@@ -134,11 +134,14 @@ dependencies = [
  "manguebyte-clap",
  "manguebyte-core",
  "manguebyte-dsp",
+ "manguebyte-gfx",
+ "manguebyte-gui",
  "manguebyte-host",
  "manguebyte-midi",
  "manguebyte-params",
  "manguebyte-plugin",
  "manguebyte-standalone",
+ "manguebyte-ui",
  "manguebyte-vst3",
 ]
 
@@ -646,6 +649,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "manguebyte-gui"
+version = "0.1.0"
+dependencies = [
+ "manguebyte-gfx",
+ "manguebyte-params",
+ "manguebyte-plugin",
+ "manguebyte-ui",
+ "manguebyte-window",
+]
+
+[[package]]
 name = "manguebyte-host"
 version = "0.1.0"
 dependencies = [
@@ -719,6 +733,15 @@ dependencies = [
  "manguebyte-params",
  "manguebyte-plugin",
  "vst3",
+]
+
+[[package]]
+name = "manguebyte-window"
+version = "0.1.0"
+dependencies = [
+ "manguebyte-gfx",
+ "manguebyte-plugin",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
