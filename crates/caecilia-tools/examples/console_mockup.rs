@@ -10,11 +10,13 @@
 //! for `day` into the folder given, or the system's temporary folder.
 //!
 //! The console is a French one, as the demonstration organ is: the
-//! Grand-Orgue and the Pédale on the left jamb, the Récit, its couplers and
-//! its shoes on the right, reeds engraved in red. Between the jambs, where
-//! the music desk would be: the registration (a selector line, the
-//! history, why a stop is drawn), the wind of each chest on its gauge, and
-//! the general pistons. The keyboard below lights what sounds.
+//! Grand-Orgue and the Pédale on the left jamb, the Récit with its couplers
+//! and tremulant on the right, reeds engraved in red. Between the jambs,
+//! where the music desk would be: the registration (a selector line, the
+//! history, why a stop is drawn) and the wind of each chest on its gauge.
+//! Below, as at the bench: the Récit's manual, the key slip with the
+//! general pistons, the Grand-Orgue's manual, the swell and crescendo
+//! shoes, and the pedalboard, every key held lit.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -35,10 +37,10 @@ use manguebyte_ui::{
 };
 
 /// The window, in logical pixels.
-const SIZE: Size = Size::new(1440.0, 900.0);
+const SIZE: Size = Size::new(1600.0, 980.0);
 
 /// A jamb's width.
-const JAMB: f32 = 400.0;
+const JAMB: f32 = 500.0;
 
 /// The materials of the console, in one light.
 #[derive(Clone, Copy)]
@@ -447,11 +449,11 @@ impl StopFace {
             format!("{tail}'")
         };
         // The name in lines that fit the face, a hyphen breaking too.
-        let face = style(9.6, 640.0, Color::BLACK);
+        let face = style(9.2, 640.0, Color::BLACK);
         let mut pieces = Vec::new();
         for w in &words[..split] {
             match w.split_once('-') {
-                Some((a, b)) if width_of(w, face) > 50.0 => {
+                Some((a, b)) if width_of(w, face) > 45.0 => {
                     pieces.push(format!("{a}-"));
                     pieces.push(b.to_string());
                 }
@@ -461,7 +463,7 @@ impl StopFace {
         let mut lines: Vec<String> = Vec::new();
         for p in pieces {
             match lines.last_mut() {
-                Some(l) if !l.ends_with('-') && width_of(&format!("{l} {p}"), face) <= 50.0 => {
+                Some(l) if !l.ends_with('-') && width_of(&format!("{l} {p}"), face) <= 45.0 => {
                     l.push(' ');
                     l.push_str(&p);
                 }
@@ -469,10 +471,10 @@ impl StopFace {
             }
         }
         let widest = lines.iter().map(|l| width_of(l, face)).fold(0.0, f32::max);
-        let size = if widest > 50.0 {
-            9.6 * 50.0 / widest
+        let size = if widest > 45.0 {
+            9.2 * 45.0 / widest
         } else {
-            9.6
+            9.2
         };
         StopFace {
             lines,
@@ -488,8 +490,8 @@ impl StopFace {
 /// name engraved, drawn out toward the player when it is on, with a ring of
 /// light so a drawn stop reads from across the room.
 fn drawstop(scene: &mut Scene, look: &Look, c: Point, face: &StopFace) {
-    let r = 31.0;
-    let collar = 39.0;
+    let r = 28.0;
+    let collar = 35.0;
     scene.shadow(
         Circle::new(c, collar),
         Shadow::new(Color::hex_rgba(0x0000_0090))
@@ -559,9 +561,9 @@ fn drawstop(scene: &mut Scene, look: &Look, c: Point, face: &StopFace) {
     // The engraving.
     let ink = if face.reed { look.reed_ink } else { look.ink };
     let name = style(face.size, 640.0, ink);
-    let pitch = style(12.0, 760.0, ink);
-    let line_h = 11.0;
-    let pitch_h = if face.pitch.is_empty() { 0.0 } else { 14.0 };
+    let pitch = style(11.0, 760.0, ink);
+    let line_h = 10.5;
+    let pitch_h = if face.pitch.is_empty() { 0.0 } else { 13.0 };
     let total = face.lines.len() as f32 * line_h + pitch_h;
     let mut y = fc.y - total / 2.0 - 1.0;
     for l in &face.lines {
@@ -626,8 +628,15 @@ enum PistonKind {
     Set,
 }
 
-fn piston(scene: &mut Scene, look: &Look, c: Point, label: &str, kind: PistonKind, lit: bool) {
-    let r = 16.0;
+fn piston(
+    scene: &mut Scene,
+    look: &Look,
+    c: Point,
+    r: f32,
+    label: &str,
+    kind: PistonKind,
+    lit: bool,
+) {
     scene.fill(Circle::new(c, r + 4.0), look.ebony);
     scene.stroke(
         Circle::new(c, r + 4.0),
@@ -676,7 +685,7 @@ fn piston(scene: &mut Scene, look: &Look, c: Point, label: &str, kind: PistonKin
             extend: Extend::Pad,
         },
     );
-    let s = style(11.0, 760.0, ink);
+    let s = style(r * 0.7, 760.0, ink);
     let h = TextLayout::new(label, &s, None).size().height;
     text(scene, label, s, Point::new(c.x, c.y - h / 2.0), 0.5);
 }
@@ -685,9 +694,9 @@ fn piston(scene: &mut Scene, look: &Look, c: Point, label: &str, kind: PistonKin
 fn arrow(scene: &mut Scene, c: Point, right: bool, color: Color) {
     let d = if right { 1.0 } else { -1.0 };
     let mut p = manguebyte_gfx::Path::new();
-    p.move_to(Point::new(c.x + 5.0 * d, c.y));
-    p.line_to(Point::new(c.x - 4.0 * d, c.y - 6.0));
-    p.line_to(Point::new(c.x - 4.0 * d, c.y + 6.0));
+    p.move_to(Point::new(c.x + 4.5 * d, c.y));
+    p.line_to(Point::new(c.x - 3.5 * d, c.y - 5.0));
+    p.line_to(Point::new(c.x - 3.5 * d, c.y + 5.0));
     p.close();
     scene.fill(&p, color);
 }
@@ -699,13 +708,13 @@ fn gauge(
     scene: &mut Scene,
     look: &Look,
     c: Point,
+    r: f32,
     name: &str,
     nominal_mm: f32,
     now_mm: f32,
     trace: &[f32],
     note: &str,
 ) {
-    let r = 56.0;
     let start = 0.75 * std::f32::consts::PI;
     let sweep = 1.5 * std::f32::consts::PI;
     let max = 120.0;
@@ -822,21 +831,21 @@ fn gauge(
         scene,
         name,
         style(12.5, 680.0, look.text),
-        Point::new(c.x, c.y + r + 16.0),
+        Point::new(c.x, c.y + r + 12.0),
         0.5,
     );
     text(
         scene,
         note,
         style(10.5, 450.0, look.muted),
-        Point::new(c.x, c.y + r + 33.0),
+        Point::new(c.x, c.y + r + 28.0),
         0.5,
     );
     // The last two seconds.
-    let w = 150.0;
-    let h = 26.0;
+    let w = 140.0;
+    let h = 22.0;
     let x0 = c.x - w / 2.0;
-    let y0 = c.y + r + 54.0;
+    let y0 = c.y + r + 46.0;
     let well = RoundedRect::new(Rect::new(x0, y0, w, h), 5.0);
     scene.fill(
         well,
@@ -888,88 +897,97 @@ fn wind_trace(nominal: f32, sag: f32, tremulant: Option<f32>) -> Vec<f32> {
         .collect()
 }
 
-/// A shoe: a balanced pedal in its slot, the scale beside it.
+/// A balanced shoe seen from the bench: its tread, and beside it how far
+/// it is open.
+#[allow(clippy::too_many_arguments)]
 fn shoe(
     scene: &mut Scene,
     look: &Look,
     rect: Rect,
     position: f32,
-    marks: &[&str],
     title: &str,
     value: &str,
+    label_left: bool,
 ) {
-    let slot = Rect::new(
-        rect.center().x - 14.0,
-        rect.y + 6.0,
-        28.0,
-        rect.height - 54.0,
-    );
-    let slot_shape = RoundedRect::new(slot, 6.0);
-    scene.fill(slot_shape, Color::hex_rgba(0x0000_0070));
-    scene.stroke(slot_shape, Stroke::new(1.0), Color::hex_rgba(0xFFFF_FF14));
-    // The scale, open at the top.
-    let n = marks.len().max(2);
-    for (i, m) in marks.iter().enumerate() {
-        let y = slot.bottom() - 8.0 - (slot.height - 16.0) * i as f32 / (n - 1) as f32;
-        let mut p = manguebyte_gfx::Path::new();
-        p.move_to(Point::new(slot.x - 10.0, y));
-        p.line_to(Point::new(slot.x - 4.0, y));
-        scene.stroke(&p, Stroke::new(1.0), look.text2.with_alpha(0x90));
-        let s = style(9.0, 560.0, look.text2);
-        let h = TextLayout::new(m, &s, None).size().height;
-        text(scene, m, s, Point::new(slot.x - 13.0, y - h / 2.0), 1.0);
-    }
-    // The pedal, where it is.
-    let y = slot.bottom() - 8.0 - (slot.height - 16.0) * position;
-    let pedal = Rect::new(rect.center().x - 24.0, y - 13.0, 48.0, 26.0);
-    let shape = RoundedRect::new(pedal, 7.0);
+    let shape = RoundedRect::new(rect, 9.0);
     scene.shadow(
         shape,
         Shadow::new(Color::hex_rgba(0x0000_00B0))
-            .with_offset(0.0, 4.0)
-            .with_blur(7.0),
+            .with_offset(0.0, 5.0)
+            .with_blur(9.0),
     );
     let metal = [
         Stop::new(0.0, look.brass_light),
         Stop::new(0.5, look.brass),
         Stop::new(1.0, look.brass_dark),
     ];
-    scene.fill(shape, vertical(pedal, &metal));
-    for k in 0..4 {
-        let yy = pedal.y + 6.0 + k as f32 * 4.6;
+    scene.fill(shape, vertical(rect, &metal));
+    for k in 0..7 {
+        let y = rect.y + 10.0 + k as f32 * (rect.height - 20.0) / 6.0;
         let mut p = manguebyte_gfx::Path::new();
-        p.move_to(Point::new(pedal.x + 9.0, yy));
-        p.line_to(Point::new(pedal.right() - 9.0, yy));
-        scene.stroke(&p, Stroke::new(1.0), look.brass_dark.with_alpha(0xA0));
+        p.move_to(Point::new(rect.x + 10.0, y));
+        p.line_to(Point::new(rect.right() - 10.0, y));
+        scene.stroke(&p, Stroke::round(2.0), look.brass_dark.with_alpha(0xB0));
     }
-    scene.shadow(shape, Shadow::glow(10.0, look.accent.with_alpha(0x50)));
+    // How far open: a level beside the shoe.
+    let bar = Rect::new(
+        if label_left {
+            rect.x - 16.0
+        } else {
+            rect.right() + 10.0
+        },
+        rect.y,
+        6.0,
+        rect.height,
+    );
+    scene.fill(RoundedRect::new(bar, 3.0), Color::hex_rgba(0x0000_0070));
+    let lit = Rect::new(
+        bar.x,
+        bar.bottom() - bar.height * position,
+        bar.width,
+        bar.height * position,
+    );
+    scene.shadow(
+        RoundedRect::new(lit, 3.0),
+        Shadow::glow(8.0, look.accent.with_alpha(0x90)),
+    );
+    scene.fill(RoundedRect::new(lit, 3.0), look.accent);
+    let (x, anchor) = if label_left {
+        (bar.x - 12.0, 1.0)
+    } else {
+        (bar.right() + 12.0, 0.0)
+    };
     text(
         scene,
         title,
-        style(12.0, 680.0, look.text),
-        Point::new(rect.center().x, rect.bottom() - 40.0),
-        0.5,
+        style(12.5, 680.0, look.text),
+        Point::new(x, rect.center().y - 17.0),
+        anchor,
     );
     text(
         scene,
         value,
         style(10.5, 600.0, look.wood_accent),
-        Point::new(rect.center().x, rect.bottom() - 22.0),
-        0.5,
+        Point::new(x, rect.center().y + 2.0),
+        anchor,
     );
 }
 
 // ---------------------------------------------------------------- the parts
 
+/// A drawstop's cell in a jamb.
+const CELL: f32 = 80.0;
+
+/// A row of drawstops.
+const ROW: f32 = 90.0;
+
 /// The left jamb: the Grand-Orgue above, the Pédale below.
 fn left_jamb(console: Rc<Console>) -> View {
-    canvas("Left jamb", Size::new(JAMB, 600.0), move |cx, scene| {
+    canvas("Left jamb", Size::new(JAMB, 400.0), move |cx, scene| {
         let look = console.look;
         let rect = Rect::new(0.0, 0.0, cx.size().width, cx.size().height);
         jamb(scene, &look, rect);
-        // Five rows of stops share the height.
-        let row_h = ((rect.height - 18.0 * 2.0 - 26.0 * 2.0 - 30.0) / 5.0).clamp(96.0, 116.0);
-        let mut y = 18.0;
+        let mut y = 16.0;
         y = division(
             scene,
             &look,
@@ -978,10 +996,9 @@ fn left_jamb(console: Rc<Console>) -> View {
             "GRAND-ORGUE",
             "I  \u{b7}  ch 1",
             &console.stops_of("Grand-Orgue"),
-            4,
-            row_h,
+            6,
         );
-        y += 18.0;
+        y += 16.0;
         division(
             scene,
             &look,
@@ -990,8 +1007,7 @@ fn left_jamb(console: Rc<Console>) -> View {
             "P\u{c9}DALE",
             "ch 3",
             &console.stops_of("Pédale"),
-            3,
-            row_h,
+            6,
         );
     })
     .width(JAMB)
@@ -1010,26 +1026,24 @@ fn division(
     note: &str,
     stops: &[(usize, StopFace)],
     columns: usize,
-    row_h: f32,
 ) -> f32 {
     plate(
         scene,
         look,
-        Rect::new(rect.x + 22.0, y, rect.width - 44.0, 26.0),
+        Rect::new(rect.x + 20.0, y, rect.width - 40.0, 26.0),
         title,
         note,
     );
-    let cell = 88.0;
-    let mut y = y + 26.0 + row_h / 2.0 + 6.0;
+    let mut y = y + 26.0 + ROW / 2.0 + 4.0;
     for chunk in stops.chunks(columns) {
-        let w = cell * chunk.len() as f32;
-        let x0 = rect.center().x - w / 2.0 + cell / 2.0;
+        let w = CELL * chunk.len() as f32;
+        let x0 = rect.center().x - w / 2.0 + CELL / 2.0;
         for (i, (_, face)) in chunk.iter().enumerate() {
-            drawstop(scene, look, Point::new(x0 + cell * i as f32, y), face);
+            drawstop(scene, look, Point::new(x0 + CELL * i as f32, y), face);
         }
-        y += row_h;
+        y += ROW;
     }
-    y - row_h / 2.0 - 6.0
+    y - ROW / 2.0 - 4.0
 }
 
 /// A division's name as a coupler tablet has room for it.
@@ -1042,13 +1056,13 @@ fn short(name: &str) -> &str {
     }
 }
 
-/// The right jamb: the Récit, its couplers and tremulant, and the shoes.
+/// The right jamb: the Récit, its couplers and tremulant.
 fn right_jamb(console: Rc<Console>) -> View {
-    canvas("Right jamb", Size::new(JAMB, 600.0), move |cx, scene| {
+    canvas("Right jamb", Size::new(JAMB, 400.0), move |cx, scene| {
         let look = console.look;
         let rect = Rect::new(0.0, 0.0, cx.size().width, cx.size().height);
         jamb(scene, &look, rect);
-        let mut y = 18.0;
+        let mut y = 16.0;
         y = division(
             scene,
             &look,
@@ -1058,17 +1072,16 @@ fn right_jamb(console: Rc<Console>) -> View {
             "II  \u{b7}  ch 2",
             &console.stops_of("Récit"),
             4,
-            96.0,
         );
-        y += 12.0;
+        y += 16.0;
         plate(
             scene,
             &look,
-            Rect::new(rect.x + 22.0, y, rect.width - 44.0, 26.0),
+            Rect::new(rect.x + 20.0, y, rect.width - 40.0, 26.0),
             "ACCOUPLEMENTS",
             "",
         );
-        y += 40.0;
+        y += 42.0;
         let mut tablets: Vec<(Vec<String>, bool)> = console
             .organ
             .couplers()
@@ -1083,46 +1096,15 @@ fn right_jamb(console: Rc<Console>) -> View {
             vec!["Tremblant".into(), "R\u{e9}cit".into()],
             console.tremulant,
         ));
-        let tw = 78.0;
-        let gap = 10.0;
+        let tw = 96.0;
+        let gap = 12.0;
         let total = tablets.len() as f32 * tw + (tablets.len() - 1) as f32 * gap;
         let mut x = rect.center().x - total / 2.0;
         for (lines, on) in &tablets {
             let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
-            tablet(scene, &look, Rect::new(x, y, tw, 40.0), &lines, *on);
+            tablet(scene, &look, Rect::new(x, y, tw, 52.0), &lines, *on);
             x += tw + gap;
         }
-        y += 58.0;
-        plate(
-            scene,
-            &look,
-            Rect::new(rect.x + 22.0, y, rect.width - 44.0, 26.0),
-            "EXPRESSION",
-            "",
-        );
-        y += 34.0;
-        let shoes_h = rect.bottom() - y - 10.0;
-        shoe(
-            scene,
-            &look,
-            Rect::new(rect.x + 60.0, y, 120.0, shoes_h),
-            0.62,
-            &["0", "", "", "", "8"],
-            "R\u{e9}cit",
-            "box 62 % open",
-        );
-        let tags: Vec<&str> = FACTORY_GENERALS.iter().map(|g| g.tag).collect();
-        let mut marks = vec![""];
-        marks.extend(tags.iter().copied());
-        shoe(
-            scene,
-            &look,
-            Rect::new(rect.right() - 180.0, y, 120.0, shoes_h),
-            4.0 / 8.0,
-            &marks,
-            "Crescendo",
-            "step 4 \u{b7} mf",
-        );
     })
     .width(JAMB)
     .into_view()
@@ -1130,7 +1112,7 @@ fn right_jamb(console: Rc<Console>) -> View {
 
 /// The registration: a selector line, the history, why.
 fn registration(console: Rc<Console>) -> View {
-    canvas("Registration", Size::new(560.0, 222.0), move |cx, scene| {
+    canvas("Registration", Size::new(540.0, 184.0), move |cx, scene| {
         let look = console.look;
         let rect = Rect::new(0.0, 0.0, cx.size().width, cx.size().height);
         panel(scene, &look, rect);
@@ -1140,10 +1122,10 @@ fn registration(console: Rc<Console>) -> View {
             &look,
             rect,
             "Registration",
-            &format!("{drawn} stops drawn \u{b7} General 4 (mf) + 3 by hand"),
+            &format!("{drawn} stops \u{b7} General 4 (mf) + 3 by hand"),
         );
         // The selector line.
-        let field = Rect::new(rect.x + 20.0, rect.y + 46.0, rect.width - 40.0, 34.0);
+        let field = Rect::new(rect.x + 20.0, rect.y + 44.0, rect.width - 40.0, 32.0);
         let shape = RoundedRect::new(field, 8.0);
         scene.fill(
             shape,
@@ -1154,7 +1136,7 @@ fn registration(console: Rc<Console>) -> View {
             },
         );
         scene.stroke(shape, Stroke::new(1.2), look.accent.with_alpha(0xB0));
-        let y = field.y + 9.0;
+        let y = field.y + 8.0;
         let mut x = field.x + 14.0;
         x += text(
             scene,
@@ -1191,23 +1173,16 @@ fn registration(console: Rc<Console>) -> View {
             1.0,
         );
         // The history.
-        let y = field.bottom() + 18.0;
-        text(
-            scene,
-            "History",
-            style(10.5, 600.0, look.muted),
-            Point::new(rect.x + 20.0, y + 5.0),
-            0.0,
-        );
+        let y = field.bottom() + 14.0;
         let nodes = [
             ("Opening", false),
-            ("General 3 \u{b7} mp", false),
-            ("General 4 \u{b7} mf", false),
+            ("General 3", false),
+            ("General 4", false),
             ("+ Hautbois", false),
             ("+ Gambe, C\u{e9}leste", true),
         ];
         let chip = style(10.5, 600.0, look.text);
-        let mut x = rect.x + 80.0;
+        let mut x = rect.x + 20.0;
         let mut previous: Option<f32> = None;
         for (label, current) in nodes {
             let w = width_of(label, chip) + 18.0;
@@ -1237,19 +1212,12 @@ fn registration(console: Rc<Console>) -> View {
             x = r.right() + 12.0;
         }
         // Why.
-        let mut y = y + 40.0;
-        text(
-            scene,
-            "Why",
-            style(10.5, 600.0, look.muted),
-            Point::new(rect.x + 20.0, y),
-            0.0,
-        );
+        let mut y = y + 36.0;
         for (dot, lead, rest) in [
             (
                 look.accent,
                 "Voix C\u{e9}leste 8",
-                " drawn by div:recit & family:string, after General 4 (mf)",
+                " drawn by div:recit & family:string, after General 4",
             ),
             (
                 look.muted,
@@ -1257,12 +1225,12 @@ fn registration(console: Rc<Console>) -> View {
                 " not drawn: General 4 (mf) leaves it to General 5 (f)",
             ),
         ] {
-            scene.fill(Circle::new(Point::new(rect.x + 86.0, y + 7.0), 3.5), dot);
+            scene.fill(Circle::new(Point::new(rect.x + 24.0, y + 7.0), 3.5), dot);
             let w = text(
                 scene,
                 lead,
                 style(11.5, 650.0, look.text),
-                Point::new(rect.x + 96.0, y),
+                Point::new(rect.x + 34.0, y),
                 0.0,
             )
             .width;
@@ -1270,35 +1238,29 @@ fn registration(console: Rc<Console>) -> View {
                 scene,
                 rest,
                 style(11.5, 450.0, look.text2),
-                Point::new(rect.x + 96.0 + w, y),
+                Point::new(rect.x + 34.0 + w, y),
                 0.0,
             );
-            y += 22.0;
+            y += 21.0;
         }
     })
-    .height(222.0)
+    .height(184.0)
     .into_view()
 }
 
 /// The wind: a gauge for each chest.
 fn wind(console: Rc<Console>) -> View {
-    canvas("Wind", Size::new(560.0, 240.0), move |cx, scene| {
+    canvas("Wind", Size::new(540.0, 220.0), move |cx, scene| {
         let look = console.look;
         let rect = Rect::new(0.0, 0.0, cx.size().width, cx.size().height);
         panel(scene, &look, rect);
-        heading(
-            scene,
-            &look,
-            rect,
-            "Wind",
-            "three chests \u{b7} millimetres of water, live",
-        );
+        heading(scene, &look, rect, "Wind", "millimetres of water, live");
         let mm = |pa: f32| pa / 9.806_65;
         let chests = [
             (
                 "P\u{e9}dale",
                 mm(980.0),
-                wind_trace(mm(980.0), 0.0, None),
+                wind_trace(mm(980.0), 0.006, None),
                 "steady",
             ),
             (
@@ -1315,133 +1277,284 @@ fn wind(console: Rc<Console>) -> View {
             ),
         ];
         let w = rect.width / 3.0;
+        let r = ((rect.height - 128.0) / 2.0).clamp(36.0, 56.0);
         for (i, (name, nominal, trace, note)) in chests.iter().enumerate() {
-            let c = Point::new(rect.x + w * (i as f32 + 0.5), rect.y + 112.0);
+            let c = Point::new(rect.x + w * (i as f32 + 0.5), rect.y + 44.0 + r);
             let now = trace[trace.len() - 9];
-            gauge(scene, &look, c, name, *nominal, now, trace, note);
+            gauge(scene, &look, c, r, name, *nominal, now, trace, note);
         }
     })
     .flex(1.0)
     .into_view()
 }
 
-/// The general pistons, the sequencer, set and cancel.
-fn pistons(console: Rc<Console>) -> View {
-    canvas("Generals", Size::new(560.0, 190.0), move |cx, scene| {
+/// Where the keys begin, past the plate that names a keyboard.
+const PLATE: f32 = 150.0;
+
+/// The key slip between the manuals: the general pistons, the sequencer,
+/// cancel and set, under the Récit as on a console.
+fn key_slip(console: Rc<Console>) -> View {
+    canvas("Generals", Size::new(1200.0, 58.0), move |cx, scene| {
         let look = console.look;
-        let rect = Rect::new(0.0, 0.0, cx.size().width, cx.size().height);
-        panel(scene, &look, rect);
-        heading(
-            scene,
-            &look,
-            rect,
-            "Generals",
-            "program change 1\u{2013}16 \u{b7} Set + a piston captures",
-        );
-        let x0 = rect.x + 40.0;
-        let step = 42.0;
+        let size = cx.size();
+        let rect = Rect::new(PLATE + 14.0, 0.0, size.width - PLATE - 14.0, size.height);
+        let wood = [
+            Stop::new(0.0, look.wood_top),
+            Stop::new(1.0, look.wood_bottom),
+        ];
+        let shape = RoundedRect::new(rect, 6.0);
+        scene.fill(shape, vertical(rect, &wood));
+        scene.fill(Rect::new(rect.x, rect.y, rect.width, 1.0), look.sheen);
+        let r = 13.0;
+        let step = 37.0;
+        let seq_w = 150.0;
+        let total = 16.0 * step + 26.0 + 2.0 * step + seq_w + 26.0 + 2.0 * step;
+        let mut x = rect.center().x - total / 2.0 + step / 2.0;
+        let y = rect.y + 21.0;
         let organists_set = [8usize, 9, 11];
-        for row in 0..2 {
-            let y = rect.y + 74.0 + row as f32 * 62.0;
-            for k in 0..8 {
-                let n = row * 8 + k;
-                let c = Point::new(x0 + k as f32 * step, y);
-                let kind = if row == 0 {
-                    PistonKind::Ivory
-                } else {
-                    PistonKind::Ebony
-                };
-                piston(
-                    scene,
-                    &look,
-                    c,
-                    &format!("{}", n + 1),
-                    kind,
-                    n == console.general,
-                );
-                let tag = if row == 0 {
-                    FACTORY_GENERALS
-                        .get(k)
-                        .map_or_else(String::new, |g| g.tag.to_string())
-                } else if organists_set.contains(&n) {
-                    "set".into()
-                } else {
-                    "empty".into()
-                };
-                let color = if n == console.general {
-                    look.accent
-                } else if row == 0 || organists_set.contains(&n) {
-                    look.text2
-                } else {
-                    look.muted.with_alpha(0x90)
-                };
-                text(
-                    scene,
-                    &tag,
-                    style(10.0, 600.0, color),
-                    Point::new(c.x, y + 23.0),
-                    0.5,
-                );
+        for n in 0..16 {
+            let c = Point::new(x, y);
+            let kind = if n < 8 {
+                PistonKind::Ivory
+            } else {
+                PistonKind::Ebony
+            };
+            piston(
+                scene,
+                &look,
+                c,
+                r,
+                &format!("{}", n + 1),
+                kind,
+                n == console.general,
+            );
+            let tag = if n < 8 {
+                FACTORY_GENERALS.get(n).map_or("", |g| g.tag)
+            } else if organists_set.contains(&n) {
+                "set"
+            } else {
+                ""
+            };
+            let color = if n == console.general {
+                look.accent
+            } else {
+                look.text2
+            };
+            text(
+                scene,
+                tag,
+                style(9.5, 650.0, color),
+                Point::new(c.x, y + 17.0),
+                0.5,
+            );
+            x += step;
+            if n == 7 {
+                x += 12.0;
             }
         }
-        // The sequencer: where it is, and its two pistons.
-        let sx = x0 + 8.0 * step + 6.0;
-        let display = Rect::new(sx, rect.y + 52.0, rect.right() - sx - 20.0, 52.0);
-        let shape = RoundedRect::new(display, 8.0);
-        scene.fill(shape, Color::hex(0x0B0806));
-        scene.stroke(shape, Stroke::new(1.0), look.edge);
+        x += 14.0;
+        // The sequencer: previous, where it is, next.
+        piston(
+            scene,
+            &look,
+            Point::new(x, y),
+            r,
+            "",
+            PistonKind::Ebony,
+            false,
+        );
+        arrow(scene, Point::new(x, y), false, look.ivory);
+        x += step / 2.0 + 6.0;
+        let display = Rect::new(x, y - 15.0, seq_w - 12.0, 30.0);
+        let shape = RoundedRect::new(display, 6.0);
         let lcd = Color::hex(0xF2B95A);
-        scene.shadow(shape, Shadow::glow(8.0, lcd.with_alpha(0x18)));
+        scene.fill(shape, Color::hex(0x0B0806));
+        scene.shadow(shape, Shadow::glow(8.0, lcd.with_alpha(0x20)));
         text(
             scene,
             "4",
-            style(24.0, 700.0, lcd),
-            Point::new(display.x + 16.0, display.y + 10.0),
+            style(17.0, 700.0, lcd),
+            Point::new(display.x + 12.0, display.y + 4.0),
             0.0,
         );
         text(
             scene,
-            "mf",
-            style(12.0, 650.0, lcd),
-            Point::new(display.x + 44.0, display.y + 11.0),
+            "mf  \u{b7}  next f",
+            style(11.0, 600.0, lcd.with_alpha(0xD0)),
+            Point::new(display.x + 32.0, display.y + 8.0),
             0.0,
+        );
+        x = display.right() + 6.0 + step / 2.0;
+        piston(
+            scene,
+            &look,
+            Point::new(x, y),
+            r,
+            "",
+            PistonKind::Ebony,
+            false,
+        );
+        arrow(scene, Point::new(x, y), true, look.ivory);
+        x += step + 14.0;
+        piston(
+            scene,
+            &look,
+            Point::new(x, y),
+            r,
+            "0",
+            PistonKind::Ivory,
+            false,
         );
         text(
             scene,
-            "of 16  \u{b7}  next: f",
-            style(10.0, 500.0, lcd.with_alpha(0xA0)),
-            Point::new(display.x + 44.0, display.y + 28.0),
-            0.0,
+            "cancel",
+            style(9.5, 600.0, look.text2),
+            Point::new(x, y + 17.0),
+            0.5,
         );
-        let y = rect.y + 136.0;
-        let cx0 = display.x + 22.0;
-        let gap = (display.width - 44.0) / 3.0;
-        for (i, (label, kind)) in [
-            ("", PistonKind::Ebony),
-            ("", PistonKind::Ebony),
-            ("0", PistonKind::Ivory),
-            ("Set", PistonKind::Set),
-        ]
-        .iter()
-        .enumerate()
-        {
-            let c = Point::new(cx0 + gap * i as f32, y);
-            piston(scene, &look, c, label, *kind, false);
-            if i < 2 {
-                arrow(scene, c, i == 1, look.ivory);
-            }
-            let under = ["previous", "next", "cancel", "capture"][i];
-            text(
-                scene,
-                under,
-                style(9.5, 550.0, look.muted),
-                Point::new(c.x, y + 23.0),
-                0.5,
-            );
-        }
+        x += step;
+        piston(
+            scene,
+            &look,
+            Point::new(x, y),
+            r,
+            "S",
+            PistonKind::Set,
+            false,
+        );
+        text(
+            scene,
+            "set",
+            style(9.5, 600.0, look.text2),
+            Point::new(x, y + 17.0),
+            0.5,
+        );
     })
-    .height(190.0)
+    .height(58.0)
     .into_view()
+}
+
+/// Above the pedalboard: the Récit's swell shoe and the crescendo.
+fn shoes(console: Rc<Console>) -> View {
+    canvas("Shoes", Size::new(1200.0, 76.0), move |cx, scene| {
+        let look = console.look;
+        let size = cx.size();
+        let mid = PLATE + 14.0 + (size.width - PLATE - 14.0) / 2.0;
+        let h = size.height - 12.0;
+        shoe(
+            scene,
+            &look,
+            Rect::new(mid - 90.0, 6.0, 64.0, h),
+            0.62,
+            "R\u{e9}cit",
+            "box 62 % open",
+            true,
+        );
+        shoe(
+            scene,
+            &look,
+            Rect::new(mid + 26.0, 6.0, 64.0, h),
+            0.5,
+            "Crescendo",
+            "step 4 of 8 \u{b7} mf",
+            false,
+        );
+    })
+    .height(76.0)
+    .into_view()
+}
+
+/// The pedalboard: oak naturals, ebony-capped sharps between them, the
+/// notes held lit.
+fn pedalboard(console: Rc<Console>, held: Vec<u8>) -> View {
+    canvas(
+        "P\u{e9}dalier",
+        Size::new(1200.0, 104.0),
+        move |cx, scene| {
+            let look = console.look;
+            let size = cx.size();
+            let rect = Rect::new(0.0, 0.0, size.width, size.height);
+            scene.fill(
+                RoundedRect::new(rect, 8.0),
+                Color::hex_rgba(if look.night { 0x0000_0080 } else { 0x2A1A_0C50 }),
+            );
+            let (low, high) = (36u8, 67u8);
+            let naturals: Vec<u8> = (low..=high).filter(|n| !is_sharp(*n)).collect();
+            let slot = (rect.width - 16.0) / naturals.len() as f32;
+            let x_of = |index: usize| rect.x + 8.0 + slot * index as f32;
+            let oak = [
+                Stop::new(0.0, Color::hex(0xB08A5A)),
+                Stop::new(0.35, Color::hex(0xD9BC8C)),
+                Stop::new(1.0, Color::hex(0xE8D2A8)),
+            ];
+            for (i, &note) in naturals.iter().enumerate() {
+                let key = Rect::new(
+                    x_of(i) + slot * 0.27,
+                    rect.y + 6.0,
+                    slot * 0.46,
+                    rect.height - 12.0,
+                );
+                let shape = RoundedRect::new(key, 3.0);
+                scene.shadow(
+                    shape,
+                    Shadow::new(Color::hex_rgba(0x0000_00A0))
+                        .with_offset(0.0, 3.0)
+                        .with_blur(4.0),
+                );
+                scene.fill(shape, vertical(key, &oak));
+                if held.contains(&note) {
+                    scene.shadow(shape, Shadow::glow(12.0, look.accent.with_alpha(0xA0)));
+                    scene.fill(shape, look.accent.with_alpha(0x90));
+                }
+                if note % 12 == 0 {
+                    text(
+                        scene,
+                        &format!("C{}", note / 12 - 1),
+                        style(9.5, 650.0, Color::hex(0x5A3D1C)),
+                        Point::new(key.center().x, key.bottom() - 16.0),
+                        0.5,
+                    );
+                }
+            }
+            // A sharp sits over the gap after the natural below it.
+            let mut index = 0;
+            for note in low..=high {
+                if is_sharp(note) {
+                    let x = x_of(index) - slot * 0.23;
+                    let key = Rect::new(x, rect.y + 2.0, slot * 0.46, rect.height * 0.44);
+                    let shape = RoundedRect::new(key, 3.0);
+                    scene.shadow(
+                        shape,
+                        Shadow::new(Color::hex_rgba(0x0000_00C0))
+                            .with_offset(0.0, 4.0)
+                            .with_blur(5.0),
+                    );
+                    let ebony = [
+                        Stop::new(0.0, Color::hex(0x4A3C32)),
+                        Stop::new(0.25, Color::hex(0x1E1712)),
+                        Stop::new(1.0, Color::hex(0x0E0A08)),
+                    ];
+                    scene.fill(shape, vertical(key, &ebony));
+                    scene.stroke(shape, Stroke::new(1.0), Color::hex(0x6E5A48));
+                    scene.fill(
+                        Rect::new(key.x + 3.0, key.y + 3.0, key.width - 6.0, 2.0),
+                        Color::hex_rgba(0xFFF0_D840),
+                    );
+                    if held.contains(&note) {
+                        scene.fill(shape, look.accent.with_alpha(0xA0));
+                    }
+                } else {
+                    index += 1;
+                }
+            }
+        },
+    )
+    .height(104.0)
+    .into_view()
+}
+
+fn is_sharp(note: u8) -> bool {
+    matches!(note % 12, 1 | 3 | 6 | 8 | 10)
 }
 
 /// The organ's mark: five pipes of a flat, in brass.
@@ -1495,30 +1608,49 @@ fn backdrop(look: Look) -> View {
     .into_view()
 }
 
-/// Under the keyboard: the division it plays.
-fn manual_plate(look: Look) -> View {
-    canvas("Manual", Size::new(150.0, 86.0), move |cx, scene| {
+/// The plate that names a keyboard, and what reaches it.
+fn keyboard_plate(look: Look, title: &'static str, note: &'static str) -> View {
+    canvas(title, Size::new(PLATE, 60.0), move |cx, scene| {
         let size = cx.size();
         plate(
             scene,
             &look,
             Rect::new(0.0, size.height / 2.0 - 15.0, size.width, 30.0),
-            "I  G.-O.",
+            title,
             "",
         );
         text(
             scene,
-            "+ R\u{e9}cit coupled",
-            style(10.0, 550.0, look.accent),
+            note,
+            style(10.0, 600.0, look.accent),
             Point::new(size.width / 2.0, size.height / 2.0 + 20.0),
             0.5,
         );
     })
-    .width(150.0)
+    .width(PLATE)
+}
+
+/// A manual: its plate and its keys.
+fn manual(
+    look: Look,
+    title: &'static str,
+    note: &'static str,
+    name: &str,
+    keys: &KeyboardState,
+) -> View {
+    row((
+        keyboard_plate(look, title, note),
+        piano_keyboard(name, KeySpan::new(36, 96), keys.clone())
+            .height(96.0)
+            .flex(1.0),
+    ))
+    .spacing(14.0)
+    .align(Align::Center)
+    .into_view()
 }
 
 /// The console.
-fn screen(console: &Rc<Console>, keys: &KeyboardState) -> View {
+fn screen(console: &Rc<Console>, keys: &[KeyboardState; 2], pedals: Vec<u8>) -> View {
     let look = console.look;
     let top = row((
         logo(look),
@@ -1542,31 +1674,39 @@ fn screen(console: &Rc<Console>, keys: &KeyboardState) -> View {
     ))
     .spacing(12.0)
     .align(Align::Center);
-    let middle = column((
-        registration(Rc::clone(console)),
-        wind(Rc::clone(console)),
-        pistons(Rc::clone(console)),
-    ))
-    .spacing(14.0)
-    .flex(1.0);
-    let body = row((
+    let middle = column((registration(Rc::clone(console)), wind(Rc::clone(console))))
+        .spacing(12.0)
+        .flex(1.0);
+    let upper = row((
         left_jamb(Rc::clone(console)),
         middle,
         right_jamb(Rc::clone(console)),
     ))
-    .spacing(14.0)
+    .spacing(12.0)
     .flex(1.0);
-    let keyboard = row((
-        manual_plate(look),
-        piano_keyboard("Grand-Orgue", KeySpan::new(36, 96), keys.clone())
-            .height(86.0)
-            .flex(1.0),
+    let pedal_row = row((
+        keyboard_plate(look, "P\u{c9}DALE", "ch 3"),
+        pedalboard(Rc::clone(console), pedals).flex(1.0),
     ))
     .spacing(14.0)
     .align(Align::Center);
+    let keyboards = column((
+        manual(look, "II  R\u{c9}CIT", "ch 2", "R\u{e9}cit", &keys[0]),
+        key_slip(Rc::clone(console)),
+        manual(
+            look,
+            "I  GRAND-ORGUE",
+            "+ R\u{e9}cit coupled",
+            "Grand-Orgue",
+            &keys[1],
+        ),
+        shoes(Rc::clone(console)),
+        pedal_row,
+    ))
+    .spacing(4.0);
     stack((
         backdrop(look),
-        column((top, body, keyboard)).spacing(14.0).padding(20.0),
+        column((top, upper, keyboards)).spacing(12.0).padding(18.0),
     ))
 }
 
@@ -1587,12 +1727,15 @@ fn main() -> std::io::Result<()> {
     for (look, name) in [(NIGHT, "night"), (DAY, "day")] {
         for (scale, suffix) in [(1.0, "@1x"), (2.0, "@2x")] {
             let console = Console::new(look);
-            let keys = KeyboardState::new();
-            keys.set_sounding([48u8, 55, 60, 64, 67]);
+            // The Hautbois's melody on the Récit, a chord on the
+            // Grand-Orgue, the bass on the pedals.
+            let keys = [KeyboardState::new(), KeyboardState::new()];
+            keys[0].set_sounding([76u8]);
+            keys[1].set_sounding([55u8, 60, 64]);
             let host = Rc::new(RecordingEditorHost::new());
             let (context, _link) = EditorContext::attach(host);
-            let mut root =
-                Root::new(screen(&console, &keys), SIZE, scale, context).with_theme(theme(&look));
+            let mut root = Root::new(screen(&console, &keys, vec![36]), SIZE, scale, context)
+                .with_theme(theme(&look));
             let mut clock = Duration::ZERO;
             for _ in 0..60 {
                 clock += Duration::from_millis(16);
