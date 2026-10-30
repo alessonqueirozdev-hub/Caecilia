@@ -7,8 +7,28 @@ use crate::ids::{
     WindchestId,
 };
 use crate::organ::{
-    Coupler, Division, DivisionKind, Manual, Organ, Rank, RankCharacter, Stop, Windchest,
+    Coupler, Division, DivisionKind, Manual, Organ, Rank, RankCharacter, RecipeOverride, Stop,
+    Windchest,
 };
+
+/// Each reed its own voice (2.0). A Bombarde is dark and fundamental-heavy; a
+/// Clairon brighter than the Trompette under it; the Basson-Hautbois is a
+/// narrow conical oboe, its fundamental weak and its formant high -- nothing
+/// like the trumpet 1.x made of it.
+fn reed_voice(name: &str) -> Option<RecipeOverride> {
+    let (brightness, formant_hz, fundamental_db) = match name {
+        "Bombarde 16" => (0.85, 950.0, 2.0),
+        "Trompette 8" => (1.0, 1200.0, 0.0),
+        "Clairon 4" => (1.15, 1450.0, -1.0),
+        "Basson-Hautbois 8" => (0.6, 1750.0, -7.0),
+        _ => return None,
+    };
+    Some(RecipeOverride {
+        brightness,
+        formant_hz,
+        fundamental_db,
+    })
+}
 
 /// The voicing character the demo gives each family.
 fn character_for(family: TonalFamily) -> RankCharacter {
@@ -104,6 +124,7 @@ impl Builder {
             high_note: high,
             character: character_for(family),
             measured_spectrum: None,
+            recipe: reed_voice(name),
         });
         self.organ.windchests[chest.index()].ranks.push(rank_id);
         self.organ.stops.push(Stop {

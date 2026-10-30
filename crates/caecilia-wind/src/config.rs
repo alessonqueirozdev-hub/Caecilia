@@ -1,6 +1,6 @@
 //! What a wind model is built from.
 
-use caecilia_model::{Footage, Organ, RankId, WindchestId};
+use caecilia_model::{Calibration, Footage, Organ, RankId, WindchestId};
 
 /// A typical nominal pressure (about 75 mm of water).
 pub const DEFAULT_NOMINAL_PRESSURE_PA: f32 = 735.0;
@@ -12,6 +12,19 @@ pub const MAX_TREMULANT_DEPTH_FRACTION: f32 = 0.25;
 /// The flow one pipe draws at the reference -- middle C on an 8' rank -- in
 /// the model's units. Sag in pascals is `demand * (1/feed + 1/trunk)`.
 pub const FLOW_PER_VOICE: f32 = 0.3;
+
+/// The flow one middle-C 8' pipe draws, under a calibration.
+///
+/// 1.x's figure leaves the wind all but dead: a full chord of the whole organ
+/// sags the Grand-Orgue 0.23 %, which nobody hears. 2.0 draws ten times as much,
+/// so the same chord sags it a few percent -- a well-winded instrument that is
+/// nonetheless heard to breathe, and the reeds dip against the flues.
+pub fn flow_per_voice(cal: Calibration) -> f32 {
+    match cal {
+        Calibration::OneX => FLOW_PER_VOICE,
+        Calibration::V2 => 10.0 * FLOW_PER_VOICE,
+    }
+}
 
 /// What one pipe of a rank draws at middle C relative to an 8': its length in
 /// eight-foot units (2 for a 16', 0.25 for a 2'). An unknown length draws as

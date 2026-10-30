@@ -19,9 +19,10 @@ mod pool;
 mod shutter;
 
 use caecilia_model::{
-    DivisionId, MidiNote, Organ, PipeId, RankVoicing, StopId, WindchestId, build_rank_voicing,
+    Calibration, DivisionId, MidiNote, Organ, PipeId, RankVoicing, StopId, WindchestId,
+    build_rank_voicing,
 };
-use caecilia_wind::{FLOW_PER_VOICE, WindModel, config_from_organ};
+use caecilia_wind::{WindModel, config_from_organ, flow_per_voice};
 
 pub use engaged::{EngagedCoupler, EngagedRank, EngagedTable, MAX_COUPLERS, MAX_RANKS};
 use pool::Pool;
@@ -146,6 +147,8 @@ type KeyVoices = [KeyVoice; MAX_KEY_VOICES];
 /// The organ engine. See the crate documentation.
 #[derive(Debug)]
 pub struct OrganEngine {
+    calibration: Calibration,
+    flow_per_voice: f32,
     sample_rate: f64,
     max_block: usize,
     chest_count: usize,
@@ -177,9 +180,20 @@ fn equal_temperament() -> [f64; 128] {
 }
 
 impl OrganEngine {
-    /// An engine for `organ`. Allocates every buffer, voice and voicing it will
-    /// ever use: off the audio thread.
+    /// An engine for `organ`, voiced as 2.0. Allocates every buffer, voice and
+    /// voicing it will ever use: off the audio thread.
     pub fn new(organ: &Organ, sample_rate: f64, max_block: usize, polyphony: usize) -> Self {
+        Self::with_calibration(organ, sample_rate, max_block, polyphony, Calibration::V2)
+    }
+
+    /// An engine for `organ` under a chosen calibration (`OneX` reproduces 1.x).
+    pub fn with_calibration(
+        organ: &Organ,
+        sample_rate: f64,
+        max_block: usize,
+        polyphony: usize,
+        calibration: Calibration,
+    ) -> Self {
         let sample_rate = if sample_rate > 0.0 {
             sample_rate
         } else {
@@ -190,7 +204,7 @@ impl OrganEngine {
         let voicings = organ
             .stops()
             .iter()
-            .map(|s| build_rank_voicing(organ, s.id).unwrap_or_default())
+            .map(|s| build_rank_voicing(organ, s.id, calibration).unwrap_or_default())
             .collect();
 
         // Which chests stand in a swell box, and whose shoe closes them.
@@ -218,13 +232,15 @@ impl OrganEngine {
             .collect();
 
         Self {
+            calibration,
+            flow_per_voice: flow_per_voice(calibration),
             sample_rate,
             max_block,
             chest_count,
             voicings,
             tuning: equal_temperament(),
             wind: WindModel::new(sample_rate, &config_from_organ(organ)),
-            pool: Pool::new(sample_rate, polyphony),
+            pool: Pool::new(sample_rate, polyphony, calibration),
             table: EngagedTable::default(),
             held: [HeldKey::default(); MAX_HELD_KEYS],
             held_count: 0,
@@ -242,6 +258,11 @@ impl OrganEngine {
             meter_sum_sq: 0.0,
             meter_samples: 0,
         }
+    }
+
+    /// The calibration it plays under.
+    pub fn calibration(&self) -> Calibration {
+        self.calibration
     }
 
     /// The voicing of every stop, by stop id.
@@ -320,7 +341,7 @@ impl OrganEngine {
                 next_event += 1;
             }
             let n = (until - done).min(self.max_block);
-            self.render_slice(&mut left[done..done + n], &mut right[done..done + n]);
+            self.render_slice(&mut left[done..done + n], &mut right[done..done + n], done);
             done += n;
         }
         // Events past every slice still land (on the last frame, applied now).
@@ -408,7 +429,7 @@ impl OrganEngine {
         }
     }
 
-    fn render_slice(&mut self, left: &mut [f32], right: &mut [f32]) {
+    fn render_slice(&mut self, left: &mut [f32], right: &mut [f32], offset: usize) {
         let frames = left.len();
         for c in 0..self.chest_count {
             self.bus_l[c][..frames].fill(0.0);
@@ -436,6 +457,7 @@ impl OrganEngine {
                 &mut self.bus_l[c][..frames],
                 &mut self.bus_r[c][..frames],
                 Some(&self.wind),
+                offset,
             );
         }
 
@@ -567,7 +589,7 @@ impl OrganEngine {
         let octaves_below_middle_c = (60.0 - f32::from(note)) * (1.0 / 12.0);
         let freq = self.tuning[usize::from(note & 0x7F)];
         let slot = &mut self.pool.slots[i];
-        slot.flow = rank.wind_flow * octaves_below_middle_c.exp2() * FLOW_PER_VOICE;
+        slot.flow = rank.wind_flow * octaves_below_middle_c.exp2() * self.flow_per_voice;
         slot.chest = rank.chest;
         if let Some(v) = self.voicings.get(rank.stop.index()) {
             slot.voice.adopt_rank(v);

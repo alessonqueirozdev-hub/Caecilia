@@ -116,9 +116,15 @@ These are 1.x defects measured, not suspected — each is a 2.0 requirement:
 - **The tremulant barely reaches the sound.** It swings the Récit pressure by
   220 Pa peak to peak (±15 %), yet the note's envelope moves 1.4 dB against
   0.8 dB of natural drift without it.
-- **Release ignores how long a key was held.** Release time depends only on
-  pitch (100–414 ms across the compass), the same after a staccato as after a
-  held chord.
+- **The release is one colour.** Release time depends only on pitch
+  (100–414 ms across the compass) and the pipe fades as a whole, its upper
+  partials no faster than its fundamental. (An earlier draft of this list said
+  "release ignores hold time". For a dry modeled pipe that is not a defect: a
+  pipe's own release is its resonator dying away, which does not depend on how
+  long it spoke. The hold-time dependence a listener hears comes from the room
+  -- a staccato has not filled it -- and the reverb models that. Sample organs
+  need releases picked by hold time because their releases are RECORDINGS of
+  the room after a long note.)
 - **Every rank lives like a Principal.** The per-family "living pipe"
   character (drift, speech glide, bloom, treble tilt) is applied once, when the
   pool is built with a Principal context, and `AdditiveVoice::adoptRank` never
@@ -141,6 +147,31 @@ identical block by block; the tremulant's pressure trajectory within 0.001 Pa.
 The tests hold the port to those tolerances, so any later change that moves the
 sound has to say so.
 
+## 2.0 calibration: what changed, measured
+
+`Calibration::OneX` reproduces 1.x (the reference tests run under it);
+`Calibration::V2` is what 2.0 plays. `crates/caecilia-engine/tests/calibration.rs`
+renders each case under both and asserts the change:
+
+| Measured | 1.x | 2.0 | What changed |
+|---|---:|---:|---|
+| Grand-Orgue sag, whole organ drawn, nine keys | 0.29 % | 2.91 % | Each pipe draws ten times the flow: a well-winded organ that is heard to breathe. |
+| Récit Trompette C4 when an 18-key chord lands | −0.6 cent | −6.1 cents | Sag plus a level axis derived from physics (amplitude ∝ pressure; reeds ∝ p^1.3). The reeds now dip against the flues. |
+| Bourdon 8' envelope swing, tremulant at 0.6 | 1.44 dB | 2.64 dB | The same physics: the tremulant reaches the sound. |
+| Tremulant swing across 64…2048-frame buffers | 0.35 dB spread | 0.01 dB spread | Wind, drift and speech re-read every 64 frames, not once per host buffer: the instrument sounds the same in every DAW. |
+| Basson-Hautbois vs Trompette, largest harmonic difference | 0.6 dB | 9.3 dB | Reeds have voices of their own (formant, brightness, fundamental) in the organ. |
+| Montre 8' C4, H4/H1 change over 80 ms of release | 0.0 dB | −4.0 dB | Exponential release whose upper partials die faster. |
+| Montre 8' C4, release to −40 dB | 211 ms | 201 ms | Length kept; no click at the release (largest sample step at note-off below the steady state's). |
+| Character per family (drift, glide, bloom, tilt) | every rank a Principal | each family its own | Applied when a voice adopts a rank. |
+
+The cost, measured (`tests/cost.rs`, ignored by default): a 10-key tutti with
+the couplers drawn -- 200 voices -- takes **0.90 of a core** under OneX and
+**1.03** under V2 with the scalar partial kernel. The kernel is latency-bound
+(each partial is a sample-by-sample recurrence), which is why 1.x shipped SSE2
+and AVX2 backends. Real time at full organ therefore needs the framework's SIMD
+partial bank (§6 #1) and the real-time pool across cores (§6 #3): both are now
+measured necessities, not nice-to-haves.
+
 ## 4. Problems to solve, and how 2.0 solves them
 
 Market instruments are cited by documented behaviour only.
@@ -151,7 +182,7 @@ Market instruments are cited by documented behaviour only.
 | **Load time** — minutes to open a large organ | Same | Additive organs build in milliseconds. Sample sets load lazily: playable as soon as heads are in, with a cache of decoded heads keyed by file hash. |
 | **Polyphony / CPU** — a tutti with couplers is thousands of pipes | All; 1.x is one thread | SIMD partial kernel checked against a scalar reference; voices rendered across cores with a deterministic sum (§6 #3, #4); a per-block budget that demotes a voice's tier, then sheds partials, before it ever drops a block (§6 #8). |
 | **Audible loops** in sustained samples | Sample-based organs | The modeled sustain is loop-free by construction. Where a sample is used, the recorded attack is spliced into a modeled sustain of the same spectrum (the 1.x design, never built). |
-| **Release does not match hold time** | Sets without multiple releases; 1.x (measured above) | Release chosen by held time — modeled release shaped by hold time and pressure, sampled releases picked by hold time with a phase-aligned crossfade (§6 #5). |
+| **Release does not match hold time** | Sample sets without multiple releases | The modeled pipe's release is its resonator decaying -- exponential and darkening -- and the room's share comes from the reverb, so a staccato is short by construction. For the sample tier: releases picked by hold time with a phase-aligned crossfade (§6 #5). |
 | **Dead wind** — no response to what is played | Sample-based organs; a single global tremulant in some modeled ones; 1.x at 0.23 % | Reservoir, trunk and chest calibrated against published measurements so a full chord sags audibly; sag drives pitch, level and brightness per family on curves stated in the organ file; tests assert the sag and the pitch dip lie in stated ranges. |
 | **Weak tremulant** | 1.x (measured above) | Tremulant modulation reaching level, pitch and brightness by amounts a test asserts, per chest, with its own start-up and stop ramp. |
 | **Fixed tuning** — sets recorded in one temperament; retuning degrades | Sample-based organs | Pitch is synthesised: any temperament, Scala `.scl/.kbm`, per-stop detune, live click-free change. For samples, high-quality polyphase sinc retuning that also carries the wind's FM (§6 #2, #6). |

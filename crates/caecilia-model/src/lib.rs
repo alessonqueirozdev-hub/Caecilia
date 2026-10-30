@@ -5,6 +5,7 @@
 //! each rank's calibrated [`RankVoicing`]. Nothing here runs on the audio
 //! thread; everything it builds is read-only afterwards.
 
+mod calibration;
 mod demo;
 mod footage;
 mod ids;
@@ -13,6 +14,7 @@ pub mod recipes;
 mod spectrum;
 mod voicing;
 
+pub use calibration::Calibration;
 pub use demo::demo_organ;
 pub use footage::Footage;
 pub use ids::{
@@ -20,7 +22,8 @@ pub use ids::{
     WindchestId,
 };
 pub use organ::{
-    Coupler, Division, DivisionKind, Manual, Organ, Rank, RankCharacter, Stop, Windchest,
+    Coupler, Division, DivisionKind, Manual, Organ, Rank, RankCharacter, RecipeOverride, Stop,
+    Windchest,
 };
 pub use spectrum::{
     FormantPeak, MAX_FORMANTS, MIXTURE_SERIES, PartialTrack, SpectralModel, SpeechProfile,

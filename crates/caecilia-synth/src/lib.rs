@@ -12,5 +12,5 @@ mod bank;
 mod math;
 mod voice;
 
-pub use bank::{DEFAULT_MAX_PARTIALS, Liveliness, PartialBank};
-pub use voice::{AdditiveVoice, liveliness_for};
+pub use bank::{DEFAULT_MAX_PARTIALS, Liveliness, PartialBank, ReleaseStyle};
+pub use voice::{AdditiveVoice, CONTROL_FRAMES, liveliness_for};

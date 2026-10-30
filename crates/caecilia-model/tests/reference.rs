@@ -6,7 +6,9 @@
 //! floats equal to the last few ulps (the two math libraries may round a
 //! `log10f` or `powf` differently by one).
 
-use caecilia_model::{DivisionKind, StopId, TonalFamily, build_rank_voicing, demo_organ};
+use caecilia_model::{
+    Calibration, DivisionKind, StopId, TonalFamily, build_rank_voicing, demo_organ,
+};
 use serde_json::Value;
 
 fn reference() -> Value {
@@ -94,7 +96,7 @@ fn every_stop_is_voiced_exactly_as_1x_voiced_it() {
     let organ = demo_organ();
     for s in r["organ"]["stops"].as_array().unwrap() {
         let id = StopId(f(&s["id"]) as u16);
-        let v = build_rank_voicing(&organ, id).expect("a stop of this organ");
+        let v = build_rank_voicing(&organ, id, Calibration::OneX).expect("a stop of this organ");
         let name = s["name"].as_str().unwrap();
 
         assert_eq!(f(&s["chest"]) as u16, v.chest.0, "{name}: chest");

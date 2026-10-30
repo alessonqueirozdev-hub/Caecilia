@@ -32,6 +32,16 @@ const BLOOM_OCTAVE_SPAN: f32 = 5.64;
 /// brightness up through the attack, an artificial "wah".
 const MAX_ONSET_SECONDS: f32 = 0.004;
 
+/// 2.0: extra decay of the upper partials while a pipe dies away, dB per
+/// second per octave of harmonic. A resonator loses its upper modes faster --
+/// wall losses grow with frequency, radiation faster still -- so a real pipe's
+/// release darkens as it fades instead of shrinking at one colour.
+const RELEASE_DARKEN_DB_PER_S_OCTAVE: f32 = 25.0;
+
+/// 2.0: how far past the release time the exponential tail reaches -60 dB,
+/// so it reaches -40 dB about when 1.x's shaped linear fade did.
+const RELEASE_T60_FACTOR: f32 = 1.4;
+
 /// Time constant of the slow per-partial pitch drift, in seconds (not blocks,
 /// so the character does not depend on the host's buffer size).
 const DRIFT_TAU_SECONDS: f32 = 0.15;
@@ -63,6 +73,16 @@ struct Partial {
     wind_bright_exp: f32,
     note_level_scale: f32,
     formant_gain: f32,
+}
+
+/// How the envelope dies away.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ReleaseStyle {
+    /// 1.x: a straight line to zero under a smoothstep.
+    #[default]
+    Linear,
+    /// 2.0: exponential, its upper partials dying faster than its lower.
+    Exponential,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +182,13 @@ pub struct PartialBank {
     chiff_rng: u32,
     chest: WindchestId,
     curve: WindResponseCurve,
+    /// Frames between coefficient updates; 0 means once per block (1.x).
+    control_frames: usize,
+    release_style: ReleaseStyle,
+    release_mul: f32,
+    /// Exponential release: the envelope already carries its shaping.
+    released_shaped: bool,
+    release_time: f64,
 }
 
 impl PartialBank {
@@ -214,6 +241,11 @@ impl PartialBank {
             chiff_rng: 0x0123_4567,
             chest: WindchestId(0),
             curve: WindResponseCurve::default(),
+            control_frames: 0,
+            release_style: ReleaseStyle::Linear,
+            release_mul: 1.0,
+            released_shaped: false,
+            release_time: 0.0,
         };
         b.set_envelope_times(b.attack_seconds, b.release_seconds);
         b
@@ -499,6 +531,12 @@ impl PartialBank {
             self.chiff_len_samp = 0;
         }
 
+        if self.released_shaped {
+            // A steal out of an exponential release: back into the shaped domain
+            // the attack ramps in, at the same audible level.
+            self.env_gain = inverse_smoothstep01(self.env_gain);
+            self.released_shaped = false;
+        }
         self.stage = Stage::Attack;
         if !retrigger {
             self.env_gain = 0.0;
@@ -507,15 +545,24 @@ impl PartialBank {
 
     /// Let the note go.
     pub fn release(&mut self) {
-        if self.stage != Stage::Idle {
-            self.stage = Stage::Release;
+        if self.stage == Stage::Idle {
+            return;
         }
+        if self.release_style == ReleaseStyle::Exponential && !self.released_shaped {
+            // Carry the attack's shaping into the envelope, so the decay starts
+            // exactly where the sound is.
+            self.env_gain = smoothstep01(self.env_gain);
+            self.released_shaped = true;
+            self.release_time = self.note_time;
+        }
+        self.stage = Stage::Release;
     }
 
     /// Stop dead. The phasors keep turning: they cost nothing at zero gain.
     pub fn silence(&mut self) {
         self.stage = Stage::Idle;
         self.env_gain = 0.0;
+        self.released_shaped = false;
         self.expr_inc = 0.0;
         self.chiff_env = 0.0;
         self.chiff_lp = 0.0;
@@ -571,6 +618,26 @@ impl PartialBank {
         self.release_seconds = if release > 0.0 { release } else { 0.0005 };
         self.attack_step = (1.0 / (f64::from(self.attack_seconds) * self.sample_rate)) as f32;
         self.release_step = (1.0 / (f64::from(self.release_seconds) * self.sample_rate)) as f32;
+        let t60 = f64::from(RELEASE_T60_FACTOR * self.release_seconds);
+        self.release_mul = (1.0e-3f64.ln() / (t60 * self.sample_rate)).exp() as f32;
+    }
+
+    /// Update the wind, drift and speech every `frames` frames rather than
+    /// once per block (0, 1.x's behaviour). A tremulant read once per host
+    /// buffer is sampled four times a cycle at 2048 frames: the instrument
+    /// would sound different in every DAW.
+    pub fn set_control_frames(&mut self, frames: usize) {
+        self.control_frames = frames;
+    }
+
+    /// How the envelope dies away.
+    pub fn set_release_style(&mut self, style: ReleaseStyle) {
+        self.release_style = style;
+    }
+
+    /// The living-pipe character in force.
+    pub fn liveliness(&self) -> Liveliness {
+        self.live
     }
 
     /// The living-pipe character.
@@ -604,10 +671,20 @@ impl PartialBank {
         }
     }
 
-    fn recompute_block_coefficients(&mut self, frames: usize, wind: Option<&WindModel>) {
+    fn recompute_block_coefficients(
+        &mut self,
+        frames: usize,
+        wind: Option<&WindModel>,
+        wind_frame: usize,
+    ) {
         let sr = self.sample_rate;
         let nyquist = 0.5 * sr;
-        let deviation = wind.map_or(0.0, |w| w.deviation_at(self.chest, 0));
+        let deviation = wind.map_or(0.0, |w| w.deviation_at(self.chest, wind_frame));
+        let darken_db = if self.released_shaped {
+            -RELEASE_DARKEN_DB_PER_S_OCTAVE * (self.note_time - self.release_time) as f32
+        } else {
+            0.0
+        };
         let pitch_ratio = (f64::from(self.curve.pitch_cents(deviation)) / 1200.0).exp2();
         let level_lin = db_to_linear(self.curve.level_db(deviation));
         let wind_tilt_db = WIND_TILT_DB_PER_OCTAVE * self.curve.brightness(deviation);
@@ -679,22 +756,53 @@ impl PartialBank {
             if wind_tilting {
                 p.block_gain *= db_to_linear(wind_tilt_db * p.wind_bright_exp);
             }
+            if darken_db < 0.0 {
+                p.block_gain *= db_to_linear(darken_db * p.log_harmonic);
+            }
         }
     }
 
     /// Render one block, ADDING into `left` and `right` (equal lengths).
-    pub fn render_add(&mut self, left: &mut [f32], right: &mut [f32], wind: Option<&WindModel>) {
+    /// `frame_in_block` is where this slice starts in the wind's block, so the
+    /// pressure is read where the sound is.
+    pub fn render_add(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        wind: Option<&WindModel>,
+        frame_in_block: usize,
+    ) {
         let frames = left.len().min(right.len());
         if self.stage == Stage::Idle || frames == 0 {
             return;
         }
-        self.recompute_block_coefficients(frames, wind);
-
-        let inv = 1.0 / frames as f32;
-        for p in &mut self.partials[..self.count] {
-            p.gain_inc = (p.block_gain - p.cur_gain) * inv;
+        let segment = if self.control_frames == 0 {
+            frames
+        } else {
+            self.control_frames
+        };
+        let mut pos = 0;
+        while pos < frames && self.stage != Stage::Idle {
+            let n = (frames - pos).min(segment);
+            // 1.x read the wind at the block's first frame whatever it rendered.
+            let wind_frame = if self.control_frames == 0 {
+                0
+            } else {
+                frame_in_block + pos
+            };
+            self.recompute_block_coefficients(n, wind, wind_frame);
+            let inv = 1.0 / n as f32;
+            for p in &mut self.partials[..self.count] {
+                p.gain_inc = (p.block_gain - p.cur_gain) * inv;
+            }
+            self.render_segment(&mut left[pos..pos + n], &mut right[pos..pos + n]);
+            self.note_time += n as f64 / self.sample_rate;
+            pos += n;
         }
+    }
 
+    fn render_segment(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len();
         let mut pos = 0;
         while pos < frames {
             let want = (frames - pos).min(CHUNK_FRAMES);
@@ -708,6 +816,13 @@ impl PartialBank {
                             self.stage = Stage::Sustain;
                         }
                     }
+                    Stage::Release if self.released_shaped => {
+                        self.env_gain *= self.release_mul;
+                        if self.env_gain <= 1.0e-4 {
+                            self.env_gain = 0.0;
+                            self.stage = Stage::Idle;
+                        }
+                    }
                     Stage::Release => {
                         self.env_gain -= self.release_step;
                         if self.env_gain <= 0.0 {
@@ -718,10 +833,13 @@ impl PartialBank {
                     Stage::Sustain | Stage::Idle => {}
                 }
                 self.expr_gain += self.expr_inc;
-                self.chunk_env[count] = smoothstep01(self.env_gain)
-                    * self.master_gain
-                    * self.velocity_gain
-                    * self.expr_gain;
+                let shaped = if self.released_shaped {
+                    self.env_gain
+                } else {
+                    smoothstep01(self.env_gain)
+                };
+                self.chunk_env[count] =
+                    shaped * self.master_gain * self.velocity_gain * self.expr_gain;
                 count += 1;
                 if self.stage == Stage::Idle {
                     break;
@@ -777,8 +895,22 @@ impl PartialBank {
                 break;
             }
         }
-        self.note_time += frames as f64 / self.sample_rate;
     }
+}
+
+/// The `x` in [0, 1] whose smoothstep is `y`, by Newton's method.
+fn inverse_smoothstep01(y: f32) -> f32 {
+    let y = y.clamp(0.0, 1.0);
+    let mut x = y;
+    for _ in 0..6 {
+        let f = x * x * (3.0 - 2.0 * x) - y;
+        let d = 6.0 * x * (1.0 - x);
+        if d.abs() < 1.0e-6 {
+            break;
+        }
+        x = (x - f / d).clamp(0.0, 1.0);
+    }
+    x
 }
 
 /// Forces the shared tables into existence off the audio thread.

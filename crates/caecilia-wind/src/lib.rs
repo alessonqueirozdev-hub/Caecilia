@@ -25,8 +25,8 @@ pub use chest::Windchest;
 pub use config::{
     BellowsConfig, DEFAULT_NOMINAL_PRESSURE_PA, FLOW_PER_VOICE, MAX_TREMULANT_DEPTH_FRACTION,
     TremulantConfig, TremulantWaveform, WindModelConfig, WindchestConfig, config_from_organ,
-    rank_wind_flow, single_chest_config,
+    flow_per_voice, rank_wind_flow, single_chest_config,
 };
 pub use model::WindModel;
-pub use response::{WindResponseCurve, default_response_for};
+pub use response::{WindResponseCurve, default_response_for, response_for};
 pub use tremulant::Tremulant;

@@ -1,8 +1,9 @@
 //! One rank's voicing: the calibrated spectrum and speech a voice is built from.
 
+use crate::calibration::Calibration;
 use crate::footage::Footage;
 use crate::ids::{ChorusRole, DivisionId, StopId, TonalFamily, WindchestId};
-use crate::organ::{Organ, Stop};
+use crate::organ::{Organ, RecipeOverride, Stop};
 use crate::recipes;
 use crate::spectrum::{SpectralModel, SpeechProfile};
 
@@ -41,30 +42,41 @@ fn unison_referenced(stop: &Stop) -> bool {
     stop.family == TonalFamily::Mixture || stop.is_compound() || stop.footage.is_mutation()
 }
 
-/// The procedural recipe for a stop.
+/// The procedural recipe for a stop, as 1.x built it.
 pub fn spectral_model_for_stop(stop: &Stop, stopped: bool) -> SpectralModel {
+    recipe_for(stop, stopped, None)
+}
+
+/// The recipe for a stop, with the rank's own parameters when it has them.
+fn recipe_for(stop: &Stop, stopped: bool, own: Option<RecipeOverride>) -> SpectralModel {
     let f = stop.footage;
-    if stop.family == TonalFamily::Mixture || stop.is_compound() {
-        return recipes::mixture(&stop.mixture, 1.0);
+    let b = own.map_or(1.0, |o| o.brightness);
+    let mut m = if stop.family == TonalFamily::Mixture || stop.is_compound() {
+        recipes::mixture(&stop.mixture, b)
+    } else {
+        match stop.family {
+            TonalFamily::Principal => recipes::principal(f, b, 12),
+            TonalFamily::Flute if stop.is_mutation() => recipes::mutation(f, b),
+            TonalFamily::Flute => recipes::flute(f, b, stopped),
+            // Colour-role strings are the célestes: they get a beat.
+            TonalFamily::String => recipes::string(
+                f,
+                if stop.role == ChorusRole::Color {
+                    3.0
+                } else {
+                    0.0
+                },
+                b,
+            ),
+            TonalFamily::Reed => recipes::reed(f, own.map_or(1200.0, |o| o.formant_hz), b),
+            _ if stop.is_mutation() => recipes::mutation(f, b),
+            _ => recipes::principal(f, b, 12),
+        }
+    };
+    if let (Some(o), Some(first)) = (own, m.partials.first_mut()) {
+        first.amp_db += o.fundamental_db;
     }
-    match stop.family {
-        TonalFamily::Principal => recipes::principal(f, 1.0, 12),
-        TonalFamily::Flute if stop.is_mutation() => recipes::mutation(f, 1.0),
-        TonalFamily::Flute => recipes::flute(f, 1.0, stopped),
-        // Colour-role strings are the célestes: they get a beat.
-        TonalFamily::String => recipes::string(
-            f,
-            if stop.role == ChorusRole::Color {
-                3.0
-            } else {
-                0.0
-            },
-            1.0,
-        ),
-        TonalFamily::Reed => recipes::reed(f, 1200.0, 1.0),
-        _ if stop.is_mutation() => recipes::mutation(f, 1.0),
-        _ => recipes::principal(f, 1.0, 12),
-    }
+    m
 }
 
 /// A rank's level in the ensemble: a base per family, darkened 3.3 dB per
@@ -163,7 +175,7 @@ pub fn speech_profile_for(family: TonalFamily, footage: Footage) -> SpeechProfil
 
 /// A measured spectrum, peak-normalised so it contributes the SHAPE and the
 /// organ keeps its own balance; else the procedural recipe.
-fn measured_or_procedural(organ: &Organ, stop: &Stop) -> SpectralModel {
+fn measured_or_procedural(organ: &Organ, stop: &Stop, cal: Calibration) -> SpectralModel {
     let rank = organ.rank(stop.rank);
     let stopped = rank.is_none_or(|r| r.stopped);
     match rank.and_then(|r| r.measured_spectrum.as_ref()) {
@@ -179,12 +191,20 @@ fn measured_or_procedural(organ: &Organ, stop: &Stop) -> SpectralModel {
             }
             m
         }
-        _ => spectral_model_for_stop(stop, stopped),
+        _ => recipe_for(
+            stop,
+            stopped,
+            match cal {
+                Calibration::OneX => None,
+                Calibration::V2 => rank.and_then(|r| r.recipe),
+            },
+        ),
     }
 }
 
-/// Build one stop's voicing. `None` if the stop is not on this organ.
-pub fn build_rank_voicing(organ: &Organ, id: StopId) -> Option<RankVoicing> {
+/// Build one stop's voicing under a calibration. `None` if the stop is not on
+/// this organ.
+pub fn build_rank_voicing(organ: &Organ, id: StopId, cal: Calibration) -> Option<RankVoicing> {
     let s = organ.stop(id)?;
     let mut v = RankVoicing {
         stop: s.id,
@@ -207,7 +227,7 @@ pub fn build_rank_voicing(organ: &Organ, id: StopId) -> Option<RankVoicing> {
         8.0 / feet
     };
     let gain_db = rank_gain_db(s);
-    let recipe = measured_or_procedural(organ, s);
+    let recipe = measured_or_procedural(organ, s, cal);
     v.spectrum.formants = recipe.formants.clone();
     v.spectrum.partials = recipe
         .partials

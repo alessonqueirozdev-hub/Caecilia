@@ -1,6 +1,6 @@
 //! The voice pool: one slot per sounding pipe.
 
-use caecilia_model::{DivisionId, MidiNote, PipeId, WindchestId};
+use caecilia_model::{Calibration, DivisionId, MidiNote, PipeId, WindchestId};
 use caecilia_synth::AdditiveVoice;
 
 /// One slot: a voice and what the engine knows about the pipe it sounds.
@@ -24,10 +24,10 @@ pub(crate) struct Pool {
 }
 
 impl Pool {
-    pub fn new(sample_rate: f64, capacity: usize) -> Self {
+    pub fn new(sample_rate: f64, capacity: usize, calibration: Calibration) -> Self {
         let slots = (0..capacity)
             .map(|_| Slot {
-                voice: AdditiveVoice::new(sample_rate),
+                voice: AdditiveVoice::new(sample_rate, calibration),
                 active: false,
                 pipe: PipeId::default(),
                 start_frame: 0,

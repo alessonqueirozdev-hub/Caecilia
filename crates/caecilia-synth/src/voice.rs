@@ -1,9 +1,13 @@
 //! The additive rank voice: one pipe of one rank, sounded by a partial bank.
 
-use caecilia_model::{MAX_PARTIALS, PipeId, RankVoicing, StopId, TonalFamily};
-use caecilia_wind::{WindModel, default_response_for};
+use caecilia_model::{Calibration, MAX_PARTIALS, PipeId, RankVoicing, StopId, TonalFamily};
+use caecilia_wind::{WindModel, response_for};
 
-use crate::bank::{Liveliness, PartialBank};
+use crate::bank::{Liveliness, PartialBank, ReleaseStyle};
+
+/// 2.0's control rate: the wind, drift and speech are re-read every 64 frames
+/// (750 Hz at 48 kHz), whatever buffer the host hands over.
+pub const CONTROL_FRAMES: usize = 64;
 
 /// Headroom baked into every voice, so dozens sum under the ceiling by static
 /// gain alone -- no bus compressor, no polyphony duck. The tutti stays clean
@@ -45,24 +49,32 @@ pub struct AdditiveVoice {
     stop: StopId,
     family: TonalFamily,
     per_family_liveliness: bool,
+    calibration: Calibration,
 }
 
 impl AdditiveVoice {
-    /// A voice able to become any rank. Allocates: off the audio thread.
-    pub fn new(sample_rate: f64) -> Self {
+    /// A voice able to become any rank, voiced under `calibration`.
+    /// Allocates: off the audio thread.
+    pub fn new(sample_rate: f64, calibration: Calibration) -> Self {
         let mut bank = PartialBank::new(sample_rate, MAX_PARTIALS);
         bank.set_liveliness(liveliness_for(TonalFamily::Principal));
         bank.set_wind_coupling(
             Default::default(),
-            default_response_for(TonalFamily::Principal),
+            response_for(TonalFamily::Principal, calibration),
         );
         bank.set_chiff(0.0);
+        let v2 = calibration == Calibration::V2;
+        if v2 {
+            bank.set_control_frames(CONTROL_FRAMES);
+            bank.set_release_style(ReleaseStyle::Exponential);
+        }
         Self {
             bank,
             pipe: PipeId::default(),
             stop: StopId::default(),
             family: TonalFamily::Principal,
-            per_family_liveliness: false,
+            per_family_liveliness: v2,
+            calibration,
         }
     }
 
@@ -77,7 +89,7 @@ impl AdditiveVoice {
     pub fn adopt_rank(&mut self, v: &RankVoicing) {
         self.family = v.family;
         self.stop = v.stop;
-        let mut curve = default_response_for(v.family);
+        let mut curve = response_for(v.family, self.calibration);
         let k = 2.0 * v.wind_sensitivity.clamp(0.0, 1.0);
         curve.cents_per_deviation *= k;
         curve.db_per_deviation *= k;
@@ -114,9 +126,16 @@ impl AdditiveVoice {
         self.bank.set_expression(start_gain, inc_per_sample);
     }
 
-    /// Render one block, adding.
-    pub fn render_add(&mut self, left: &mut [f32], right: &mut [f32], wind: Option<&WindModel>) {
-        self.bank.render_add(left, right, wind);
+    /// Render one block, adding. `frame_in_block` is where this slice starts
+    /// in the wind's block.
+    pub fn render_add(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        wind: Option<&WindModel>,
+        frame_in_block: usize,
+    ) {
+        self.bank.render_add(left, right, wind, frame_in_block);
     }
 
     /// Whether it sounds.

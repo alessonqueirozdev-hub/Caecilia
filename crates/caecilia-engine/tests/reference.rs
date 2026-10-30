@@ -9,12 +9,13 @@
 mod common;
 
 use caecilia_engine::{Command, DEFAULT_POLYPHONY, OrganEngine};
-use caecilia_model::{DivisionId, StopId, TonalFamily, WindchestId, demo_organ};
+use caecilia_model::{Calibration, DivisionId, StopId, TonalFamily, WindchestId, demo_organ};
 use common::*;
 
 fn engine() -> (caecilia_model::Organ, OrganEngine) {
     let organ = demo_organ();
-    let e = OrganEngine::new(&organ, SR, BLOCK, DEFAULT_POLYPHONY);
+    // The C++ instrument, reproduced: that is what these references measure.
+    let e = OrganEngine::with_calibration(&organ, SR, BLOCK, DEFAULT_POLYPHONY, Calibration::OneX);
     (organ, e)
 }
 

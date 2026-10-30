@@ -1,6 +1,6 @@
 //! How each family answers its wind.
 
-use caecilia_model::TonalFamily;
+use caecilia_model::{Calibration, TonalFamily};
 
 /// What a unit of normalised pressure deviation does to a pipe: pitch (FM),
 /// level (AM), brightness and speech. Reeds swing hardest, flutes least.
@@ -33,6 +33,27 @@ impl WindResponseCurve {
     pub fn attack(&self, deviation: f32) -> f32 {
         self.attack_per_deviation * deviation
     }
+}
+
+/// The curves under a calibration.
+///
+/// 2.0 keeps 1.x's pitch, brightness and speech axes and derives the LEVEL
+/// from the physics instead of hand-setting it: a flue pipe's radiated
+/// amplitude is close to proportional to its blowing pressure, so a deviation
+/// `d` changes the level by `20 log10(1 + d)`, about 8.7 dB per unit at small
+/// deviations; a beating reed answers harder, as pressure to the 1.3. 1.x's 2 to
+/// 6 dB per unit is why its tremulant barely reached the envelope.
+pub fn response_for(family: TonalFamily, cal: Calibration) -> WindResponseCurve {
+    let mut c = default_response_for(family);
+    if cal == Calibration::V2 {
+        let exponent = match family {
+            TonalFamily::Reed => 1.3,
+            TonalFamily::Percussion => 0.2,
+            _ => 1.0,
+        };
+        c.db_per_deviation = 20.0 / std::f32::consts::LN_10 * exponent;
+    }
+    c
 }
 
 /// 1.x's hand-set curves. To be replaced by per-rank values stated in the

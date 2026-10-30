@@ -47,6 +47,19 @@ impl Default for RankCharacter {
     }
 }
 
+/// Per-rank parameters for the procedural recipe, where a stop has a voice of
+/// its own rather than its family's (2.0 only; 1.x voiced every rank of a family
+/// alike, so a Basson-Hautbois sounded exactly like a Trompette).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RecipeOverride {
+    /// The recipe's brightness, 1 for the family's default.
+    pub brightness: f32,
+    /// Reeds: centre of the snarl formant, Hz.
+    pub formant_hz: f32,
+    /// Level of the rank's fundamental against the recipe's, dB.
+    pub fundamental_db: f32,
+}
+
 /// A wind supply and the ranks standing on it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Windchest {
@@ -127,6 +140,8 @@ pub struct Rank {
     pub character: RankCharacter,
     /// A measured spectrum, when the organ file names one.
     pub measured_spectrum: Option<SpectralModel>,
+    /// This rank's own recipe parameters, when it has a voice of its own.
+    pub recipe: Option<RecipeOverride>,
 }
 
 /// A drawstop: the semantic identity a registration reasons about.
