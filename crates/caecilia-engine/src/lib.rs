@@ -171,6 +171,8 @@ pub struct OrganEngine {
     expr_current: [f32; MAX_DIVISIONS],
     expr_ramp: [(f32, f32); MAX_DIVISIONS],
     shoe_for_chest: [Option<u8>; MAX_CHESTS],
+    /// Each division's keyboard: a key off it is not a key.
+    compass: [(MidiNote, MidiNote); MAX_DIVISIONS],
     bus_l: Vec<Vec<f32>>,
     bus_r: Vec<Vec<f32>>,
     shutters: Vec<[OnePole; 2]>,
@@ -245,6 +247,15 @@ impl OrganEngine {
             }
         }
 
+        let mut compass = [(0, 127); MAX_DIVISIONS];
+        for d in organ
+            .divisions()
+            .iter()
+            .filter(|d| d.id.index() < MAX_DIVISIONS)
+        {
+            compass[d.id.index()] = (d.low_note, d.high_note);
+        }
+
         let shutters = (0..chest_count)
             .map(|_| {
                 let mut f = [OnePole::default(), OnePole::default()];
@@ -283,6 +294,7 @@ impl OrganEngine {
             expr_current: [1.0; MAX_DIVISIONS],
             expr_ramp: [(1.0, 0.0); MAX_DIVISIONS],
             shoe_for_chest,
+            compass,
             bus_l: vec![vec![0.0; max_block]; chest_count],
             bus_r: vec![vec![0.0; max_block]; chest_count],
             shutters,
@@ -668,7 +680,18 @@ impl OrganEngine {
         }
     }
 
+    /// Whether `note` is on `division`'s keyboard. A note off it is dropped
+    /// rather than sounded, and does not take a voice with it.
+    fn on_keyboard(&self, division: DivisionId, note: MidiNote) -> bool {
+        self.compass
+            .get(division.index())
+            .is_none_or(|&(lo, hi)| (lo..=hi).contains(&note))
+    }
+
     fn note_on(&mut self, division: DivisionId, note: MidiNote) {
+        if !self.on_keyboard(division, note) {
+            return;
+        }
         let table = self.table;
         let mut wanted = [KeyVoice::default(); MAX_KEY_VOICES];
         let want = Self::expand_key(note, division, &table, &mut wanted);
@@ -695,6 +718,9 @@ impl OrganEngine {
     }
 
     fn note_off(&mut self, division: DivisionId, note: MidiNote) {
+        if !self.on_keyboard(division, note) {
+            return;
+        }
         self.forget_key(note, division);
         let table = self.table;
         let mut going = [KeyVoice::default(); MAX_KEY_VOICES];

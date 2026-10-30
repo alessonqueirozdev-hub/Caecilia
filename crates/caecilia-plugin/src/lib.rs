@@ -27,7 +27,9 @@ mod params;
 use std::sync::{Arc, Mutex};
 
 use caecilia_engine::{Command, DEFAULT_POLYPHONY, EngagedTable, OrganEngine, PoolConfig, Timed};
-use caecilia_model::{Calibration, CouplerId, DivisionId, Organ, StopId, demo_organ};
+use caecilia_model::{
+    Calibration, CouplerId, DivisionId, Organ, StopId, demo_organ, read_organ_file,
+};
 use caecilia_registration::MASK_CAPACITY;
 use caecilia_wind::MAX_TREMULANT_DEPTH_FRACTION;
 use manguebyte_core::AudioBuffer;
@@ -43,6 +45,41 @@ pub use controller::{Origin, Played, RegistrationController};
 pub use params::{
     CaeciliaParams, KEY_NAMES, MAX_COUPLERS, TEMPERAMENT_NAMES, coupler_param_id, stop_param_id,
 };
+
+/// The organ the next instance plays, if an application chose one.
+static NEXT_ORGAN: Mutex<Option<Arc<Organ>>> = Mutex::new(None);
+
+/// Play `organ` in every instance made from now on. The standalone
+/// application calls it with the organ file it was given, before it starts.
+pub fn set_organ_for_new_instances(organ: Organ) {
+    if let Ok(mut next) = NEXT_ORGAN.lock() {
+        *next = Some(Arc::new(organ));
+    }
+}
+
+/// The environment variable naming an organ file for instances in a host,
+/// which passes a plugin no arguments.
+pub const ORGAN_ENV: &str = "CAECILIA_ORGAN";
+
+/// The organ a new instance plays: the one an application chose, else the
+/// file `CAECILIA_ORGAN` names, else the demonstration organ. A file that
+/// does not load is reported on stderr and the demonstration organ plays:
+/// an instrument that opens silent reads as broken.
+fn organ_for_new_instance() -> Arc<Organ> {
+    if let Some(o) = NEXT_ORGAN.lock().ok().and_then(|n| n.clone()) {
+        return o;
+    }
+    if let Some(path) = std::env::var_os(ORGAN_ENV) {
+        match read_organ_file(std::path::Path::new(&path)) {
+            Ok(doc) => return Arc::new(doc.organ),
+            Err(e) => eprintln!(
+                "Caecilia: {} did not load: {e}",
+                std::path::Path::new(&path).display()
+            ),
+        }
+    }
+    Arc::new(demo_organ())
+}
 
 /// Commands one block can carry.
 const MAX_BLOCK_EVENTS: usize = 2048;
@@ -279,7 +316,7 @@ impl Plugin for Caecilia {
     type Params = CaeciliaParams;
 
     fn new() -> Self {
-        let organ = Arc::new(demo_organ());
+        let organ = organ_for_new_instance();
         let params = Arc::new(CaeciliaParams::new(&organ));
         let (played, from_audio) = channel(256);
         let (to_audio, custom_tunings) = channel(4);

@@ -34,6 +34,29 @@ would:
 caecilia-organ-file --check my-organ.organ.json
 ```
 
+## Caecilia 2.0
+
+2.0 reads every 1.x document as it is, and writes documents 1.x reads. What it
+adds, 1.x ignores:
+
+| key | where | meaning |
+|---|---|---|
+| `formatVersion` | top level | `2` for documents 2.0 writes; absent means a 1.x document. A higher number than this build knows loads with a warning. |
+| `recipe` | rank | The rank's own voice instead of its family's: `brightness` (1 is the family's), `formantHz` (a reed's snarl), `fundamentalDb` (the fundamental against the recipe's). This is what makes a Basson-Hautbois sound unlike a Trompette. |
+
+The tools, in 2.0:
+
+```bash
+caecilia-organ-file --export > my-organ.organ.json   # the demonstration organ, to start from
+caecilia-organ-file --check my-organ.organ.json      # every error and warning
+caecilia --organ my-organ.organ.json                 # play it, standalone
+```
+
+A plugin in a host reads the file named by the environment variable
+`CAECILIA_ORGAN`; without it, or if the file does not load (the reason goes to
+the host's log), it plays the demonstration organ. A file saved with a UTF-8
+byte-order mark, as Notepad and PowerShell save them, opens.
+
 ## The shape of it
 
 One JSON object, with five collections under it.

@@ -8,6 +8,7 @@
 mod builder;
 mod calibration;
 mod demo;
+mod file;
 mod footage;
 mod ids;
 mod organ;
@@ -18,6 +19,10 @@ mod voicing;
 pub use builder::{OrganBuilder, StopSpec};
 pub use calibration::Calibration;
 pub use demo::demo_organ;
+pub use file::{
+    Diagnostic, FORMAT_VERSION, MAX_COUPLERS, MAX_STOPS, OrganDocument, OrganFileError, read_organ,
+    read_organ_file, read_spectrum, write_organ,
+};
 pub use footage::Footage;
 pub use ids::{
     ChorusRole, CouplerId, DivisionId, MidiNote, PipeId, PitchClass, RankId, StopId, TonalFamily,

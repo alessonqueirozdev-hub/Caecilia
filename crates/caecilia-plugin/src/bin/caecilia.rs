@@ -28,6 +28,31 @@ fn session_path() -> Option<PathBuf> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // `--organ <file>`: play that organ instead of the demonstration one.
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--organ" => {
+                let path = args.next().ok_or("--organ needs a file")?;
+                match caecilia_model::read_organ_file(std::path::Path::new(&path)) {
+                    Ok(doc) => {
+                        for w in &doc.warnings {
+                            println!("{path}: warning: {w}");
+                        }
+                        println!("Organ: {}", doc.organ.name);
+                        caecilia_plugin::set_organ_for_new_instances(doc.organ);
+                    }
+                    Err(e) => return Err(format!("{path}: {e}").into()),
+                }
+            }
+            "--help" | "-h" => {
+                println!("caecilia [--organ <file.organ.json>]");
+                return Ok(());
+            }
+            other => return Err(format!("unknown argument '{other}' (try --help)").into()),
+        }
+    }
+
     let options = StandaloneOptions {
         block_size: 256,
         ..StandaloneOptions::default()
@@ -58,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("MIDI: {problem}");
     }
     println!(
-        "Channel 1 plays the Grand-Orgue, 2 the Récit, 3 the Pédale; program changes 1-16 recall the generals."
+        "MIDI channels play the divisions the organ file assigns; program changes 1-16 recall the generals."
     );
     println!("Press Enter to quit.");
 

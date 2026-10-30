@@ -159,6 +159,9 @@ impl OrganBuilder {
             high_note: high,
             character: spec.character,
             measured_spectrum: None,
+            spectrum_path: None,
+            pan: 0.0,
+            distance_m: 8.0,
             recipe: spec.recipe,
         });
         self.organ.windchests[chest.index()].ranks.push(rank_id);

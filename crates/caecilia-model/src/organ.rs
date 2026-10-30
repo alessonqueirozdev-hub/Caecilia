@@ -83,6 +83,8 @@ pub enum DivisionKind {
     Manual,
     /// The pedalboard.
     Pedal,
+    /// No keyboard of its own; played through couplers (an Echo, a Solo).
+    Floating,
 }
 
 /// A keyboard section and its stops.
@@ -140,6 +142,14 @@ pub struct Rank {
     pub character: RankCharacter,
     /// A measured spectrum, when the organ file names one.
     pub measured_spectrum: Option<SpectralModel>,
+    /// Where the measured spectrum came from, relative to the organ file:
+    /// kept so a document that travelled without its spectra does not lose
+    /// the reference the next time it is saved.
+    pub spectrum_path: Option<String>,
+    /// Place in the case, -1 left to +1 right.
+    pub pan: f32,
+    /// Distance from the listener, metres.
+    pub distance_m: f32,
     /// This rank's own recipe parameters, when it has a voice of its own.
     pub recipe: Option<RecipeOverride>,
 }
@@ -276,7 +286,7 @@ impl Organ {
         for d in self
             .divisions
             .iter()
-            .filter(|d| d.kind != DivisionKind::Pedal)
+            .filter(|d| d.kind == DivisionKind::Manual)
         {
             if best.is_none_or(|b| d.stops.len() > b.stops.len()) {
                 best = Some(d);
