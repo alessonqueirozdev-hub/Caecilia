@@ -7,7 +7,9 @@ use caecilia_registration::{
     Command, Explanation, ParseError, RegistrationEngine, RegistrationState, StateDelta, StopSet,
     parse,
 };
-use manguebyte_core::spsc::Consumer;
+use manguebyte_core::spsc::{Consumer, Producer};
+use manguebyte_dsp::Tuning;
+use manguebyte_dsp::tuning::{KeyboardMapping, ScalaScale, Scale, TuningSettings};
 
 use crate::console::{Action, Binding};
 use crate::params::{CaeciliaParams, MAX_COUPLERS};
@@ -61,6 +63,7 @@ pub struct RegistrationController {
     engine: RegistrationEngine,
     params: Arc<CaeciliaParams>,
     played: Consumer<Played>,
+    tunings: Producer<Tuning>,
 }
 
 impl RegistrationController {
@@ -68,13 +71,39 @@ impl RegistrationController {
         organ: Arc<Organ>,
         params: Arc<CaeciliaParams>,
         played: Consumer<Played>,
+        tunings: Producer<Tuning>,
     ) -> Self {
         let initial = state_of(params.stop_mask(), params.coupler_mask());
         Self {
             engine: RegistrationEngine::new(organ, initial),
             params,
             played,
+            tunings,
         }
+    }
+
+    /// Play in any tuning the framework can build -- an equal division of any
+    /// period, a twelve-note table, a Scala scale through its keyboard
+    /// mapping -- from the next note on. It holds until the temperament, key
+    /// or pitch parameter moves. Returns false if the audio thread has not
+    /// taken the last one yet.
+    pub fn use_tuning(&mut self, settings: &TuningSettings) -> Result<bool, String> {
+        let tuning = settings.build().map_err(|e| e.to_string())?;
+        Ok(self.tunings.push(tuning).is_ok())
+    }
+
+    /// Play a Scala scale (`.scl` text), through a keyboard mapping (`.kbm`
+    /// text) if given, else linearly from middle C with A4 at 440.
+    pub fn use_scala(&mut self, scl: &str, kbm: Option<&str>) -> Result<bool, String> {
+        let scale = ScalaScale::parse(scl).map_err(|e| e.to_string())?;
+        let mapping = kbm
+            .map(KeyboardMapping::parse)
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        self.use_tuning(&TuningSettings {
+            scale: Scale::Scala { scale, mapping },
+            ..TuningSettings::default()
+        })
     }
 
     /// Take into the history what the audio thread played since the last call:

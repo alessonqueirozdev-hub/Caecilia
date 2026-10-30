@@ -13,6 +13,7 @@ caecilia-model.workspace = true
 caecilia-wind.workspace = true
 caecilia-synth.workspace = true
 manguebyte-core.workspace = true
+manguebyte-dsp.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

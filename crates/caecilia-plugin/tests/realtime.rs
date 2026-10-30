@@ -128,6 +128,20 @@ fn processing_never_allocates() {
         }),
     });
 
+    // A temperament and a pitch chosen in the watched blocks: a table swapped.
+    for (id, value) in [
+        ("temperament", 2.0),
+        ("temperament-key", 5.0),
+        ("pitch", 415.0),
+    ] {
+        let _ = events.push(Event {
+            offset: 45,
+            kind: EventKind::ParamValue {
+                param: id_of(id),
+                value,
+            },
+        });
+    }
     // The console in the watched blocks: a program change recalls a general,
     // a learned controller toggles a stop, and an armed learn captures one.
     params.console.bind(Binding {

@@ -31,15 +31,18 @@ use caecilia_model::{Calibration, CouplerId, DivisionId, Organ, StopId, demo_org
 use caecilia_registration::MASK_CAPACITY;
 use caecilia_wind::MAX_TREMULANT_DEPTH_FRACTION;
 use manguebyte_core::AudioBuffer;
-use manguebyte_core::spsc::{Producer, channel};
+use manguebyte_core::spsc::{Consumer, Producer, channel};
 use manguebyte_dsp::event::EventKind;
-use manguebyte_dsp::{Limiter, ProcessContext, ProcessSpec, Processor, Reverb};
+use manguebyte_dsp::tuning::{Scale, Temperament, TuningSettings};
+use manguebyte_dsp::{Limiter, ProcessContext, ProcessSpec, Processor, Reverb, Tuning};
 use manguebyte_midi::MidiMessage;
 use manguebyte_plugin::{AudioLayout, Plugin, PluginInfo, PluginKind, apply_param_events};
 
 pub use console::{Action, Binding, ConsoleMemory, GENERALS, LEARN_SLOTS, Source};
 pub use controller::{Origin, Played, RegistrationController};
-pub use params::{CaeciliaParams, MAX_COUPLERS, coupler_param_id, stop_param_id};
+pub use params::{
+    CaeciliaParams, KEY_NAMES, MAX_COUPLERS, TEMPERAMENT_NAMES, coupler_param_id, stop_param_id,
+};
 
 /// Commands one block can carry.
 const MAX_BLOCK_EVENTS: usize = 2048;
@@ -70,6 +73,42 @@ pub struct Caecilia {
     controller_values: [[u8; 128]; 16],
     /// Who changed the registration this block, if the console did.
     origin: Option<Origin>,
+    /// Every temperament on every key at A4 = 440, built once: building a
+    /// tuning is not for the audio thread.
+    temperaments: Vec<Tuning>,
+    /// (temperament, key, A4) last sent to the engine.
+    tuning_choice: Option<(usize, usize, f32)>,
+    /// Tunings the controller built (Scala and the like).
+    custom_tunings: Consumer<Tuning>,
+}
+
+/// Every temperament of [`TEMPERAMENT_NAMES`] on every key, at A4 = 440.
+fn temperament_tables() -> Vec<Tuning> {
+    let all = [
+        Temperament::equal(),
+        Temperament::quarter_comma_meantone(),
+        Temperament::werckmeister_iii(),
+        Temperament::kirnberger_iii(),
+        Temperament::vallotti(),
+        Temperament::young(),
+        Temperament::pythagorean(),
+        Temperament::just(),
+    ];
+    all.iter()
+        .flat_map(|t| {
+            (0..12u8).map(move |key| {
+                TuningSettings {
+                    scale: Scale::Temperament {
+                        temperament: *t,
+                        key,
+                    },
+                    ..TuningSettings::default()
+                }
+                .build()
+                .unwrap_or_default()
+            })
+        })
+        .collect()
 }
 
 impl Caecilia {
@@ -243,10 +282,12 @@ impl Plugin for Caecilia {
         let organ = Arc::new(demo_organ());
         let params = Arc::new(CaeciliaParams::new(&organ));
         let (played, from_audio) = channel(256);
+        let (to_audio, custom_tunings) = channel(4);
         let controller = Arc::new(Mutex::new(RegistrationController::new(
             Arc::clone(&organ),
             Arc::clone(&params),
             from_audio,
+            to_audio,
         )));
         let primary = organ.primary_manual();
         let mut division_of_channel = [primary; 16];
@@ -284,6 +325,9 @@ impl Plugin for Caecilia {
             swallowed: [0; 16],
             controller_values: [[0; 128]; 16],
             origin: None,
+            temperaments: temperament_tables(),
+            tuning_choice: None,
+            custom_tunings,
         }
     }
 
@@ -313,6 +357,7 @@ impl Plugin for Caecilia {
         self.coupler_mask = u32::MAX;
         self.tremulant = None;
         self.swell = None;
+        self.tuning_choice = None;
         self.reverb.prepare(spec);
         self.limiter.prepare(spec);
     }
@@ -380,6 +425,24 @@ impl Plugin for Caecilia {
             });
         }
         self.follow_parameters();
+
+        // The tuning: a temperament the host chose, or one the controller built.
+        let choice = (
+            self.params.temperament.index(),
+            self.params.temperament_key.index(),
+            self.params.pitch.value(),
+        );
+        if self.tuning_choice != Some(choice) {
+            self.tuning_choice = Some(choice);
+            if let Some(t) = self.temperaments.get(choice.0 * 12 + choice.1) {
+                engine.set_tuning(t.clone());
+                engine.set_pitch_scale(f64::from(choice.2) / 440.0);
+            }
+        }
+        while let Some(t) = self.custom_tunings.pop() {
+            engine.set_tuning(t);
+            engine.set_pitch_scale(1.0);
+        }
 
         for event in context.events {
             let channel_division = |c: u8| self.division_of_channel[usize::from(c & 0x0F)];

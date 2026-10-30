@@ -37,6 +37,45 @@ fn equal_temperament_matches_1x() {
 }
 
 #[test]
+fn every_temperament_of_1x_tunes_as_it_did() {
+    use caecilia_engine::Tuning;
+    use manguebyte_dsp::tuning::{Scale, Temperament, TuningSettings};
+    let (_, mut e) = engine();
+    let r = reference();
+    for t in r["tuning"].as_array().unwrap() {
+        let temperament = match t["temperament"].as_str().unwrap() {
+            "Equal" => Temperament::equal(),
+            "QuarterMeantone" => Temperament::quarter_comma_meantone(),
+            "Werckmeister3" => Temperament::werckmeister_iii(),
+            "Kirnberger3" => Temperament::kirnberger_iii(),
+            "Pythagorean" => Temperament::pythagorean(),
+            "Young" => Temperament::young(),
+            other => panic!("unknown temperament {other}"),
+        };
+        let settings = TuningSettings {
+            scale: Scale::Temperament {
+                temperament,
+                key: 0,
+            },
+            reference_hz: f(&t["a4"]),
+            ..TuningSettings::default()
+        };
+        let tuning: Tuning = settings.build().unwrap();
+        e.set_tuning(tuning);
+        for (n, hz) in floats(&t["hz"]).into_iter().enumerate() {
+            let ours = e.key_frequency(n as u8);
+            let cents = 1200.0 * (ours / hz).log2();
+            assert!(
+                cents.abs() < 1e-9,
+                "{} at {}: key {n} off by {cents} cents",
+                t["temperament"],
+                t["a4"]
+            );
+        }
+    }
+}
+
+#[test]
 fn every_rank_sounds_as_it_did_in_1x() {
     let (organ, mut e) = engine();
     let r = reference();

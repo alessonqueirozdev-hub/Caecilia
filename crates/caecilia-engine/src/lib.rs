@@ -24,6 +24,7 @@ use caecilia_model::{
 };
 use caecilia_wind::{WindModel, WindSnapshot, config_from_organ, flow_per_voice};
 pub use manguebyte_core::pool::PoolConfig;
+pub use manguebyte_dsp::Tuning;
 
 pub use engaged::{EngagedCoupler, EngagedRank, EngagedTable, MAX_COUPLERS, MAX_RANKS};
 use pool::Pool;
@@ -154,7 +155,9 @@ pub struct OrganEngine {
     max_block: usize,
     chest_count: usize,
     voicings: Vec<RankVoicing>,
-    tuning: [f64; 128],
+    tuning: Tuning,
+    /// Every frequency times this: reference pitch over the table's.
+    pitch_scale: f64,
     wind: WindModel,
     /// The wind of this block, frozen after the step, for every voice to read.
     snapshot: WindSnapshot,
@@ -176,11 +179,6 @@ pub struct OrganEngine {
     pending_meters: Meters,
     meter_sum_sq: f64,
     meter_samples: u64,
-}
-
-/// Equal temperament at A4 = 440 Hz, until the framework's tuning module lands.
-fn equal_temperament() -> [f64; 128] {
-    std::array::from_fn(|n| 440.0 * ((n as f64 - 69.0) / 12.0).exp2())
 }
 
 impl OrganEngine {
@@ -264,7 +262,8 @@ impl OrganEngine {
             max_block,
             chest_count,
             voicings,
-            tuning: equal_temperament(),
+            tuning: Tuning::default(),
+            pitch_scale: 1.0,
             wind: WindModel::new(sample_rate, &config_from_organ(organ)),
             snapshot: WindSnapshot::default(),
             pool: Pool::new(
@@ -312,7 +311,27 @@ impl OrganEngine {
 
     /// The frequency the engine sounds `note` at (8').
     pub fn key_frequency(&self, note: MidiNote) -> f64 {
-        self.tuning[usize::from(note & 0x7F)]
+        self.tuning.key_frequency(note & 0x7F) * self.pitch_scale
+    }
+
+    /// Play in `tuning` from the next note on (held notes keep their pitch,
+    /// as a pipe does). Real-time safe: a tuning is plain data.
+    pub fn set_tuning(&mut self, tuning: Tuning) {
+        self.tuning = tuning;
+    }
+
+    /// Scale every frequency by `scale`: a reference pitch moved from the
+    /// table's (A4 = 415 on a table built at 440 is 415/440). Exact, since a
+    /// table is anchored at its reference key. Real-time safe.
+    pub fn set_pitch_scale(&mut self, scale: f64) {
+        if scale.is_finite() && scale > 0.0 {
+            self.pitch_scale = scale;
+        }
+    }
+
+    /// The tuning in force.
+    pub fn tuning(&self) -> &Tuning {
+        &self.tuning
     }
 
     /// Render jobs that missed their block since the engine was made: a
@@ -608,7 +627,12 @@ impl OrganEngine {
         // A pipe draws in proportion to its length: twice an 8' for a 16', and
         // an octave lower draws twice again. Referenced to middle C on an 8'.
         let octaves_below_middle_c = (60.0 - f32::from(note)) * (1.0 / 12.0);
-        let freq = self.tuning[usize::from(note & 0x7F)];
+        // A key the tuning leaves unmapped (a Scala keyboard mapping can)
+        // sounds nothing.
+        if !self.tuning.is_mapped(note & 0x7F) {
+            return false;
+        }
+        let freq = self.key_frequency(note);
         let Some(slot) = self.pool.acquire(pipe, self.frame) else {
             return false;
         };

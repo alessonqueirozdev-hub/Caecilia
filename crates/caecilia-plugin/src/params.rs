@@ -4,7 +4,24 @@ use caecilia_model::Organ;
 use caecilia_registration::{MASK_CAPACITY, Piston, factory_generals};
 
 use crate::console::ConsoleMemory;
-use manguebyte_params::{BoolParam, FloatParam, FloatRange, Param, ParamSet};
+use manguebyte_params::{BoolParam, ChoiceParam, FloatParam, FloatRange, Param, ParamSet};
+
+/// The temperaments a host can choose, in the order of the choice.
+pub const TEMPERAMENT_NAMES: [&str; 8] = [
+    "Equal",
+    "Quarter-comma meantone",
+    "Werckmeister III",
+    "Kirnberger III",
+    "Vallotti",
+    "Young",
+    "Pythagorean",
+    "Just (5-limit)",
+];
+
+/// The pitch classes a temperament can be rooted on.
+pub const KEY_NAMES: [&str; 12] = [
+    "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
+];
 
 /// Couplers the host can draw.
 pub const MAX_COUPLERS: usize = 16;
@@ -25,6 +42,12 @@ pub struct CaeciliaParams {
     pub tremulant_rate: FloatParam,
     /// Its depth, 0 to 1 of the strongest.
     pub tremulant_depth: FloatParam,
+    /// The temperament, from [`TEMPERAMENT_NAMES`].
+    pub temperament: ChoiceParam,
+    /// The pitch class it is rooted on, from [`KEY_NAMES`].
+    pub temperament_key: ChoiceParam,
+    /// The pitch of A4, Hz: 440 modern, 415 baroque, 392 French chamber.
+    pub pitch: FloatParam,
     /// Drawstops, by stop id.
     pub stops: Vec<BoolParam>,
     /// Couplers, by coupler id.
@@ -90,6 +113,16 @@ impl CaeciliaParams {
                 FloatRange::linear(0.0, 1.0),
                 0.5,
             ),
+            temperament: ChoiceParam::new("temperament", "Temperament", &TEMPERAMENT_NAMES, 0),
+            temperament_key: ChoiceParam::new("temperament-key", "Temperament key", &KEY_NAMES, 0),
+            pitch: FloatParam::new(
+                "pitch",
+                "Pitch (A4)",
+                FloatRange::linear(380.0, 480.0),
+                440.0,
+            )
+            .with_unit("Hz")
+            .with_precision(1),
             stops,
             couplers,
             console: factory_console(organ),
@@ -134,6 +167,9 @@ impl ParamSet for CaeciliaParams {
         visitor(&self.tremulant);
         visitor(&self.tremulant_rate);
         visitor(&self.tremulant_depth);
+        visitor(&self.temperament);
+        visitor(&self.temperament_key);
+        visitor(&self.pitch);
         for p in &self.stops {
             visitor(p);
         }
