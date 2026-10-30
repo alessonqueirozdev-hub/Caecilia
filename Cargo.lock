@@ -20,6 +20,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "caecilia-plugin"
+version = "2.0.0-alpha.0"
+dependencies = [
+ "caecilia-engine",
+ "caecilia-model",
+ "caecilia-registration",
+ "caecilia-wind",
+ "manguebyte-clap",
+ "manguebyte-core",
+ "manguebyte-dsp",
+ "manguebyte-host",
+ "manguebyte-midi",
+ "manguebyte-params",
+ "manguebyte-plugin",
+ "manguebyte-vst3",
+]
+
+[[package]]
 name = "caecilia-registration"
 version = "2.0.0-alpha.0"
 dependencies = [
@@ -43,10 +61,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfg-if"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+
+[[package]]
+name = "clap-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a76abbdb2907f6fd97fb6bc0b7be96b77d328f2dd9669d1075cc03369ed22154"
+
+[[package]]
+name = "com-scrape-types"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ce183b975b8fc736a20919c4002717255fbd867df575c792aeefa9a56a73ad0"
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "libloading"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if",
+ "windows-link",
+]
+
+[[package]]
+name = "manguebyte-clap"
+version = "0.1.0"
+dependencies = [
+ "clap-sys",
+ "manguebyte-core",
+ "manguebyte-dsp",
+ "manguebyte-midi",
+ "manguebyte-params",
+ "manguebyte-plugin",
+]
 
 [[package]]
 name = "manguebyte-core"
@@ -61,8 +119,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "manguebyte-host"
+version = "0.1.0"
+dependencies = [
+ "clap-sys",
+ "libloading",
+ "manguebyte-core",
+ "manguebyte-dsp",
+ "manguebyte-midi",
+ "manguebyte-plugin",
+ "vst3",
+]
+
+[[package]]
 name = "manguebyte-midi"
 version = "0.1.0"
+
+[[package]]
+name = "manguebyte-params"
+version = "0.1.0"
+dependencies = [
+ "manguebyte-core",
+]
+
+[[package]]
+name = "manguebyte-plugin"
+version = "0.1.0"
+dependencies = [
+ "manguebyte-core",
+ "manguebyte-dsp",
+ "manguebyte-midi",
+ "manguebyte-params",
+]
+
+[[package]]
+name = "manguebyte-vst3"
+version = "0.1.0"
+dependencies = [
+ "manguebyte-core",
+ "manguebyte-dsp",
+ "manguebyte-midi",
+ "manguebyte-params",
+ "manguebyte-plugin",
+ "vst3",
+]
 
 [[package]]
 name = "memchr"
@@ -146,6 +246,21 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "vst3"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e31e3fe7a6f028ded8c5a9984cf283319e6dc63572c9b71da1d4ee9d71d3b6bf"
+dependencies = [
+ "com-scrape-types",
+]
+
+[[package]]
+name = "windows-link"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
 name = "zmij"

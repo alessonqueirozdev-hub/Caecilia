@@ -21,11 +21,17 @@ caecilia-model = { path = "crates/caecilia-model" }
 caecilia-wind = { path = "crates/caecilia-wind" }
 caecilia-synth = { path = "crates/caecilia-synth" }
 caecilia-engine = { path = "crates/caecilia-engine" }
+caecilia-registration = { path = "crates/caecilia-registration" }
 
 # The framework, by path while both are developed side by side (as Parabolic
 # does). Pinned to git + rev before a release, so a clean checkout builds.
 manguebyte-core = { path = "C:/manguebyte/crates/manguebyte-core" }
 manguebyte-dsp = { path = "C:/manguebyte/crates/manguebyte-dsp" }
+manguebyte-params = { path = "C:/manguebyte/crates/manguebyte-params" }
+manguebyte-plugin = { path = "C:/manguebyte/crates/manguebyte-plugin" }
+manguebyte-midi = { path = "C:/manguebyte/crates/manguebyte-midi" }
+manguebyte-clap = { path = "C:/manguebyte/crates/manguebyte-clap" }
+manguebyte-vst3 = { path = "C:/manguebyte/crates/manguebyte-vst3" }
 
 serde_json = "1"
 

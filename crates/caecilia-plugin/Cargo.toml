@@ -1,0 +1,35 @@
+[package]
+name = "caecilia-plugin"
+description = "Caecilia as a CLAP and VST3 instrument"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+caecilia-model.workspace = true
+caecilia-engine.workspace = true
+caecilia-registration.workspace = true
+caecilia-wind.workspace = true
+manguebyte-core.workspace = true
+manguebyte-dsp.workspace = true
+manguebyte-params.workspace = true
+manguebyte-plugin.workspace = true
+manguebyte-midi.workspace = true
+manguebyte-clap.workspace = true
+manguebyte-vst3.workspace = true
+
+[dev-dependencies]
+# Loads the built bundles the way a host does (examples/host_check.rs).
+manguebyte-host = { path = "C:/manguebyte/crates/manguebyte-host", default-features = false, features = ["clap", "vst3"] }
+
+[package.metadata.manguebyte]
+name = "Caecilia"
+
+[lints]
+workspace = true

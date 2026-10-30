@@ -269,7 +269,17 @@ Caecilia does not write its own version of anything listed here.
    instrument spends (demote tier, shed partials, steal), disabled in offline
    render.
 
-## 7. Stages
+## 7. Status (2026-10-30)
+
+| Stage | State |
+|---|---|
+| Map and references | Done: this document, `tools/reference`, `reference/cpp-1.x`. |
+| Sound engine | Done: model, wind, partial bank on the framework's SIMD `PartialBank`, engine; within 0.0001 dB of 1.x under `Calibration::OneX`, and calibrated past it under `V2`. A 200-voice tutti costs 0.19 of a core. |
+| Registration | Done: selectors and grammar 1.0, commands, branching history with provenance, plenum, explain, graded `port()` across traditions, pistons, factory generals. |
+| Plugin | CLAP and VST3 build, load in Manguebyte's host and play (`examples/host_check.rs`); stops and couplers as host parameters, MIDI channels to divisions, CC 11/64/120/123, tremulant, swell, reverb, safety limiter, state; `process` proven allocation-free. Not yet: the registration engine behind the host parameters (pistons, undo, MIDI learn), program change to generals, LV2/AU, standalone, the organ file. |
+| Console | Not started (mockup first). |
+
+## 8. Stages
 
 1. **Map and references** — this document, `tools/reference`, `reference/cpp-1.x`.
 2. **Sound engine** — `caecilia-model` (with the demo organ's voicing reproduced
