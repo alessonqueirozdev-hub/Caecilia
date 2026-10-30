@@ -244,6 +244,23 @@ impl ConsoleMemory {
         }
     }
 
+    /// Another organ: forget the controls bound to a stop or a coupler, which
+    /// name them by number on the organ being left, and which general was
+    /// last recalled. Pistons, the sequencer and cancel keep their controls.
+    pub(crate) fn forget_organ(&self) {
+        for s in &self.learn {
+            let action = Binding::unpack(s.load(Ordering::Relaxed)).map(|b| b.action);
+            if matches!(
+                action,
+                Some(Action::ToggleStop(_) | Action::ToggleCoupler(_))
+            ) {
+                s.store(0, Ordering::Relaxed);
+            }
+        }
+        self.current_general.store(u32::MAX, Ordering::Relaxed);
+        self.disarm();
+    }
+
     /// Every learned control.
     pub fn bindings(&self) -> Vec<Binding> {
         self.learn

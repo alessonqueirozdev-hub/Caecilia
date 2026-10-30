@@ -57,6 +57,15 @@ A plugin in a host reads the file named by the environment variable
 the host's log), it plays the demonstration organ. A file saved with a UTF-8
 byte-order mark, as Notepad and PowerShell save them, opens.
 
+The organ can change while it plays: type `organ my-organ.organ.json` into the
+running standalone, or call `load_organ` on the plugin's registration
+controller. Keys held go on sounding on the new organ while the old one fades
+out; the new one opens on its opening registration and its factory generals.
+A file with an error changes nothing. The session remembers the file (by its
+absolute path) and opens it again, with the session's own registration and
+pistons. A host keeps showing the first organ's stop names on its parameters
+until it reloads the plugin.
+
 ## The shape of it
 
 One JSON object, with five collections under it.

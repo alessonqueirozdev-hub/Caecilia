@@ -1,8 +1,9 @@
 //! The registration brain behind the host parameters.
 
+use std::path::Path;
 use std::sync::Arc;
 
-use caecilia_model::{CouplerId, Organ, StopId};
+use caecilia_model::{CouplerId, Diagnostic, Organ, StopId};
 use caecilia_registration::{
     Command, Explanation, ParseError, RegistrationEngine, RegistrationState, StateDelta, StopSet,
     parse,
@@ -13,6 +14,7 @@ use manguebyte_dsp::tuning::{KeyboardMapping, ScalaScale, Scale, TuningSettings}
 
 use crate::console::{Action, Binding};
 use crate::params::{CaeciliaParams, MAX_COUPLERS};
+use crate::switch::OrganLoadError;
 
 /// Who changed the registration on the audio side.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +37,8 @@ pub struct Played {
     pub couplers: u32,
     /// Who drew them.
     pub origin: Origin,
+    /// On which organ: the slot's generation when it was played.
+    pub generation: u32,
 }
 
 pub(crate) fn state_of(stops: u64, couplers: u32) -> RegistrationState {
@@ -64,6 +68,8 @@ pub struct RegistrationController {
     params: Arc<CaeciliaParams>,
     played: Consumer<Played>,
     tunings: Producer<Tuning>,
+    /// The organ the history is about.
+    generation: u32,
 }
 
 impl RegistrationController {
@@ -76,10 +82,32 @@ impl RegistrationController {
         let initial = state_of(params.stop_mask(), params.coupler_mask());
         Self {
             engine: RegistrationEngine::new(organ, initial),
+            generation: params.organ.generation(),
             params,
             played,
             tunings,
         }
+    }
+
+    /// Play the organ in `path`, as
+    /// [`CaeciliaParams::load_organ_file`] does; the history starts again
+    /// from its opening registration. Returns the file's warnings.
+    pub fn load_organ(&mut self, path: &Path) -> Result<Vec<Diagnostic>, OrganLoadError> {
+        let warnings = self.params.load_organ_file(path)?;
+        self.sync();
+        Ok(warnings)
+    }
+
+    /// Play `organ`, built in memory.
+    pub fn use_organ(&mut self, organ: Organ) -> Result<(), OrganLoadError> {
+        self.params.use_organ(organ)?;
+        self.sync();
+        Ok(())
+    }
+
+    /// The organ the registration is about.
+    pub fn organ(&self) -> Arc<Organ> {
+        self.params.organ.organ()
     }
 
     /// Play in any tuning the framework can build -- an equal division of any
@@ -109,8 +137,22 @@ impl RegistrationController {
     /// Take into the history what the audio thread played since the last call:
     /// the host's automation, pistons, learned controls. Each becomes one
     /// history node, so it can be undone like anything drawn here.
+    /// An organ changed from anywhere (a session, the standalone, a call
+    /// here) starts the history again, and what the audio thread played on
+    /// the organ before it is ignored.
     pub fn sync(&mut self) {
+        self.params.organ.collect();
+        let (organ, generation, drawn) = self.params.organ.record();
+        if generation != self.generation {
+            self.generation = generation;
+            let (stops, couplers) =
+                drawn.unwrap_or_else(|| (self.params.stop_mask(), self.params.coupler_mask()));
+            self.engine = RegistrationEngine::new(organ, state_of(stops, couplers));
+        }
         while let Some(p) = self.played.pop() {
+            if p.generation != self.generation {
+                continue;
+            }
             let state = state_of(p.stops, p.couplers);
             if state != *self.engine.state() {
                 self.engine.apply(Command::RecallSnapshot(state));

@@ -15,21 +15,26 @@
 //! undo and redo across everything that changed the registration (the host's
 //! automation and the pistons included), `explain`, and capturing pistons.
 //!
+//! The organ can change while it plays ([`CaeciliaParams::load_organ_file`]):
+//! the new one is built off the audio thread, held keys carry over, the old
+//! one fades out, and the session remembers the file.
+//!
 //! # Real time
 //!
-//! `prepare` builds the engine and allocates. `process` allocates nothing:
-//! `tests/realtime.rs` plays it under a counting allocator.
+//! `prepare` builds the engine and allocates. `process` allocates nothing,
+//! nor frees, an organ change included: `tests/realtime.rs` plays it under a
+//! counting allocator.
 
 mod console;
 mod controller;
 mod params;
+mod switch;
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use caecilia_engine::{Command, DEFAULT_POLYPHONY, EngagedTable, OrganEngine, PoolConfig, Timed};
-use caecilia_model::{
-    Calibration, CouplerId, DivisionId, Organ, StopId, demo_organ, read_organ_file,
-};
+use caecilia_engine::{Command, EngagedTable, OrganEngine, Timed};
+use caecilia_model::{CouplerId, Diagnostic, DivisionId, Organ, StopId, demo_organ};
 use caecilia_registration::MASK_CAPACITY;
 use caecilia_wind::MAX_TREMULANT_DEPTH_FRACTION;
 use manguebyte_core::AudioBuffer;
@@ -45,16 +50,31 @@ pub use controller::{Origin, Played, RegistrationController};
 pub use params::{
     CaeciliaParams, KEY_NAMES, MAX_COUPLERS, TEMPERAMENT_NAMES, coupler_param_id, stop_param_id,
 };
+pub use switch::{FADE_SECONDS, OrganLoadError, OrganSlot};
 
-/// The organ the next instance plays, if an application chose one.
-static NEXT_ORGAN: Mutex<Option<Arc<Organ>>> = Mutex::new(None);
+use switch::{Swap, SwitchAudio, build_engine, channels_of};
 
-/// Play `organ` in every instance made from now on. The standalone
-/// application calls it with the organ file it was given, before it starts.
+/// The organ the next instance plays, and its file, if an application chose
+/// one.
+type ChosenOrgan = (Arc<Organ>, Option<PathBuf>);
+static NEXT_ORGAN: Mutex<Option<ChosenOrgan>> = Mutex::new(None);
+
+/// Play `organ` in every instance made from now on.
 pub fn set_organ_for_new_instances(organ: Organ) {
     if let Ok(mut next) = NEXT_ORGAN.lock() {
-        *next = Some(Arc::new(organ));
+        *next = Some((Arc::new(organ), None));
     }
+}
+
+/// Play the organ in `path` in every instance made from now on; the
+/// standalone application calls it with the file it was given, before it
+/// starts. Returns the file's warnings.
+pub fn set_organ_file_for_new_instances(path: &Path) -> Result<Vec<Diagnostic>, OrganLoadError> {
+    let (organ, warnings) = OrganSlot::read(path)?;
+    if let Ok(mut next) = NEXT_ORGAN.lock() {
+        *next = Some((Arc::new(organ), Some(path.to_path_buf())));
+    }
+    Ok(warnings)
 }
 
 /// The environment variable naming an organ file for instances in a host,
@@ -65,20 +85,18 @@ pub const ORGAN_ENV: &str = "CAECILIA_ORGAN";
 /// file `CAECILIA_ORGAN` names, else the demonstration organ. A file that
 /// does not load is reported on stderr and the demonstration organ plays:
 /// an instrument that opens silent reads as broken.
-fn organ_for_new_instance() -> Arc<Organ> {
-    if let Some(o) = NEXT_ORGAN.lock().ok().and_then(|n| n.clone()) {
-        return o;
+fn organ_for_new_instance() -> ChosenOrgan {
+    if let Some(chosen) = NEXT_ORGAN.lock().ok().and_then(|n| n.clone()) {
+        return chosen;
     }
     if let Some(path) = std::env::var_os(ORGAN_ENV) {
-        match read_organ_file(std::path::Path::new(&path)) {
-            Ok(doc) => return Arc::new(doc.organ),
-            Err(e) => eprintln!(
-                "Caecilia: {} did not load: {e}",
-                std::path::Path::new(&path).display()
-            ),
+        let path = PathBuf::from(path);
+        match OrganSlot::read(&path) {
+            Ok((organ, _)) => return (Arc::new(organ), Some(path)),
+            Err(e) => eprintln!("Caecilia: {} did not load: {e}", path.display()),
         }
     }
-    Arc::new(demo_organ())
+    (Arc::new(demo_organ()), None)
 }
 
 /// Commands one block can carry.
@@ -117,6 +135,26 @@ pub struct Caecilia {
     tuning_choice: Option<(usize, usize, f32)>,
     /// Tunings the controller built (Scala and the like).
     custom_tunings: Consumer<Tuning>,
+    /// The one playing, if the controller's: it outlives an organ change.
+    custom_tuning: Option<Tuning>,
+    /// The tuning goes to the engine again (a new engine, a new tuning).
+    retune: bool,
+    /// Organs coming in, and going back to be dropped.
+    switch: SwitchAudio,
+    /// The organ being left, fading out.
+    fading: Option<Box<Swap>>,
+    /// Frames of the fade played, and its length.
+    fade_done: usize,
+    fade_len: usize,
+    /// Its output, before the fade is applied.
+    fade_left: Vec<f32>,
+    fade_right: Vec<f32>,
+    /// An organ done fading that the return ring had no room for yet.
+    retired: Option<Box<Swap>>,
+    /// Keys held, per channel, which an organ change carries over.
+    held: [u128; 16],
+    /// The organ slot's generation of the organ playing.
+    generation: u32,
 }
 
 /// Every temperament of [`TEMPERAMENT_NAMES`] on every key, at A4 = 440.
@@ -259,6 +297,88 @@ impl Caecilia {
         }
     }
 
+    /// Hand back an organ done with; keep it if the ring is full, never
+    /// dropping it here.
+    fn retire(&mut self, swap: Box<Swap>) {
+        if let Err(swap) = self.switch.garbage.push(swap) {
+            self.retired = Some(swap);
+        }
+    }
+
+    /// Take a new organ if one has come and the last change is done: its
+    /// engine in, the old one fading, everything sent again, the held keys
+    /// pressed on it. Call with `events` cleared.
+    fn take_new_organ(&mut self) {
+        if let Some(swap) = self.retired.take() {
+            self.retire(swap);
+        }
+        if self.fading.is_some() || self.retired.is_some() {
+            return;
+        }
+        let Some(mut swap) = self.switch.incoming.pop() else {
+            return;
+        };
+        if swap.engine.is_none() || self.engine.is_none() {
+            // Built before anything was prepared: `prepare` builds it.
+            self.retire(swap);
+            return;
+        }
+        std::mem::swap(&mut self.organ, &mut swap.organ);
+        std::mem::swap(&mut self.engine, &mut swap.engine);
+        self.generation = swap.generation;
+        self.division_of_channel = channels_of(&self.organ);
+        if let Some((stops, couplers)) = swap.registration.take() {
+            self.set_masks(stops, couplers);
+        }
+        // The swap now holds the organ being left.
+        self.fading = Some(swap);
+        self.fade_done = 0;
+        self.stop_mask = u64::MAX;
+        self.coupler_mask = u32::MAX;
+        self.tremulant = None;
+        self.swell = None;
+        self.retune = true;
+        for channel in 0..16 {
+            let mut keys = self.held[channel];
+            while keys != 0 {
+                let note = keys.trailing_zeros() as u8;
+                keys &= keys - 1;
+                let division = self.division_of_channel[channel];
+                self.push(0, Command::NoteOn { division, note });
+            }
+        }
+    }
+
+    /// Add the organ being left, fading, to the block.
+    fn fade_out(&mut self, buffer: &mut AudioBuffer<f32>) {
+        let Some(mut old) = self.fading.take() else {
+            return;
+        };
+        let frames = buffer.num_frames().min(self.fade_left.len());
+        if let Some(engine) = old.engine.as_mut() {
+            if self.fade_done < self.fade_len {
+                let (l, r) = (
+                    &mut self.fade_left[..frames],
+                    &mut self.fade_right[..frames],
+                );
+                engine.process(l, r, &[]);
+                let (left, right) = buffer.channel_pair_mut(0, 1);
+                let len = self.fade_len as f32;
+                for i in 0..frames {
+                    let g = 1.0 - ((self.fade_done + i) as f32 / len).min(1.0);
+                    left[i] += l[i] * g;
+                    right[i] += r[i] * g;
+                }
+            }
+        }
+        self.fade_done += frames;
+        if self.fade_done >= self.fade_len {
+            self.retire(old);
+        } else {
+            self.fading = Some(old);
+        }
+    }
+
     /// Host parameters that turn into engine commands, when they change.
     fn follow_parameters(&mut self) {
         let p = Arc::clone(&self.params);
@@ -316,8 +436,9 @@ impl Plugin for Caecilia {
     type Params = CaeciliaParams;
 
     fn new() -> Self {
-        let organ = organ_for_new_instance();
-        let params = Arc::new(CaeciliaParams::new(&organ));
+        let (organ, path) = organ_for_new_instance();
+        let (params, switch) = CaeciliaParams::new(Arc::clone(&organ), path);
+        let params = Arc::new(params);
         let (played, from_audio) = channel(256);
         let (to_audio, custom_tunings) = channel(4);
         let controller = Arc::new(Mutex::new(RegistrationController::new(
@@ -326,16 +447,7 @@ impl Plugin for Caecilia {
             from_audio,
             to_audio,
         )));
-        let primary = organ.primary_manual();
-        let mut division_of_channel = [primary; 16];
-        for m in organ.manuals() {
-            if let Some(slot) = usize::try_from(m.midi_channel)
-                .ok()
-                .and_then(|c| division_of_channel.get_mut(c))
-            {
-                *slot = m.division;
-            }
-        }
+        let division_of_channel = channels_of(&organ);
         let mut reverb = Reverb::new();
         reverb.set_decay_seconds(3.2);
         reverb.set_size(0.85);
@@ -365,6 +477,17 @@ impl Plugin for Caecilia {
             temperaments: temperament_tables(),
             tuning_choice: None,
             custom_tunings,
+            custom_tuning: None,
+            retune: true,
+            switch,
+            fading: None,
+            fade_done: 0,
+            fade_len: 0,
+            fade_left: Vec::new(),
+            fade_right: Vec::new(),
+            retired: None,
+            held: [0; 16],
+            generation: 0,
         }
     }
 
@@ -373,38 +496,45 @@ impl Plugin for Caecilia {
     }
 
     fn prepare(&mut self, spec: &ProcessSpec) {
-        // Every core but the audio thread's renders voices. A worker may hold a
-        // job for at most half the block before the audio thread gives up on it:
-        // a late group is a block of silence for its voices, a late callback is
-        // a click for everything.
-        let block = std::time::Duration::from_secs_f64(
-            spec.max_block_size as f64 / spec.sample_rate.max(1.0),
-        );
-        let engine = OrganEngine::with_config(
+        // The organ of record, whatever was chosen while nothing played.
+        let (organ, generation, registration) =
+            self.params
+                .organ
+                .prepare(&mut self.switch, spec.sample_rate, spec.max_block_size);
+        self.organ = organ;
+        self.generation = generation;
+        self.division_of_channel = channels_of(&self.organ);
+        if let Some((stops, couplers)) = registration {
+            self.set_masks(stops, couplers);
+        }
+        self.engine = Some(build_engine(
             &self.organ,
             spec.sample_rate,
             spec.max_block_size,
-            DEFAULT_POLYPHONY,
-            Calibration::V2,
-            PoolConfig::all_cores().wait_limit(block / 2),
-        );
-        self.engine = Some(engine);
+        ));
+        self.fading = None;
+        self.retired = None;
+        self.fade_len = (FADE_SECONDS * spec.sample_rate).round().max(1.0) as usize;
+        self.fade_left = vec![0.0; spec.max_block_size];
+        self.fade_right = vec![0.0; spec.max_block_size];
+        self.held = [0; 16];
         // Everything is sent again on the first block.
         self.stop_mask = u64::MAX;
         self.coupler_mask = u32::MAX;
         self.tremulant = None;
         self.swell = None;
-        self.tuning_choice = None;
+        self.retune = true;
         self.reverb.prepare(spec);
         self.limiter.prepare(spec);
     }
 
     fn process(&mut self, buffer: &mut AudioBuffer<f32>, context: &ProcessContext<'_, f32>) {
+        self.events.clear();
+        self.take_new_organ();
         let Some(mut engine) = self.engine.take() else {
             buffer.clear();
             return;
         };
-        self.events.clear();
         apply_param_events(&*self.params, context.events);
 
         // The console first: pistons and learned controls change the
@@ -459,6 +589,7 @@ impl Plugin for Caecilia {
                 stops,
                 couplers,
                 origin,
+                generation: self.generation,
             });
         }
         self.follow_parameters();
@@ -471,24 +602,39 @@ impl Plugin for Caecilia {
         );
         if self.tuning_choice != Some(choice) {
             self.tuning_choice = Some(choice);
-            if let Some(t) = self.temperaments.get(choice.0 * 12 + choice.1) {
-                engine.set_tuning(t.clone());
-                engine.set_pitch_scale(f64::from(choice.2) / 440.0);
-            }
+            self.custom_tuning = None;
+            self.retune = true;
         }
         while let Some(t) = self.custom_tunings.pop() {
-            engine.set_tuning(t);
-            engine.set_pitch_scale(1.0);
+            self.custom_tuning = Some(t);
+            self.retune = true;
+        }
+        if self.retune {
+            self.retune = false;
+            match &self.custom_tuning {
+                Some(t) => {
+                    engine.set_tuning(t.clone());
+                    engine.set_pitch_scale(1.0);
+                }
+                None => {
+                    if let Some(t) = self.temperaments.get(choice.0 * 12 + choice.1) {
+                        engine.set_tuning(t.clone());
+                        engine.set_pitch_scale(f64::from(choice.2) / 440.0);
+                    }
+                }
+            }
         }
 
         for event in context.events {
             let channel_division = |c: u8| self.division_of_channel[usize::from(c & 0x0F)];
             let command = match event.kind {
                 EventKind::NoteOn { note, .. } => {
+                    let c = usize::from(note.channel & 0x0F);
                     let bit = 1u128 << (note.key & 0x7F);
-                    if self.swallowed[usize::from(note.channel & 0x0F)] & bit != 0 {
+                    if self.swallowed[c] & bit != 0 {
                         None
                     } else {
+                        self.held[c] |= bit;
                         Some(Command::NoteOn {
                             division: channel_division(note.channel),
                             note: note.key,
@@ -502,6 +648,7 @@ impl Plugin for Caecilia {
                         self.swallowed[c] &= !bit;
                         None
                     } else {
+                        self.held[c] &= !bit;
                         Some(Command::NoteOff {
                             division: channel_division(note.channel),
                             note: note.key,
@@ -527,7 +674,10 @@ impl Plugin for Caecilia {
                             division: channel_division(channel),
                             down: value >= 64,
                         }),
-                        120 | 123 => Some(Command::Panic),
+                        120 | 123 => {
+                            self.held = [0; 16];
+                            Some(Command::Panic)
+                        }
                         _ => None,
                     }
                 }
@@ -541,6 +691,7 @@ impl Plugin for Caecilia {
         let (left, right) = buffer.channel_pair_mut(0, 1);
         engine.process(left, right, &self.events);
         self.engine = Some(engine);
+        self.fade_out(buffer);
 
         self.reverb.set_mix(f64::from(self.params.reverb.value()));
         self.reverb.process(buffer);
@@ -554,6 +705,10 @@ impl Plugin for Caecilia {
         if let Some(e) = self.engine.as_mut() {
             e.reset();
         }
+        // The organ being left stops now; it is handed back next block.
+        self.fade_done = self.fade_len;
+        self.held = [0; 16];
+        self.retune = true;
         self.stop_mask = u64::MAX;
         self.coupler_mask = u32::MAX;
         self.tremulant = None;

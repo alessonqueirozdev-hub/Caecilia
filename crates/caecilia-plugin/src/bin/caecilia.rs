@@ -3,12 +3,14 @@
 //!
 //!   cargo run --release -p caecilia-plugin --features standalone --bin caecilia
 //!
-//! The session -- drawstops, pistons, learned controls, level -- is kept in
-//! `%APPDATA%\Caecilia\session.txt` (`~/.config/caecilia/session.txt`
-//! elsewhere) and restored on the next start. Press Enter to quit.
+//! The session -- the organ, drawstops, pistons, learned controls, level --
+//! is kept in `%APPDATA%\Caecilia\session.txt`
+//! (`~/.config/caecilia/session.txt` elsewhere) and restored on the next
+//! start. While it plays, `organ <file>` changes the organ; an empty line
+//! quits.
 
 use std::io::BufRead;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use caecilia_plugin::Caecilia;
 use manguebyte_standalone::{Standalone, StandaloneOptions};
@@ -28,25 +30,26 @@ fn session_path() -> Option<PathBuf> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // `--organ <file>`: play that organ instead of the demonstration one.
+    // `--organ <file>`: play that organ, whatever the last session played.
     let mut args = std::env::args().skip(1);
+    let mut organ_arg = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--organ" => {
-                let path = args.next().ok_or("--organ needs a file")?;
-                match caecilia_model::read_organ_file(std::path::Path::new(&path)) {
-                    Ok(doc) => {
-                        for w in &doc.warnings {
-                            println!("{path}: warning: {w}");
+                let path = PathBuf::from(args.next().ok_or("--organ needs a file")?);
+                match caecilia_plugin::set_organ_file_for_new_instances(&path) {
+                    Ok(warnings) => {
+                        for w in &warnings {
+                            println!("{}: warning: {w}", path.display());
                         }
-                        println!("Organ: {}", doc.organ.name);
-                        caecilia_plugin::set_organ_for_new_instances(doc.organ);
                     }
-                    Err(e) => return Err(format!("{path}: {e}").into()),
+                    Err(e) => return Err(format!("{}: {e}", path.display()).into()),
                 }
+                organ_arg = Some(path);
             }
             "--help" | "-h" => {
                 println!("caecilia [--organ <file.organ.json>]");
+                println!("While it plays, `organ <file.organ.json>` changes the organ.");
                 return Ok(());
             }
             other => return Err(format!("unknown argument '{other}' (try --help)").into()),
@@ -69,6 +72,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => println!("The last session could not be restored: {e}"),
         }
     }
+    // The organ asked for wins over the session's.
+    if let Some(path) = &organ_arg {
+        if app.params().organ.path() != std::path::absolute(path).ok() {
+            change_organ(&app, path);
+        }
+    }
+    println!("Organ: {}", app.params().organ.organ().name);
 
     println!(
         "Caecilia on {} at {} Hz.",
@@ -85,10 +95,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "MIDI channels play the divisions the organ file assigns; program changes 1-16 recall the generals."
     );
-    println!("Press Enter to quit.");
+    println!("Type `organ <file>` to change the organ; press Enter to quit.");
 
-    let mut line = String::new();
-    let _ = std::io::stdin().lock().read_line(&mut line);
+    for line in std::io::stdin().lock().lines() {
+        let line = line?;
+        let line = line.trim();
+        match line.split_once(char::is_whitespace) {
+            _ if line.is_empty() => break,
+            Some(("organ", file)) => change_organ(&app, Path::new(file.trim().trim_matches('"'))),
+            _ => println!("`organ <file>` changes the organ; an empty line quits."),
+        }
+    }
 
     if let Some(path) = session {
         if let Some(dir) = path.parent() {
@@ -98,4 +115,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Session saved to {}.", path.display());
     }
     Ok(())
+}
+
+/// Play the organ in `path` from now on, saying how it went.
+fn change_organ(app: &Standalone<Caecilia>, path: &Path) {
+    match app.params().load_organ_file(path) {
+        Ok(warnings) => {
+            for w in &warnings {
+                println!("{}: warning: {w}", path.display());
+            }
+            println!("Organ: {}", app.params().organ.organ().name);
+        }
+        Err(e) => println!("{}: {e}; the organ playing stays.", path.display()),
+    }
 }

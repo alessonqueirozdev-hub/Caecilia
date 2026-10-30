@@ -213,3 +213,65 @@ fn processing_never_allocates() {
     );
     assert_eq!(params.console.bindings().len(), 2);
 }
+
+#[test]
+fn changing_the_organ_never_allocates_nor_frees() {
+    let mut plugin = Caecilia::new();
+    let spec = ProcessSpec {
+        sample_rate: 48000.0,
+        max_block_size: 256,
+        num_channels: 2,
+    };
+    plugin.prepare(&spec);
+    let params = plugin.params();
+    let transport = Transport::default();
+    let mut buffer = AudioBuffer::<f32>::new(2, 256);
+    let mut chord = EventBuffer::with_capacity(8);
+    for key in [48u8, 60, 64, 67] {
+        let _ = chord.push(Event {
+            offset: 0,
+            kind: EventKind::NoteOn {
+                note: NoteRef::new(0, key),
+                velocity: 0.9,
+            },
+        });
+    }
+    let empty = EventBuffer::with_capacity(1);
+    let mut run = |plugin: &mut Caecilia, ev: &EventBuffer| {
+        let context = ProcessContext::new(ev, &transport);
+        plugin.process(&mut buffer, &context);
+    };
+    run(&mut plugin, &chord);
+    run(&mut plugin, &empty);
+
+    // Twice: away to a smaller organ and back, each built here, taken there.
+    let small = caecilia_model::read_organ(
+        r#"{ "name": "Positive",
+             "windchests": [ { "name": "Main", "tremulant": true } ],
+             "ranks": [ { "name": "Gedackt 8", "family": "Flute", "footage": 8, "windchest": "Main" },
+                        { "name": "Principal 4", "family": "Principal", "footage": 4, "windchest": "Main" } ],
+             "divisions": [ { "name": "Manual", "midiChannel": 0, "manual": 1 } ],
+             "stops": [ { "name": "Gedackt 8", "family": "Flute", "division": "Manual", "rank": "Gedackt 8" },
+                        { "name": "Principal 4", "footage": 4, "pitchClass": "Octave", "role": "Chorus",
+                          "division": "Manual", "rank": "Principal 4" } ] }"#,
+        None,
+    )
+    .expect("a positive organ")
+    .organ;
+    for organ in [small, caecilia_model::demo_organ()] {
+        let name = organ.name.clone();
+        params.use_organ(organ).unwrap();
+        HEAP_CALLS.with(|c| c.set(0));
+        WATCHING.with(|w| w.set(true));
+        // The change, the fade, and the old engine handed back.
+        for _ in 0..16 {
+            run(&mut plugin, &empty);
+        }
+        WATCHING.with(|w| w.set(false));
+        let calls = HEAP_CALLS.with(Cell::get);
+        assert_eq!(calls, 0, "the change used the heap {calls} time(s)");
+        assert_eq!(plugin.organ().name, name, "the change was taken");
+        params.organ.collect();
+    }
+    assert_eq!(params.organ.generation(), 2);
+}

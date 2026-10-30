@@ -234,6 +234,7 @@ Caecilia does not write its own version of anything listed here.
 | 3 | Right after 1 and 4: `RtPool`, fixed-order sum, bit-identical to single-threaded. |
 | 7 | The framework owns tuning (Parabolic uses it too): historical temperaments, Scala, stretch. Caecilia uses 12-TET until it lands and then tests it against the `tuning` tables in `reference/cpp-1.x`. |
 | 8, 9 | After those. |
+| 10 | Requested 2026-10-30, with the organ change it serves. |
 
 1. **Sine/partial-bank kernel** (`manguebyte-dsp`): N phasors with per-partial
    frequency, gain and pan ramps over a block, accumulated into a stereo buffer;
@@ -268,6 +269,13 @@ Caecilia does not write its own version of anything listed here.
    block time against the deadline and returns a budget in cost units the
    instrument spends (demote tier, shed partials, steal), disabled in offline
    render.
+10. **Parameter names that change while the plugin runs**: a parameter's
+   display name settable from any thread but the audio one, and the wrappers
+   telling the host (CLAP `rescan(CLAP_PARAM_RESCAN_INFO)`, VST3
+   `restartComponent(kParamTitlesChanged)`). Caecilia's stop and coupler
+   parameters are pools drawn by number; after an organ change they draw the
+   new organ's stops but keep the first organ's names until the host reloads
+   the plugin.
 
 ## 7. Status (2026-10-30)
 
@@ -276,9 +284,9 @@ Caecilia does not write its own version of anything listed here.
 | Map and references | Done: this document, `tools/reference`, `reference/cpp-1.x`. |
 | Sound engine | Done: model, wind, partial bank on the framework's SIMD `PartialBank`, engine; within 0.0001 dB of 1.x under `Calibration::OneX`, and calibrated past it under `V2`. A 200-voice tutti costs 0.19 of a core. |
 | Threads and tuning | Done: voices render on Manguebyte's `RenderPool` in groups of 64, summed in order (bit for bit the single-threaded output, `tests/threads.rs`); the plugin uses every core but the audio thread's. Tuning is Manguebyte's module: 8 temperaments on any key, A4 380-480 Hz as host parameters, and any equal division or Scala scale through the controller; the 12 tables of 1.x match to 1e-9 cent. Scala choices are not yet saved with the session. |
-| Organ file | Done: 1.x's JSON format read as it is (the 1.x example loads as the demo organ and voices identically), 2.0 additions (`formatVersion`, per-rank `recipe`), a writer that reads back to the same organ, errors with their path and the fix, spectra only from inside the organ's folder; `caecilia-organ-file --export/--check`, `caecilia --organ`, `CAECILIA_ORGAN` for plugins. Not yet: choosing an organ from a running plugin, and saving which organ a session used. |
+| Organ file | Done: 1.x's JSON format read as it is (the 1.x example loads as the demo organ and voices identically), 2.0 additions (`formatVersion`, per-rank `recipe`), a writer that reads back to the same organ, errors with their path and the fix, spectra only from inside the organ's folder; `caecilia-organ-file --export/--check`, `caecilia --organ`, `CAECILIA_ORGAN` for plugins. The organ changes while the plugin plays (`CaeciliaParams::load_organ_file`, the controller's `load_organ`, `organ <file>` typed into the standalone): built off the audio thread, held keys carry over, the old organ fades over 50 ms and is dropped off the audio thread; its opening registration and factory generals come with it, stop and coupler learns are forgotten, a custom tuning stays. The session saves the organ's file and restores it before its registration. Not yet: the host's parameter names follow the new organ (framework item 10). |
 | Registration | Done: selectors and grammar 1.0, commands, branching history with provenance, plenum, explain, graded `port()` across traditions, pistons, factory generals. |
-| Plugin | CLAP and VST3 build, load in Manguebyte's host and play (`examples/host_check.rs`); stops and couplers as host parameters, MIDI channels to divisions, CC 11/64/120/123, tremulant, swell, reverb, safety limiter. Console: 16 general pistons (factory crescendo + 8 of the organist's), program change 0-15, MIDI learn of any controller or spare key (stop, coupler, piston, next/previous, cancel), all saved with the session; a `RegistrationController` with selectors, undo/redo across the host's automation and the pistons, `explain` and piston capture. Standalone app (`--features standalone --bin caecilia`), built, not run by tests. `process` proven allocation-free through all of it. Not yet: LV2/AU, the organ file. |
+| Plugin | CLAP and VST3 build, load in Manguebyte's host and play (`examples/host_check.rs`); stops and couplers as host parameters, MIDI channels to divisions, CC 11/64/120/123, tremulant, swell, reverb, safety limiter. Console: 16 general pistons (factory crescendo + 8 of the organist's), program change 0-15, MIDI learn of any controller or spare key (stop, coupler, piston, next/previous, cancel), all saved with the session; a `RegistrationController` with selectors, undo/redo across the host's automation and the pistons, `explain` and piston capture. Standalone app (`--features standalone --bin caecilia`), built, not run by tests. `process` proven allocation-free through all of it, an organ change included. Not yet: LV2/AU. |
 | Console | Not started (mockup first). |
 
 ## 8. Stages
