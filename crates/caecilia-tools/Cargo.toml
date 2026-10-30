@@ -11,5 +11,13 @@ authors.workspace = true
 [dependencies]
 caecilia-model.workspace = true
 
+[dev-dependencies]
+# Only for the console's mockup (examples/console_mockup.rs), drawn headless
+# with the toolkit the console will be written in.
+caecilia-registration.workspace = true
+manguebyte-gfx.workspace = true
+manguebyte-plugin.workspace = true
+manguebyte-ui.workspace = true
+
 [lints]
 workspace = true
