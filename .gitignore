@@ -70,3 +70,6 @@ tools/dev/*.wav
 
 # WebView2 SDK, fetched by NuGet for the Windows plugin build (see CONTRIBUTING.md)
 packages/
+
+# Rust (the shared build folder normally lives outside the tree)
+/target/

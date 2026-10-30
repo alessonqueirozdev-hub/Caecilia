@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+#
+# Caecilia 2.0 -- the organ in Rust, on the Manguebyte Audio Framework.
+# See docs/PORTING.md for what each crate is and where it came from.
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "2.0.0-alpha.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/alessonqueirozdev-hub/Caecilia"
+authors = ["Alesson Queiroz", "The Caecilia contributors"]
+
+[workspace.dependencies]
+caecilia-model = { path = "crates/caecilia-model" }
+caecilia-wind = { path = "crates/caecilia-wind" }
+caecilia-synth = { path = "crates/caecilia-synth" }
+caecilia-engine = { path = "crates/caecilia-engine" }
+
+# The framework, by path while both are developed side by side (as Parabolic
+# does). Pinned to git + rev before a release, so a clean checkout builds.
+manguebyte-core = { path = "C:/manguebyte/crates/manguebyte-core" }
+manguebyte-dsp = { path = "C:/manguebyte/crates/manguebyte-dsp" }
+
+serde_json = "1"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"
+
+# Tests render seconds of a full organ, which an unoptimised build makes slow
+# enough to matter; checks stay on. Share the framework's build folder to keep
+# one copy of its artifacts on disk:
+#   CARGO_TARGET_DIR=C:/manguebyte/target cargo test --profile caecilia
+[profile.caecilia]
+inherits = "dev"
+opt-level = 2
+debug = 0
+
+[profile.caecilia-release]
+inherits = "release"

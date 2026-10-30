@@ -1,0 +1,17 @@
+[package]
+name = "caecilia-model"
+description = "The organ: ids, exact footages, stops, ranks, chests, divisions and their voicing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

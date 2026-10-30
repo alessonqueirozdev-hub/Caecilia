@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 //
-// caecilia-reference — the numbers the Rust 2.0 engine is tested against.
+// caecilia-reference â€” the numbers the Rust 2.0 engine is tested against.
 //
 // The 2.0 port is a rewrite, not a translation, and "it sounds the same" has to
 // mean something a test can check. This tool drives the C++ 1.x instrument down
@@ -113,7 +113,7 @@ private:
     void number(double v)
     {
         if (! std::isfinite(v)) { std::fputs("null", f_); return; }
-        std::fprintf(f_, "%.9g", v);
+        std::fprintf(f_, "%.17g", v);
     }
 
     std::FILE* f_;
@@ -405,6 +405,8 @@ void writeOrganData(Json& j, const Instrument& inst)
         j.num("division", s.division().value);
         j.num("chest", v.chest.value);
         j.num("windFlow", wind::rankWindFlow(v.footage));
+        j.num("windSensitivity", v.windSensitivity);
+        j.boolean("compound", s.isCompound());
         j.open("speech", '{');
         j.num("attackAtC2Sec", v.speech.attackAtC2Sec);
         j.num("attackAtC7Sec", v.speech.attackAtC7Sec);
@@ -421,6 +423,20 @@ void writeOrganData(Json& j, const Instrument& inst)
             j.num("windSensitivity", p.windSensitivity);
             j.num("onsetSeconds", p.onsetSeconds);
             j.num("brightnessTrack", p.brightnessTrack);
+            j.num("phase", p.phase);
+            j.num("seed", static_cast<double>(p.seed));
+            j.num("rankRatioToF0", p.rankRatioToF0);
+            j.close('}');
+        }
+        j.close(']');
+        j.open("formants", '[');
+        for (std::size_t k = 0; k < v.spectrum.steadyFormants.peakCount; ++k)
+        {
+            const synth::FormantPeak& f = v.spectrum.steadyFormants.peaks[k];
+            j.open(nullptr, '{');
+            j.num("centerHz", f.centerHz);
+            j.num("gainDb", f.gainDb);
+            j.num("bandwidthHz", f.bandwidthHz);
             j.close('}');
         }
         j.close(']');
