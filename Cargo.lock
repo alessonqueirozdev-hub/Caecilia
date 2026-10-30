@@ -20,6 +20,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "caecilia-registration"
+version = "2.0.0-alpha.0"
+dependencies = [
+ "caecilia-model",
+]
+
+[[package]]
 name = "caecilia-synth"
 version = "2.0.0-alpha.0"
 dependencies = [

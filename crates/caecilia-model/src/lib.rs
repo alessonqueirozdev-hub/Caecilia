@@ -5,6 +5,7 @@
 //! each rank's calibrated [`RankVoicing`]. Nothing here runs on the audio
 //! thread; everything it builds is read-only afterwards.
 
+mod builder;
 mod calibration;
 mod demo;
 mod footage;
@@ -14,6 +15,7 @@ pub mod recipes;
 mod spectrum;
 mod voicing;
 
+pub use builder::{OrganBuilder, StopSpec};
 pub use calibration::Calibration;
 pub use demo::demo_organ;
 pub use footage::Footage;

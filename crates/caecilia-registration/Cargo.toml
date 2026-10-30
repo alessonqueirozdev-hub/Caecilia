@@ -1,0 +1,15 @@
+[package]
+name = "caecilia-registration"
+description = "The queryable registration: selectors, commands, branching history, plenum, explain and port"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+caecilia-model.workspace = true
+
+[lints]
+workspace = true
