@@ -1,15 +1,36 @@
 //! A part of the console drawn from the frame's reading, and drawn again
-//! only when what it shows has changed.
+//! only when what it shows has changed; it may take the pointer, and name
+//! its controls to assistive technology.
 
 use std::rc::Rc;
 
-use manguebyte_gfx::{Scene, Size, Transform};
-use manguebyte_ui::access::{AccessNode, Role};
-use manguebyte_ui::{AccessCx, KeyboardState, MeasureCx, PaintCx, UpdateCx, Widget};
+use manguebyte_gfx::{Point, Rect, Scene, Size, Transform};
+use manguebyte_ui::access::{AccessItem, AccessNode, Action, Actions, Role};
+use manguebyte_ui::{
+    AccessCx, Button, Event, EventCx, Handled, KeyboardState, MeasureCx, Modifiers, NoteEvent,
+    PaintCx, UpdateCx, Widget,
+};
 
+use super::actions;
 use super::snapshot::{Snapshot, Source};
 
 type Draw = dyn Fn(Size, &mut Scene, &Snapshot);
+
+/// What a part does with the pointer: the event, where it is in the part's
+/// own coordinates, the part's size, and the reading it shows.
+pub(crate) type Input = dyn FnMut(&mut EventCx<'_>, &Event, Point, Size, &Snapshot) -> Handled;
+
+/// A control inside a part, for assistive technology and tests.
+pub(crate) struct Item {
+    pub(crate) role: Role,
+    pub(crate) name: String,
+    /// On or off, for a switch.
+    pub(crate) checked: Option<bool>,
+    /// Where it is, in the part's coordinates.
+    pub(crate) rect: Rect,
+}
+
+type Items = fn(&Snapshot, Size) -> Vec<Item>;
 
 /// A part: its name, its natural size, what of the reading it shows, and
 /// how it draws it in its own coordinates, its top left at the origin.
@@ -21,6 +42,8 @@ pub(crate) struct Live {
     draw: Box<Draw>,
     /// What it shows, in words, for assistive technology and tests.
     describe: Option<fn(&Snapshot) -> String>,
+    items: Option<Items>,
+    input: Option<Box<Input>>,
     seen: Option<u64>,
     shown: Option<Rc<Snapshot>>,
 }
@@ -40,6 +63,8 @@ pub(crate) fn live(
         key,
         draw: Box::new(draw),
         describe: None,
+        items: None,
+        input: None,
         seen: None,
         shown: None,
     }
@@ -51,6 +76,28 @@ impl Live {
         self.describe = Some(describe);
         self
     }
+
+    /// The same part, naming the controls in it.
+    pub(crate) fn items(mut self, items: Items) -> Self {
+        self.items = Some(items);
+        self
+    }
+
+    /// The same part, taking the pointer.
+    pub(crate) fn input(
+        mut self,
+        input: impl FnMut(&mut EventCx<'_>, &Event, Point, Size, &Snapshot) -> Handled + 'static,
+    ) -> Self {
+        self.input = Some(Box::new(input));
+        self
+    }
+
+    /// The reading to act on: the one shown, else this frame's.
+    fn reading(&self, cx: &EventCx<'_>) -> Rc<Snapshot> {
+        self.shown
+            .clone()
+            .unwrap_or_else(|| self.source.get(cx.now()))
+    }
 }
 
 impl Widget for Live {
@@ -60,6 +107,60 @@ impl Widget for Live {
             (Some(describe), Some(snapshot)) => node.with_value(describe(snapshot)),
             _ => node,
         }
+    }
+
+    fn access_items(&self, cx: &AccessCx<'_>, out: &mut Vec<AccessItem>) {
+        let (Some(items), Some(snapshot)) = (self.items, &self.shown) else {
+            return;
+        };
+        let rect = cx.rect();
+        let size = Size::new(rect.width, rect.height);
+        for (key, item) in items(snapshot, size).into_iter().enumerate() {
+            let mut node = AccessNode::new(item.role, item.name).with_actions(Actions::PRESS);
+            if let Some(on) = item.checked {
+                node = node.with_checked(on);
+            }
+            out.push(AccessItem::new(
+                key,
+                node,
+                item.rect.translate(Point::new(rect.x, rect.y)),
+            ));
+        }
+    }
+
+    fn act_item(&mut self, cx: &mut EventCx<'_>, key: usize, action: Action) -> bool {
+        if action != Action::Press {
+            return false;
+        }
+        let snapshot = self.reading(cx);
+        let rect = cx.rect();
+        let size = Size::new(rect.width, rect.height);
+        let Some(item) = self
+            .items
+            .and_then(|items| items(&snapshot, size).into_iter().nth(key))
+        else {
+            return false;
+        };
+        let Some(input) = self.input.as_mut() else {
+            return false;
+        };
+        // A press and a release at its middle.
+        let local = item.rect.center();
+        let at = Point::new(local.x + rect.x, local.y + rect.y);
+        let down = Event::PointerDown {
+            at,
+            button: Button::Primary,
+            clicks: 1,
+            modifiers: Modifiers::NONE,
+        };
+        let up = Event::PointerUp {
+            at,
+            button: Button::Primary,
+            modifiers: Modifiers::NONE,
+        };
+        input(cx, &down, local, size, &snapshot);
+        input(cx, &up, local, size, &snapshot);
+        true
     }
 
     fn measure(&mut self, _cx: &MeasureCx<'_>) -> Size {
@@ -86,10 +187,36 @@ impl Widget for Live {
             (self.draw)(size, scene, snapshot);
         });
     }
+
+    fn event(&mut self, cx: &mut EventCx<'_>, event: &Event) -> Handled {
+        if self.input.is_none() {
+            return Handled::No;
+        }
+        let rect = cx.rect();
+        let local = |at: Point| Point::new(at.x - rect.x, at.y - rect.y);
+        let at = match *event {
+            Event::PointerDown { at, .. }
+            | Event::PointerMove { at, .. }
+            | Event::PointerUp { at, .. } => local(at),
+            Event::PointerCancel => Point::new(f32::NAN, f32::NAN),
+            _ => return Handled::No,
+        };
+        let snapshot = self.reading(cx);
+        let size = Size::new(rect.width, rect.height);
+        let handled = match self.input.as_mut() {
+            Some(input) => input(cx, event, at, size, &snapshot),
+            None => Handled::No,
+        };
+        if handled == Handled::Yes {
+            cx.request_paint();
+        }
+        handled
+    }
 }
 
-/// Nothing to see: lights the keys held on each manual, and keeps the
-/// frames coming so the wind moves.
+/// Nothing to see: lights the keys held on each manual, sends the keys
+/// played on them to the organ, and keeps the frames coming so the wind
+/// moves.
 pub(crate) struct KeysPoller {
     source: Rc<Source>,
     keyboards: Vec<(KeyboardState, Option<usize>)>,
@@ -121,6 +248,19 @@ impl Widget for KeysPoller {
     fn update(&mut self, cx: &mut UpdateCx<'_>) {
         let snapshot = self.source.get(cx.now());
         for ((keys, channel), seen) in self.keyboards.iter().zip(&mut self.seen) {
+            if let Some(channel) = channel {
+                for event in keys.take_events() {
+                    match event {
+                        NoteEvent::On { note, .. } => {
+                            actions::play(self.source.shared(), *channel, note, true);
+                        }
+                        NoteEvent::Off { note } => {
+                            actions::play(self.source.shared(), *channel, note, false);
+                        }
+                        _ => {}
+                    }
+                }
+            }
             let held = channel.map_or(0, |c| snapshot.held[c]);
             if held != *seen {
                 *seen = held;

@@ -2,7 +2,7 @@
 //! controller's history, the audio thread's telemetry. Every part draws
 //! from the same reading, so they never disagree.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
@@ -205,6 +205,8 @@ pub(crate) struct Snapshot {
     pub(crate) general: Option<usize>,
     /// Which generals hold something.
     pub(crate) generals_set: [bool; GENERALS],
+    /// Set is pressed: the next general piston stores what is drawn.
+    pub(crate) set_armed: bool,
     pub(crate) swell: f32,
     /// Keys held, by MIDI channel.
     pub(crate) held: [u128; 16],
@@ -233,7 +235,7 @@ impl Snapshot {
 
     /// What the key slip and the toe studs show.
     pub(crate) fn generals_key(&self) -> u64 {
-        hash_of(|h| (self.general, self.generals_set).hash(h))
+        hash_of(|h| (self.general, self.generals_set, self.set_armed).hash(h))
     }
 
     /// What the shoes show.
@@ -345,6 +347,7 @@ pub(crate) struct Source {
     traces: RefCell<Vec<VecDeque<f32>>>,
     /// The registration's text when the controller was last free.
     last_registration: RefCell<RegistrationText>,
+    set_armed: Cell<bool>,
 }
 
 impl Source {
@@ -359,7 +362,24 @@ impl Source {
             current: RefCell::new(None),
             traces: RefCell::default(),
             last_registration: RefCell::default(),
+            set_armed: Cell::new(false),
         })
+    }
+
+    pub(crate) fn shared(&self) -> &Shared {
+        &self.shared
+    }
+
+    /// Whether Set is pressed.
+    pub(crate) fn set_armed(&self) -> bool {
+        self.set_armed.get()
+    }
+
+    /// Press or release Set.
+    pub(crate) fn arm_set(&self, armed: bool) {
+        self.set_armed.set(armed);
+        // The next reading shows it.
+        *self.current.borrow_mut() = None;
     }
 
     pub(crate) fn look(&self) -> Look {
@@ -496,6 +516,7 @@ impl Source {
             tremulant,
             general,
             generals_set,
+            set_armed: self.set_armed.get(),
             swell: params.swell.value(),
             held,
             chests,

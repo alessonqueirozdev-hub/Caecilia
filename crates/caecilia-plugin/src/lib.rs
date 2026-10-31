@@ -103,6 +103,18 @@ fn organ_for_new_instance() -> ChosenOrgan {
     (Arc::new(demo_organ()), None)
 }
 
+/// A key or pedal played on the console: its MIDI channel, its key, and
+/// whether it went down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct UiNote {
+    pub(crate) channel: u8,
+    pub(crate) key: u8,
+    pub(crate) on: bool,
+}
+
+/// Console notes that can wait for a block.
+const UI_NOTES: usize = 256;
+
 /// Commands one block can carry.
 const MAX_BLOCK_EVENTS: usize = 2048;
 
@@ -161,6 +173,10 @@ pub struct Caecilia {
     generation: u32,
     /// What the console shows of the audio thread.
     telemetry: Arc<Telemetry>,
+    /// Keys and pedals played on the console.
+    ui_notes: Consumer<UiNote>,
+    /// The console's end of that ring, behind a lock only the console takes.
+    ui_notes_in: Arc<Mutex<Producer<UiNote>>>,
     sample_rate: f64,
 }
 
@@ -284,6 +300,7 @@ impl Caecilia {
             params: Arc::clone(&self.params),
             controller: Arc::clone(&self.controller),
             telemetry: Arc::clone(&self.telemetry),
+            notes: Arc::clone(&self.ui_notes_in),
         })
     }
 
@@ -463,6 +480,7 @@ impl Plugin for Caecilia {
         let params = Arc::new(params);
         let (played, from_audio) = channel(256);
         let (to_audio, custom_tunings) = channel(4);
+        let (ui_notes_in, ui_notes) = channel(UI_NOTES);
         let controller = Arc::new(Mutex::new(RegistrationController::new(
             Arc::clone(&organ),
             Arc::clone(&params),
@@ -511,6 +529,8 @@ impl Plugin for Caecilia {
             held: [0; 16],
             generation: 0,
             telemetry: Arc::default(),
+            ui_notes,
+            ui_notes_in: Arc::new(Mutex::new(ui_notes_in)),
             sample_rate: 48_000.0,
         }
     }
@@ -651,6 +671,20 @@ impl Plugin for Caecilia {
             }
         }
 
+        // Keys played on the console, at the top of the block.
+        while let Some(n) = self.ui_notes.pop() {
+            let c = usize::from(n.channel & 0x0F);
+            let bit = 1u128 << (n.key & 0x7F);
+            let division = self.division_of_channel[c];
+            let note = n.key & 0x7F;
+            if n.on {
+                self.held[c] |= bit;
+                self.push(0, Command::NoteOn { division, note });
+            } else {
+                self.held[c] &= !bit;
+                self.push(0, Command::NoteOff { division, note });
+            }
+        }
         for event in context.events {
             let channel_division = |c: u8| self.division_of_channel[usize::from(c & 0x0F)];
             let command = match event.kind {

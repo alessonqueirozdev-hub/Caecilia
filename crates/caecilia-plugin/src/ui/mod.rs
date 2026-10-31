@@ -12,6 +12,8 @@
 //! registration controller and the audio thread's [`Telemetry`]; a part is
 //! drawn again only when what it shows has changed.
 
+mod actions;
+mod controls;
 mod live;
 mod look;
 mod paint;
@@ -23,6 +25,9 @@ use std::sync::{Arc, Mutex};
 use manguebyte_gui::Editor;
 use manguebyte_plugin::editor::HostSize;
 
+use manguebyte_core::spsc::Producer;
+
+use crate::UiNote;
 use crate::controller::RegistrationController;
 use crate::params::CaeciliaParams;
 use crate::telemetry::Telemetry;
@@ -36,6 +41,8 @@ pub(crate) struct Shared {
     pub(crate) params: Arc<CaeciliaParams>,
     pub(crate) controller: Arc<Mutex<RegistrationController>>,
     pub(crate) telemetry: Arc<Telemetry>,
+    /// Where the keys played on the console go.
+    pub(crate) notes: Arc<Mutex<Producer<UiNote>>>,
 }
 
 /// The console for an instance, built each time a host opens it.
