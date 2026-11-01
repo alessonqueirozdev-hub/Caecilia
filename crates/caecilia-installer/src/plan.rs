@@ -12,7 +12,7 @@
 //!
 //! The plugin folders are the ones the VST3 and CLAP specifications name.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::payload::{Entry, Manifest, Root};
 
@@ -89,6 +89,21 @@ impl Places {
             Scope::Machine => self.program_files.join(product),
             Scope::User => self.user_programs.join(product),
         }
+    }
+
+    /// Whether `dir` is a folder inside `%ProgramFiles%`, which only an
+    /// administrator can change. An installation for everyone must go
+    /// there: its uninstaller is run as an administrator, so whoever could
+    /// replace it could have their own program run as one.
+    pub fn protects(&self, dir: &Path) -> bool {
+        let lower = |c: Component<'_>| c.as_os_str().to_string_lossy().to_lowercase();
+        let base: Vec<String> = self.program_files.components().map(lower).collect();
+        let parts: Vec<Component<'_>> = dir.components().collect();
+        parts.len() > base.len()
+            && parts.iter().zip(&base).all(|(&c, b)| lower(c) == *b)
+            && parts[base.len()..]
+                .iter()
+                .all(|c| matches!(c, Component::Normal(_)))
     }
 
     /// The folder hosts scan for plugins of `format` (`VST3`, `CLAP`).
@@ -511,5 +526,25 @@ mod tests {
         assert_eq!(Components::ALL.list(), "app,vst3,clap,organ");
         assert_eq!(Components::parse("vst2"), None);
         assert!(Components::parse("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn only_folders_inside_program_files_are_protected() {
+        let places = Places::under(Path::new("C:\\"));
+        for dir in [
+            "C:\\Program Files\\Caecilia",
+            "c:\\program files\\Audio\\Caecilia",
+        ] {
+            assert!(places.protects(Path::new(dir)), "{dir}");
+        }
+        for dir in [
+            "C:\\Program Files",
+            "C:\\Program Files\\..\\Caecilia",
+            "C:\\Program Files Extra\\Caecilia",
+            "D:\\Apps\\Caecilia",
+            "C:\\LocalAppData\\Programs\\Caecilia",
+        ] {
+            assert!(!places.protects(Path::new(dir)), "{dir}");
+        }
     }
 }

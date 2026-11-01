@@ -346,6 +346,62 @@ fn an_upgrade_replaces_files_and_drops_what_the_new_version_has_not() {
 }
 
 #[test]
+fn a_dropped_plugin_a_host_still_holds_is_not_forgotten() {
+    use std::os::windows::fs::OpenOptionsExt;
+    // Per person, it waits for the next run; for everyone, for a restart.
+    for admin in [false, true] {
+        let scratch = Scratch::new(&format!("dropped-{admin}"));
+        let places = places(&scratch.0);
+        let old_files = payload("2.0.0", false);
+        let old_plan = Plan::new(
+            &old_files.manifest,
+            &Choices::defaults(Scope::User),
+            &places,
+            14,
+        );
+        let mut sys = MemorySystem {
+            can_delete_at_restart: admin,
+            ..MemorySystem::default()
+        };
+        let old = install(&mut sys, &old_plan, &old_files, None)
+            .unwrap()
+            .record;
+        let clap = old_plan
+            .files
+            .iter()
+            .find(|f| f.entry.root == Root::Clap)
+            .unwrap()
+            .dest
+            .clone();
+        // A host has it open: it can be read, not deleted.
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&clap)
+            .unwrap();
+
+        let new_files = payload("2.0.1", false);
+        let mut choices = Choices::defaults(Scope::User);
+        choices.components = Components::parse("app,vst3,organ").unwrap();
+        let new_plan = Plan::new(&new_files.manifest, &choices, &places, 14);
+        let outcome = install(&mut sys, &new_plan, &new_files, Some(&old)).unwrap();
+        drop(held);
+        assert!(outcome.kept.is_empty(), "{:?}", outcome.kept);
+        assert_eq!(outcome.restart, admin);
+        if admin {
+            assert_eq!(sys.at_restart, std::slice::from_ref(&clap));
+            assert!(outcome.record.leftovers.is_empty());
+        } else {
+            assert_eq!(outcome.record.leftovers, std::slice::from_ref(&clap));
+            assert_eq!(Record::load(&new_plan.program_dir).unwrap(), outcome.record);
+            let again = install(&mut sys, &new_plan, &new_files, Some(&outcome.record)).unwrap();
+            assert!(again.record.leftovers.is_empty());
+            assert!(!clap.exists(), "the next run cleared it");
+        }
+    }
+}
+
+#[test]
 fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     let scratch = Scratch::new("inuse");
     let places = places(&scratch.0);

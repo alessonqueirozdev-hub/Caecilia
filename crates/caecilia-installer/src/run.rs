@@ -110,6 +110,14 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
         &host.places,
         host.uninstaller.len() as u64,
     );
+    if scope == Scope::Machine && !host.places.protects(&plan.program_dir) {
+        log.error(format_args!(
+            "{} is not inside {}: an installation for everyone goes where only an administrator can change it",
+            plan.program_dir.display(),
+            host.places.program_files.display()
+        ));
+        return exit::USAGE;
+    }
     let mut engine = Engine {
         sys: host.sys,
         log,
@@ -210,6 +218,20 @@ mod tests {
             install(&parse(&["/S"]), &v1[..v1.len() - 1], &mut host, &mut log),
             exit::DAMAGED
         );
+        // For everyone, never in a folder a person could change.
+        host.elevated = true;
+        let outside = base.join("Apps").join("Caecilia");
+        assert_eq!(
+            install(
+                &parse(&["/S", "/ALLUSERS", &format!("/DIR={}", outside.display())]),
+                &v1,
+                &mut host,
+                &mut log
+            ),
+            exit::USAGE
+        );
+        assert!(!outside.exists());
+        host.elevated = false;
         assert_eq!(
             install(&parse(&["/S", "/CURRENTUSER"]), &v1, &mut host, &mut log),
             exit::OK

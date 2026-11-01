@@ -137,6 +137,8 @@ pub struct Text {
     pub needs: &'static str,
     /// Nothing chosen.
     pub choose_something: &'static str,
+    /// A folder outside Program Files for everyone.
+    pub program_files_only: &'static str,
     /// The title of the folder picker.
     pub pick_folder: &'static str,
 
@@ -286,6 +288,7 @@ pub const EN: Text = Text {
     start_menu: "Start menu",
     needs: "Needs {0}",
     choose_something: "Choose at least one thing to install.",
+    program_files_only: "For everyone, Caecilia goes inside Program Files, which only an administrator can change.",
     pick_folder: "Where should Caecilia go?",
     next: "Next",
     back: "Back",
@@ -393,6 +396,7 @@ pub const PT: Text = Text {
     start_menu: "Menu Iniciar",
     needs: "Precisa de {0}",
     choose_something: "Escolha pelo menos uma coisa para instalar.",
+    program_files_only: "Para todos, o Caecilia fica dentro de Arquivos de Programas, que só um administrador pode alterar.",
     pick_folder: "Onde o Caecilia deve ficar?",
     next: "Avançar",
     back: "Voltar",
@@ -506,6 +510,7 @@ pub const ES: Text = Text {
     start_menu: "Menú Inicio",
     needs: "Necesita {0}",
     choose_something: "Elige al menos una cosa para instalar.",
+    program_files_only: "Para todos, Caecilia va dentro de Archivos de programa, que solo un administrador puede cambiar.",
     pick_folder: "¿Dónde debe ir Caecilia?",
     next: "Siguiente",
     back: "Atrás",

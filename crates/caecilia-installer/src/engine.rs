@@ -279,6 +279,17 @@ fn move_out(path: &Path) -> Option<PathBuf> {
         .find(|to| fs::rename(path, to).is_ok())
 }
 
+/// What dropping an earlier version's files left.
+#[derive(Default)]
+struct Dropped {
+    /// Changed since they were placed, so kept.
+    kept: Vec<PathBuf>,
+    /// In use, so left for the next run.
+    leftovers: Vec<PathBuf>,
+    /// Some are deleted when Windows restarts.
+    restart: bool,
+}
+
 /// Installs and removes, writing what it does to a log.
 pub struct Engine<'a> {
     /// The system.
@@ -334,10 +345,13 @@ impl Engine<'_> {
         let mut tx = Transaction::default();
         match self.lay(plan, payload, uninstaller, previous, &mut tx) {
             Ok(mut record) => {
-                let (leftovers, restart) = tx.finish(self.sys, self.log);
+                let (mut leftovers, mut restart) = tx.finish(self.sys, self.log);
                 let mut kept = Vec::new();
                 if let Some(old) = previous {
-                    kept = self.drop_old(old, &record);
+                    let dropped = self.drop_old(old, &record);
+                    kept = dropped.kept;
+                    leftovers.extend(dropped.leftovers);
+                    restart |= dropped.restart;
                 }
                 if !leftovers.is_empty() {
                     record.leftovers.extend(leftovers);
@@ -373,9 +387,17 @@ impl Engine<'_> {
         tx: &mut Transaction,
     ) -> Result<Record, Error> {
         // Old files an earlier run left that are still there, before this
-        // run moves anything aside under the same names.
+        // run moves anything aside under the same names. One this plan
+        // places again is no longer left over: the new file takes its name.
         let surviving: Vec<PathBuf> = previous
-            .map(|r| r.leftovers.iter().filter(|p| p.exists()).cloned().collect())
+            .map(|r| {
+                r.leftovers
+                    .iter()
+                    .filter(|p| p.exists())
+                    .filter(|p| !plan.files.iter().any(|f| same_path(&f.dest, p)))
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default();
         tx.make_dir(&plan.program_dir)?;
         let mut files = Vec::new();
@@ -485,23 +507,26 @@ impl Engine<'_> {
     }
 
     /// Removes what `old` placed that `new` did not, unless it was changed.
-    fn drop_old(&mut self, old: &Record, new: &Record) -> Vec<PathBuf> {
-        let mut kept = Vec::new();
+    fn drop_old(&mut self, old: &Record, new: &Record) -> Dropped {
+        let mut dropped = Dropped::default();
         for f in old.files.iter().rev() {
             if new.files.iter().any(|n| same_path(&n.path, &f.path)) {
                 continue;
             }
             match hash_of(&f.path) {
                 Ok(Some(h)) if h == f.sha256 => {
-                    let (left, _) = delete_or_defer(&f.path, self.sys, self.log);
-                    if left.is_none() {
-                        self.log.line("removed", f.path.display());
+                    let (left, at_restart) = delete_or_defer(&f.path, self.sys, self.log);
+                    dropped.restart |= at_restart;
+                    match left {
+                        None => self.log.line("removed", f.path.display()),
+                        // In use: the new record keeps it, for the next run.
+                        Some(left) => dropped.leftovers.push(left),
                     }
                 }
                 Ok(None) => {}
                 _ => {
                     self.log.line("kept", f.path.display());
-                    kept.push(f.path.clone());
+                    dropped.kept.push(f.path.clone());
                 }
             }
         }
@@ -514,7 +539,7 @@ impl Engine<'_> {
         for dir in old.dirs.iter().rev() {
             let _ = fs::remove_dir(dir);
         }
-        kept
+        dropped
     }
 
     fn clear_leftovers(&mut self, leftovers: &[PathBuf]) {

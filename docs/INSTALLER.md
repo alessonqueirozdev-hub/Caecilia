@@ -167,8 +167,13 @@ uninstall.exe --uninstall /S [/PURGE]
   accepts the licence, as with every silent installer.
 - A machine install from an unelevated prompt does not raise UAC: it exits
   `740` (`ERROR_ELEVATION_REQUIRED`), as deployment tools expect.
+- A machine install's `/DIR` must be inside `%ProgramFiles%`, which only an
+  administrator can change: its uninstaller is later run as an
+  administrator, so a folder a person could write to would let them swap it
+  for a program of their own. Elsewhere it exits `87`; the GUI's folder
+  picker refuses such a folder with a hint. A just-me install goes anywhere.
 - Exit codes: `0` done, `1` failed, `2` cancelled/declined, `3` damaged
-  payload, `740` needs admin, `1638` a newer version is installed,
+  payload, `87` bad arguments, `740` needs admin, `1638` a newer version is installed,
   `3010` done, reboot needed to finish removing a file in use.
 
 ## 7. Logging

@@ -30,7 +30,8 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::UI::Shell::{
     FOLDERID_CommonPrograms, FOLDERID_Desktop, FOLDERID_ProgramFiles, FOLDERID_ProgramFilesCommon,
     FOLDERID_Programs, FOLDERID_PublicDesktop, FOLDERID_RoamingAppData, FOLDERID_UserProgramFiles,
-    SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, SHGetKnownFolderPath, ShellExecuteExW,
+    KF_FLAG_DONT_VERIFY, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, SHGetKnownFolderPath,
+    ShellExecuteExW,
 };
 use windows_sys::core::GUID;
 
@@ -42,11 +43,15 @@ fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
     s.as_ref().encode_wide().chain([0]).collect()
 }
 
+/// Where the known folder `id` is, whether or not it exists yet: on a new
+/// profile `%LOCALAPPDATA%\Programs` often does not, and the engine makes
+/// the folders it needs.
 fn known_folder(id: &GUID) -> io::Result<PathBuf> {
     let mut path = ptr::null_mut();
     // SAFETY: `id` is a valid GUID; the system allocates `path`, which is
     // freed below whatever the result.
-    let hr = unsafe { SHGetKnownFolderPath(id, 0, ptr::null_mut(), &mut path) };
+    let hr =
+        unsafe { SHGetKnownFolderPath(id, KF_FLAG_DONT_VERIFY as u32, ptr::null_mut(), &mut path) };
     let result = if hr >= 0 && !path.is_null() {
         // SAFETY: on success `path` is a NUL-terminated wide string.
         let len = unsafe { (0..).take_while(|&i| *path.add(i) != 0).count() };

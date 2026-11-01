@@ -480,7 +480,12 @@ impl Wizard {
             } else {
                 dir.join(product)
             };
-            self.choices.program_dir = Some(dir);
+            if self.choices.scope == Scope::Machine && !self.facts.places.protects(&dir) {
+                self.hint = Some(|t| t.program_files_only);
+            } else {
+                self.hint = None;
+                self.choices.program_dir = Some(dir);
+            }
             self.changed();
         }
     }
