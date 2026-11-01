@@ -127,15 +127,13 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
         return exit::NEEDS_ADMIN;
     }
     let mut choices = args.choices(scope);
-    // One form for each folder (`\`, no `.` or `..`), as the record keeps
-    // it and as an update compares it.
+    // One form for each folder (`\`, no `.` or `..`, no `\` at the end), as
+    // the record keeps it and as an update compares it.
     for dir in [&mut choices.program_dir, &mut choices.organs_dir]
         .into_iter()
         .flatten()
     {
-        if let Ok(whole) = std::path::absolute(&*dir) {
-            *dir = whole;
-        }
+        *dir = crate::engine::whole(dir);
     }
     if let Some((_, installed)) = &unreadable {
         if choices.program_dir.is_none() {

@@ -95,16 +95,27 @@ fn hash_of(path: &Path) -> io::Result<Option<Digest>> {
     }
 }
 
-/// Paths compared as Windows does: made whole (`/` as `\`, `.` and `..`
-/// resolved) and without regard to case.
+/// `path` in one form: absolute, `/` as `\`, `.` and `..` resolved, no
+/// separator at the end.
+pub fn whole(path: &Path) -> PathBuf {
+    std::path::absolute(path)
+        .unwrap_or_else(|_| path.to_owned())
+        .components()
+        .collect()
+}
+
+/// The parts of `path` in one form, without regard to case, as Windows
+/// compares them.
+fn parts(path: &Path) -> Vec<String> {
+    whole(path)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect()
+}
+
+/// Paths compared as Windows does.
 fn same_path(a: &Path, b: &Path) -> bool {
-    let key = |p: &Path| {
-        std::path::absolute(p)
-            .unwrap_or_else(|_| p.to_owned())
-            .to_string_lossy()
-            .to_lowercase()
-    };
-    key(a) == key(b)
+    parts(a) == parts(b)
 }
 
 /// Whether the file at `path` is held open by a running program, as the
@@ -278,13 +289,6 @@ fn delete_or_defer(path: &Path, sys: &mut dyn System, log: &mut Log) -> (Option<
 
 /// Whether `path` is `dir` or inside it, as Windows compares paths.
 fn inside(path: &Path, dir: &Path) -> bool {
-    let parts = |p: &Path| -> Vec<String> {
-        std::path::absolute(p)
-            .unwrap_or_else(|_| p.to_owned())
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
-            .collect()
-    };
     parts(path).starts_with(&parts(dir))
 }
 
@@ -594,6 +598,13 @@ impl Engine<'_> {
         for link in &old.shortcuts {
             if !new.shortcuts.iter().any(|n| same_path(n, link)) && fs::remove_file(link).is_ok() {
                 self.log.line("removed", link.display());
+            }
+        }
+        // Moved to another folder: the old one's record and log go too, or
+        // it would never be empty.
+        if !same_path(&old.program_dir, &new.program_dir) {
+            for name in [RECORD, LOG_COPY] {
+                let _ = fs::remove_file(old.program_dir.join(name));
             }
         }
         // Folders only the old version needed, now empty.

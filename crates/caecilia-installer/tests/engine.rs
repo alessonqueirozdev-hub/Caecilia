@@ -542,6 +542,36 @@ fn a_removal_whose_entry_stays_keeps_its_record_to_try_again() {
 }
 
 #[test]
+fn an_update_to_another_folder_leaves_nothing_in_the_old_one() {
+    let scratch = Scratch::new("moved");
+    let places = places(&scratch.0);
+    let before = tree(&scratch.0);
+    let files = payload("2.0.0", false);
+    let old_plan = Plan::new(
+        &files.manifest,
+        &Choices::defaults(Scope::User),
+        &places,
+        14,
+    );
+    let mut sys = MemorySystem::default();
+    let old = install(&mut sys, &old_plan, &files, None).unwrap().record;
+    fs::write(old_plan.program_dir.join("install.log"), b"log").unwrap();
+
+    let mut choices = Choices::defaults(Scope::User);
+    choices.program_dir = Some(scratch.0.join("Elsewhere").join("Caecilia"));
+    let new_files = payload("2.0.1", false);
+    let new_plan = Plan::new(&new_files.manifest, &choices, &places, 14);
+    let new = install(&mut sys, &new_plan, &new_files, Some(&old))
+        .unwrap()
+        .record;
+    assert!(!old_plan.program_dir.exists(), "the old folder went");
+    assert_eq!(Record::load(&new_plan.program_dir).unwrap(), new);
+
+    uninstall(&mut sys, &new, None);
+    assert_eq!(tree(&scratch.0), before, "and the removal leaves nothing");
+}
+
+#[test]
 fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     let scratch = Scratch::new("inuse");
     let places = places(&scratch.0);
