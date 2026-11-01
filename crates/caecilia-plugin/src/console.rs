@@ -237,6 +237,17 @@ impl ConsoleMemory {
             .and_then(|v| Action::unpack(v & 0x7_FFFF))
     }
 
+    /// Forget what `source` was bound to.
+    pub fn unbind(&self, source: Source) {
+        let src = source.pack();
+        for s in &self.learn {
+            let v = s.load(Ordering::Relaxed);
+            if v != 0 && v & 0xFFF8_0000 == src {
+                s.store(0, Ordering::Relaxed);
+            }
+        }
+    }
+
     /// Forget every learned control.
     pub fn clear_bindings(&self) {
         for s in &self.learn {

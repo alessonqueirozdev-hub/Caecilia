@@ -23,7 +23,7 @@ use super::paint::{
     vertical, width_of,
 };
 use super::snapshot::{Section, Snapshot, Source, describe_stops, note_name};
-use crate::console::GENERALS;
+use crate::console::{Action, GENERALS};
 
 /// A jamb's width.
 pub(crate) const JAMB: f32 = 500.0;
@@ -256,6 +256,7 @@ pub(crate) fn jamb_view(source: &Rc<Source>, right: bool) -> View {
     let name = if right { "Right jamb" } else { "Left jamb" };
     let shared = source.shared().clone();
     let pointing = Rc::clone(source);
+    let learner = Rc::clone(source);
     live(
         name,
         Size::new(JAMB, 400.0),
@@ -316,6 +317,8 @@ pub(crate) fn jamb_view(source: &Rc<Source>, right: bool) -> View {
         }
         let plan = jamb_plan(size, snapshot, right);
         match jamb_hit(&plan, at) {
+            Some(JambControl::Stop(n)) if learner.learn(Action::ToggleStop(n as u16)) => {}
+            Some(JambControl::Coupler(n)) if learner.learn(Action::ToggleCoupler(n as u16)) => {}
             Some(JambControl::Stop(n)) => actions::toggle_stop(cx.context(), &shared, n),
             Some(JambControl::Coupler(n)) => actions::toggle_coupler(cx.context(), &shared, n),
             Some(JambControl::Tremulant) => actions::toggle_tremulant(cx.context(), &shared),
@@ -391,6 +394,9 @@ fn slip_name(control: SlipControl) -> String {
 
 /// What a general piston does: recall it, or store in it with Set pressed.
 fn general_pressed(cx: &mut manguebyte_ui::EventCx<'_>, source: &Source, n: usize) {
+    if source.learn(Action::General(n as u16)) {
+        return;
+    }
     if source.set_armed() {
         actions::capture(source.shared(), n);
         source.arm_set(false);
@@ -547,6 +553,9 @@ pub(crate) fn slip_press(
     let shared = source.shared();
     match *control {
         SlipControl::General(n) => general_pressed(cx, source, n),
+        SlipControl::Previous if source.learn(Action::PreviousGeneral) => {}
+        SlipControl::Next if source.learn(Action::NextGeneral) => {}
+        SlipControl::Cancel if source.learn(Action::Cancel) => {}
         SlipControl::Previous => actions::step(cx.context(), shared, false),
         SlipControl::Next => actions::step(cx.context(), shared, true),
         SlipControl::Cancel => actions::cancel(cx.context(), shared),

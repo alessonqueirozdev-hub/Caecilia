@@ -5,8 +5,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use caecilia_plugin::Caecilia;
+use manguebyte_dsp::event::EventKind;
 use manguebyte_gfx::Point;
 use manguebyte_gui::HeadlessEditor;
+use manguebyte_midi::MidiMessage;
 use manguebyte_plugin::editor::testing::RecordingEditorHost;
 use manguebyte_plugin::editor::{
     EditorContext, EditorHost, EditorSpec, HostLink, OpenEditor, ParentWindow,
@@ -134,4 +136,110 @@ fn every_control_moves_its_parameter() {
     c.click(Role::Button, "EQ");
     assert!(!params.eq.value());
     assert!(c.says("Wind").contains("EQ off"));
+}
+
+#[test]
+fn the_tuning_page_tunes_the_organ_and_its_tremulant() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Sound");
+    c.click(Role::Button, "Page Tuning");
+    assert_eq!(
+        c.says("Wind"),
+        "Tuning: Equal on C, A 440.0 Hz; tremulant 5.50 Hz, depth 50 %"
+    );
+    let params = c.h.plugin_mut().params();
+    c.click(Role::Button, "Werckmeister III");
+    c.click(Role::Button, "Key G");
+    c.click(Role::Button, "A 415");
+    assert_eq!(params.temperament.index(), 2);
+    assert_eq!(params.temperament_key.index(), 7);
+    assert!(
+        (params.pitch.value() - 415.0).abs() < 0.05,
+        "{}",
+        params.pitch.value()
+    );
+    c.drag("Tremulant rate", 60.0, 0.0);
+    c.drag("Tremulant depth", -60.0, 0.0);
+    assert!(params.tremulant_rate.value() > 5.6);
+    assert!(params.tremulant_depth.value() < 0.45);
+    assert!(
+        c.says("Wind")
+            .starts_with("Tuning: Werckmeister III on G, A 415.0 Hz"),
+        "{}",
+        c.says("Wind")
+    );
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-tuning@1x.png"), png).unwrap();
+}
+
+#[test]
+fn learn_binds_a_midi_control_to_a_stop_pressed_on_the_console() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Sound");
+    c.click(Role::Button, "Page MIDI");
+    assert!(
+        c.says("Wind").ends_with("no control learned"),
+        "{}",
+        c.says("Wind")
+    );
+    c.click(Role::Button, "Learn");
+    let params = c.h.plugin_mut().params();
+    let bourdon =
+        c.h.plugin_mut()
+            .organ()
+            .stops()
+            .iter()
+            .position(|s| s.name == "Bourdon 16")
+            .expect("a Bourdon 16");
+    let before = params.stop_mask();
+    c.click(Role::Switch, "Grand-Orgue Bourdon 16");
+    assert_eq!(
+        params.stop_mask(),
+        before,
+        "learning, the stop does not move"
+    );
+    assert!(
+        c.says("Wind")
+            .contains("waiting for a control for Bourdon 16"),
+        "{}",
+        c.says("Wind")
+    );
+
+    // The organist moves controller 20 on channel 1.
+    let cc = |value| MidiMessage::ControlChange {
+        channel: 0,
+        controller: 20,
+        value,
+    };
+    let at = c.h.position();
+    c.h.schedule(at, EventKind::Midi(cc(127)));
+    c.settle();
+    let said = c.says("Wind");
+    assert!(
+        said.contains("CC 20 \u{b7} ch 1 now plays Bourdon 16"),
+        "{said}"
+    );
+    assert!(said.contains("CC 20 \u{b7} ch 1 to Bourdon 16"), "{said}");
+
+    // Learn off, the controller draws the stop.
+    c.click(Role::Button, "Learn");
+    let at = c.h.position();
+    c.h.schedule(at, EventKind::Midi(cc(0)));
+    c.h.schedule(at + 10, EventKind::Midi(cc(127)));
+    c.settle();
+    assert_ne!(params.stop_mask() & (1 << bourdon), before & (1 << bourdon));
+
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-midi@1x.png"), png).unwrap();
+
+    c.click(Role::Button, "Forget CC 20 \u{b7} ch 1");
+    assert!(
+        c.says("Wind").ends_with("no control learned"),
+        "{}",
+        c.says("Wind")
+    );
 }

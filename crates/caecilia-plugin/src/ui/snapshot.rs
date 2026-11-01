@@ -16,7 +16,7 @@ use super::Shared;
 use super::demos::{self, TOUR_ROW, Tour};
 use super::library::{Entry, organs_folder, scan};
 use super::look::{DAY, Look, NIGHT};
-use super::sound::SoundView;
+use super::sound::{self as sound_page, LearnView, SoundView};
 use crate::console::GENERALS;
 use crate::params::{KEY_NAMES, TEMPERAMENT_NAMES};
 use crate::telemetry::TELEMETRY_CHESTS;
@@ -394,8 +394,16 @@ pub(crate) struct Source {
     library: RefCell<Option<(Vec<Entry>, Option<String>)>>,
     /// Whether the demonstrations are open.
     demos: Cell<bool>,
-    /// Whether the sound panel is open.
+    /// Whether the sound panel is open, and on which page.
     sound: Cell<bool>,
+    page: Cell<usize>,
+    /// Whether MIDI learn is on: a control pressed on the console waits for
+    /// a MIDI control rather than acting.
+    learning: Cell<bool>,
+    /// What learning waits to bind, as it was last frame.
+    waiting: Cell<Option<crate::console::Action>>,
+    /// What learning bound last, or why it could not.
+    learned: RefCell<Option<String>>,
     /// The tour of the stops, while it plays.
     tour: RefCell<Option<Tour>>,
     /// The registrations demonstrations drew, and what the history calls
@@ -421,6 +429,10 @@ impl Source {
             library: RefCell::new(None),
             demos: Cell::new(false),
             sound: Cell::new(false),
+            page: Cell::new(0),
+            learning: Cell::new(false),
+            waiting: Cell::new(None),
+            learned: RefCell::new(None),
             tour: RefCell::new(None),
             named: Rc::default(),
         })
@@ -444,6 +456,7 @@ impl Source {
     pub(crate) fn toggle_demos(&self) {
         self.demos.set(!self.demos.get());
         self.sound.set(false);
+        self.set_learning(false);
         *self.library.borrow_mut() = None;
         self.refresh();
     }
@@ -477,9 +490,91 @@ impl Source {
             .filter(|n| *n < TOUR_ROW)
     }
 
+    /// Turn the sound panel to page `n`; learning stops off the MIDI page.
+    pub(crate) fn sound_page(&self, n: usize) {
+        self.page.set(n);
+        if n != sound_page::MIDI {
+            self.set_learning(false);
+        }
+        self.refresh();
+    }
+
+    /// Turn MIDI learn on or off.
+    pub(crate) fn set_learning(&self, on: bool) {
+        if self.learning.get() || on {
+            self.shared.params.console.disarm();
+        }
+        self.learning.set(on);
+        self.waiting.set(None);
+        if on {
+            self.learned.borrow_mut().take();
+        }
+        self.refresh();
+    }
+
+    /// While learning, a control pressed on the console waits for the MIDI
+    /// control to bind to it, and does not act; returns whether it was
+    /// taken so.
+    pub(crate) fn learn(&self, action: crate::console::Action) -> bool {
+        if !self.learning.get() {
+            return false;
+        }
+        self.shared.params.console.arm(action);
+        self.waiting.set(Some(action));
+        self.learned.borrow_mut().take();
+        self.refresh();
+        true
+    }
+
+    /// Forget the `n`th learned control, or every one.
+    pub(crate) fn forget_controls(&self, n: Option<usize>) {
+        let console = &self.shared.params.console;
+        match n {
+            None => console.clear_bindings(),
+            Some(n) => {
+                if let Some(b) = console.bindings().get(n) {
+                    console.unbind(b.source);
+                }
+            }
+        }
+        self.refresh();
+    }
+
+    /// What MIDI learn shows, noticing a binding made since last frame.
+    fn learn_view(&self, organ: &Organ) -> LearnView {
+        let console = &self.shared.params.console;
+        let armed = console.armed();
+        if let (Some(action), None) = (self.waiting.get(), armed) {
+            // The audio thread took a control for it.
+            let name = sound_page::action_name(organ, action);
+            let bound = console.bindings().into_iter().find(|b| b.action == action);
+            *self.learned.borrow_mut() = Some(match bound {
+                Some(b) => format!("{} now plays {name}", sound_page::control_name(b.source)),
+                None => format!("Every control slot is taken; {name} was not bound"),
+            });
+            self.waiting.set(None);
+        }
+        LearnView {
+            on: self.learning.get(),
+            waiting_for: armed.map(|a| sound_page::action_name(organ, a)),
+            last: self.learned.borrow().clone(),
+            bindings: console
+                .bindings()
+                .into_iter()
+                .map(|b| {
+                    (
+                        sound_page::control_name(b.source),
+                        sound_page::action_name(organ, b.action),
+                    )
+                })
+                .collect(),
+        }
+    }
+
     /// Open the sound panel, or close it; the others close.
     pub(crate) fn toggle_sound(&self) {
         self.sound.set(!self.sound.get());
+        self.set_learning(false);
         self.demos.set(false);
         *self.library.borrow_mut() = None;
         self.refresh();
@@ -489,6 +584,7 @@ impl Source {
     pub(crate) fn toggle_library(&self) {
         self.demos.set(false);
         self.sound.set(false);
+        self.set_learning(false);
         let open = self.library_open();
         *self.library.borrow_mut() = if open {
             None
@@ -708,7 +804,10 @@ impl Source {
             }),
         });
 
-        let sound = self.sound.get().then(|| SoundView::read(&self.shared));
+        let sound = self
+            .sound
+            .get()
+            .then(|| SoundView::read(self, self.page.get(), self.learn_view(organ)));
 
         Snapshot {
             library,

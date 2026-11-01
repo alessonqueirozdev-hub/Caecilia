@@ -278,7 +278,15 @@ fn wind(source: &Rc<Source>) -> View {
     })
     .input(move |cx, event, at, size, snapshot| {
         if snapshot.sound.is_some() || drag.is_some() {
-            return sound::input(cx, event, at, size, here.shared(), &mut drag);
+            return sound::input(
+                cx,
+                event,
+                at,
+                size,
+                &here,
+                snapshot.sound.as_ref(),
+                &mut drag,
+            );
         }
         if !matches!(event, Event::PointerDown { .. }) {
             return Handled::No;
