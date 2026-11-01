@@ -659,6 +659,63 @@ fn a_purge_that_fails_keeps_the_record_to_try_again() {
 }
 
 #[test]
+fn an_update_run_by_the_old_uninstaller_to_another_folder_empties_the_old_one() {
+    let scratch = Scratch::new("moved-running");
+    let places = places(&scratch.0);
+    let files = payload("2.0.0", false);
+    let old_plan = Plan::new(
+        &files.manifest,
+        &Choices::defaults(Scope::User),
+        &places,
+        14,
+    );
+    // The uninstaller is a real program, and it is what runs the update.
+    let me = fs::read(std::env::current_exe().unwrap()).unwrap();
+    let mut sys = MemorySystem::default();
+    let mut log = Log::in_memory();
+    let old = Engine {
+        sys: &mut sys,
+        log: &mut log,
+        cancelled: &|| false,
+    }
+    .install(&old_plan, &files, &me, None)
+    .unwrap()
+    .record;
+    let mut running = std::process::Command::new(&old_plan.uninstaller)
+        .args(["--ignored", "--exact", "sleeper", "--test-threads=1"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let mut choices = Choices::defaults(Scope::User);
+    choices.program_dir = Some(scratch.0.join("Elsewhere").join("Caecilia"));
+    let new_files = payload("2.0.1", false);
+    let new_plan = Plan::new(&new_files.manifest, &choices, &places, 14);
+    let outcome = Engine {
+        sys: &mut sys,
+        log: &mut log,
+        cancelled: &|| false,
+    }
+    .install(&new_plan, &new_files, &me, Some(&old));
+    running.kill().unwrap();
+    running.wait().unwrap();
+    let outcome = outcome.unwrap();
+    assert!(outcome.kept.is_empty(), "{:?}", outcome.kept);
+    assert!(!old_plan.program_dir.exists(), "the old folder went");
+    // What the temporary folder's cleaning would take.
+    let moved =
+        std::env::temp_dir().join(format!("uninstall.exe.{}.caecilia-old", std::process::id()));
+    for _ in 0..100 {
+        if fs::remove_file(&moved).is_ok() || !moved.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+#[test]
 fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     let scratch = Scratch::new("inuse");
     let places = places(&scratch.0);

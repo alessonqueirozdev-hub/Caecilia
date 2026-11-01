@@ -129,7 +129,7 @@ fn parts(path: &Path) -> Vec<String> {
 }
 
 /// Paths compared as Windows does.
-fn same_path(a: &Path, b: &Path) -> bool {
+pub fn same_path(a: &Path, b: &Path) -> bool {
     parts(a) == parts(b)
 }
 
@@ -606,7 +606,9 @@ impl Engine<'_> {
             }
             match hash_of(&f.path) {
                 Ok(Some(h)) if h == f.sha256 => {
-                    let (left, at_restart) = delete_or_defer(&f.path, self.sys, self.log);
+                    // In use, moved out, so its folder can go (the old
+                    // uninstaller itself, when it runs the update).
+                    let (left, at_restart) = remove_for_good(&f.path, self.sys, self.log);
                     dropped.restart |= at_restart;
                     match left {
                         None => self.log.line("removed", f.path.display()),

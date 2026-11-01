@@ -136,8 +136,18 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
         *dir = crate::engine::whole(dir);
     }
     if let Some((_, installed)) = &unreadable {
-        if choices.program_dir.is_none() {
-            choices.program_dir = Some(installed.location.clone());
+        // Over it means in its folder: elsewhere, its files would be left
+        // with no record and no entry to remove them.
+        let dir = choices
+            .program_dir
+            .get_or_insert_with(|| installed.location.clone());
+        if !crate::engine::same_path(dir, &installed.location) {
+            log.error(format_args!(
+                "the installation whose record is unreadable is in {}: /FORCE repairs it there, not in {}",
+                installed.location.display(),
+                dir.display()
+            ));
+            return exit::USAGE;
         }
     }
     let previous = found.map(|f| f.record);
@@ -336,7 +346,18 @@ mod tests {
                 "{args:?}"
             );
         }
-        // Over it, when asked.
+        // Over it, when asked, and only there.
+        let elsewhere = format!("/DIR={}", base.join("Elsewhere").display());
+        assert_eq!(
+            install(
+                &parse(&["/S", "/FORCE", &elsewhere]),
+                &v1,
+                &mut host,
+                &mut log
+            ),
+            exit::USAGE
+        );
+        assert!(!base.join("Elsewhere").exists());
         assert_eq!(
             install(&parse(&["/S", "/FORCE"]), &v1, &mut host, &mut log),
             exit::OK
