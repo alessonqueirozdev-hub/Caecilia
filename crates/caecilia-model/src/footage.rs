@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Exact-rational footage.
 //!
 //! A rank's footage is kept as a reduced fraction of feet, never as a float:

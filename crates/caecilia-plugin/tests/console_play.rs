@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Playing the console: drawstops, pistons, shoes, keys and pedals, through
 //! the editor opened headless as a host opens it.
 

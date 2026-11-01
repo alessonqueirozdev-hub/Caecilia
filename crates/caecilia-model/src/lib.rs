@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The organ: what it is, before anything sounds.
 //!
 //! Identities, exact-rational footages, the compiled [`Organ`] (stops, ranks,

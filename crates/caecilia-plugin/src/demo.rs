@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The demonstrations: short pieces the instrument plays on itself, so an
 //! organ can be heard without a keyboard.
 //!

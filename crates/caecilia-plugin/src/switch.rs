@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Changing the organ while the instrument plays.
 //!
 //! An organ is read and its engine built off the audio thread, then handed

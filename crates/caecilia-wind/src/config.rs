@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! What a wind model is built from.
 
 use caecilia_model::{Calibration, Footage, Organ, RankId, WindchestId};

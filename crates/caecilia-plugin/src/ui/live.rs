@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! A part of the console drawn from the frame's reading, and drawn again
 //! only when what it shows has changed; it may take the pointer, and name
 //! its controls to assistive technology.

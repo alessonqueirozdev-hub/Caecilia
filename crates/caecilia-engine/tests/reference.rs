@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The engine against what 1.x sounded like.
 //!
-//! The same instrument, driven the same way `tools/reference` drove the C++,
+//! The same instrument, driven the same way 1.x's `tools/reference` drove the C++ (tag `v1-cpp-final`),
 //! measured with the same analysis. The partials drift on a deterministic walk
 //! and the two math libraries round a few transcendentals differently, so the
 //! port is held to the measured figures within the tolerances stated here --

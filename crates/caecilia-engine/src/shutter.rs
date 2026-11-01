@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The swell box's low-pass.
 
 /// A one-pole low-pass, `y = b0 x - a1 y[-1]`, coefficients from the exact

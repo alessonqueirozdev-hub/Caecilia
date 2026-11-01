@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The organ file: an instrument as a JSON document.
 //!
 //! The format is 1.x's (`docs/ORGAN_FILE.md`): 1.x documents load as they

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The console's last part: the organ library, the console laying itself
 //! out again for another organ, the host's names following it, and the day's
 //! light.

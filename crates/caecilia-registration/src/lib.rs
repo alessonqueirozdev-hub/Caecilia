@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The queryable registration.
 //!
 //! Stops selected by what they are (`family:reed & pitch:8 & div:swell`),

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The organ file: 1.x's documents, 2.0's round trip, and the errors.
 
 use caecilia_model::{

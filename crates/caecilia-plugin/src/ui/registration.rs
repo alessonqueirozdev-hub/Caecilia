@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The registration panel: the selector line, the history, and why.
 //!
 //! The selector line takes the registration grammar (`div:recit &

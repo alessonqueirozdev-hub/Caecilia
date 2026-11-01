@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! One rank's voicing: the calibrated spectrum and speech a voice is built from.
 
 use crate::calibration::Calibration;

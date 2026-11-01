@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The demonstrations as the console plays them: each piece's parts given
 //! to the organ playing, its stops drawn, and the tour that plays every stop
 //! alone.

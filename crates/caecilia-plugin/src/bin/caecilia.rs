@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Caecilia standalone: the organ on the sound card, played from every
 //! connected MIDI keyboard and from its console, in a window of its own.
 //!

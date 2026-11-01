@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Selectors, commands, history, explain, port and the factory generals.
 
 use std::sync::Arc;

@@ -15,33 +15,29 @@ Fixes #
 <!-- Tests added, manual checks, hosts tried, sample rates and buffer sizes.
      For audio changes, say what you listened for and on what. -->
 
-- [ ] `ctest --test-dir build-core --output-on-failure` passes
-- [ ] Tested at more than one buffer size
-- [ ] Tested at more than one sample rate
+- [ ] `cargo test --profile caecilia --workspace` passes
+- [ ] `cargo fmt --all` and `cargo clippy --workspace --all-targets -- -D warnings` are clean
+- [ ] Tested at more than one buffer size and sample rate
 
 ## Real-time safety
 
 <!-- Delete this section if the change touches nothing reachable from
-     AudioEngine::processBlock. -->
+     Plugin::process. -->
 
-- [ ] No allocation, lock, logging, I/O or exception added to an audio path
-- [ ] New audio-path functions are marked `noexcept`
-- [ ] Any new memory is reserved in `prepare()`
-- [ ] Expensive transcendentals (`pow`, `exp`, `log`, `sin`) are not called
-      per-sample or per-note on the audio thread — or the cost is justified below
+- [ ] No allocation, lock, wait, I/O or logging added to the audio thread
+- [ ] Any new memory is reserved in `prepare`
+- [ ] A test proves it (see `crates/caecilia-plugin/tests/realtime.rs`)
 
-## Layering and licensing
+## Licensing
 
-- [ ] `caecilia_core` still builds with `-DCAECILIA_CORE_ONLY=ON` (no JUCE)
-- [ ] No JUCE type crosses the `AudioEngine` seam
-- [ ] No GPL/LGPL/AGPL source was copied into this repository
+- [ ] No GPL/LGPL/AGPL/MPL source was copied or read to write this
 - [ ] New files carry the two-line Apache-2.0 SPDX header
 
 ## Host-visible changes
 
-<!-- Delete if none. Parameter IDs and the saved-state format are a public
-     contract: changing them breaks users' existing projects. -->
+<!-- Delete if none. Parameter ids and the saved state are a public contract:
+     changing them breaks users' existing projects. -->
 
-- [ ] Parameter IDs unchanged (or a migration path is included)
-- [ ] Saved-state format unchanged (or versioned with a migration path)
-- [ ] Reported latency (`setLatencySamples`) still matches the real delay
+- [ ] Parameter ids unchanged (or a migration path is included)
+- [ ] Saved state unchanged (or versioned with a migration path)
+- [ ] Reported latency still matches the real delay

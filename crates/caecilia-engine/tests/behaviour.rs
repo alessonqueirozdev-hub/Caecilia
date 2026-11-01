@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! What the engine does with keys, stops, couplers, pedals and boxes.
 
 use caecilia_engine::{Command, OrganEngine, Timed};

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Loads built Caecilia bundles the way a host does and plays a chord.
 //!
 //!   cargo run --profile caecilia-release -p caecilia-plugin --example host_check -- \

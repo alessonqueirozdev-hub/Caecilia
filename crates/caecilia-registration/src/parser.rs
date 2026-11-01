@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The selector grammar: one text form shared by the console, MIDI learn,
 //! OSC and JSON-RPC, so a stop is selected the same way everywhere.
 //!

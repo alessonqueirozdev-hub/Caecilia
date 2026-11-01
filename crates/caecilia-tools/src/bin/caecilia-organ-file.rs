@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Organ files from the command line.
 //!
 //!   caecilia-organ-file --export            the demonstration organ, as a file to start from

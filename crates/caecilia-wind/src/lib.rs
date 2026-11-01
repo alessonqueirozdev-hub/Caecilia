@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The wind supply, as an audio-rate control signal rather than an LFO.
 //!
 //! A reservoir integrates its pressure once per block under the flow the

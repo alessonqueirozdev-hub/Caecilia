@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Temperaments, pitch and Scala, through a host and the controller.
 
 use caecilia_plugin::{Caecilia, TEMPERAMENT_NAMES, stop_param_id};

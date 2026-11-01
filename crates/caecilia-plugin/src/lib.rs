@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Caecilia as a plugin: CLAP and VST3 from one library, on Manguebyte.
 //!
 //! MIDI channels play divisions (the organ's manuals say which; a channel

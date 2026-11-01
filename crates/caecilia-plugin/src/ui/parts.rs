@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The console's parts that show rather than play, and the whole laid out
 //! as the approved mockup has it.
 

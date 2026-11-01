@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Proves the engine never touches the heap while it plays.
 //!
 //! The global allocator is replaced by one that counts, and the test fails if

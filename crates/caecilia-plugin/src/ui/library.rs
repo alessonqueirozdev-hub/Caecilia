@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The organs the console offers: the demonstration organ, and every
 //! `.organ.json` in the organs folder and beside the organ playing.
 //!

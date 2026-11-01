@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The parts of the console the organist plays: the jambs, the key slip,
 //! the shoes, the pedalboard and its toe studs, the status bar's buttons.
 //!

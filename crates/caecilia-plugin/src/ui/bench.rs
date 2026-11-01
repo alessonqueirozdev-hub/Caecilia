@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The manuals and the key slip between them, as the organist sees them
 //! from the bench: each manual with its plate and its carved cheeks, the
 //! key slip above the lowest. Drawn by the console, not the toolkit's

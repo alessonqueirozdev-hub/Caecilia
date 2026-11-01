@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The plugin, played the way a host plays it.
 
 use caecilia_plugin::{Caecilia, stop_param_id};

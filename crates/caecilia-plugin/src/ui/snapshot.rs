@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! What the console shows, read once a frame: the parameters, the
 //! controller's history, the audio thread's telemetry. Every part draws
 //! from the same reading, so they never disagree.

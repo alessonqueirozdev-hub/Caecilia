@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The sound panel on the music desk, in three pages: the sound (the level,
 //! the reverb and its room, the master EQ), the tuning (temperament, its
 //! key, the pitch of A, the tremulant), and MIDI learn. Each control moves

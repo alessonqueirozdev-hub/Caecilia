@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! What a tutti costs, per calibration. Ignored by default (timing is not a
 //! pass/fail fact on a shared machine); run with
 //! `cargo test --profile caecilia-release -p caecilia-engine --test cost -- --ignored --nocapture`.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The timbre a voice is seeded from.
 
 /// One partial of a rank's steady spectrum.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The demonstrations: the organ heard without a keyboard. A piece draws
 //! its stops, plays on its own (the keys lighting as they go), ends by
 //! itself or when pressed again; the tour plays every stop alone.

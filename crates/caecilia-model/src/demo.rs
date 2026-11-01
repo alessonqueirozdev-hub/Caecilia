@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The Caecilia demonstration organ: three divisions, 26 stops, one rank per
 //! stop, one chest per division, three couplers.
 

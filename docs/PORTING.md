@@ -7,8 +7,8 @@ Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 Caecilia 1.x is a JUCE/C++20 instrument. Caecilia 2.0 is the same instrument
 rewritten in Rust on the [Manguebyte Audio Framework](https://github.com/alessonqueirozdev-hub/manguebyte),
-developed on the `rust-2.0` branch of this repository and merged as 2.0 when it
-is ready. The C++ stays in the history.
+developed on the `rust-2.0` branch of this repository and now on `main`. The
+C++ stays in the history, at the tag `v1-cpp-final`.
 
 The goal is **not parity**. 1.x is the reference that proves the port has not
 lost anything; 2.0 has to be clearly better than 1.x and than the organs on the
@@ -20,11 +20,11 @@ solve.
 
 | Decision | Choice |
 |---|---|
-| Where | This repository, branch `rust-2.0`. Nothing reaches `main` until the owner asks. |
+| Where | This repository: developed on `rust-2.0`, made `main` at the owner's request (November 2026). |
 | Licence | Apache-2.0, unchanged. Without JUCE the shipped binary is no longer AGPL. Manguebyte is MIT OR Apache-2.0. |
 | Framework dependency | By path while both are developed side by side (`C:/manguebyte/crates/...` in `[workspace.dependencies]`), exactly as Parabolic does; switched to `git` + fixed `rev` before release so a clean checkout builds. |
 | Toolchain | Edition 2024, `rust-version = "1.85"` (the framework's). No crate that is not already in the local cargo cache is added without the owner's permission. |
-| The C++ tree | Stays in the branch while the port is under way: it builds JUCE-free (`CAECILIA_CORE_ONLY`) and `tools/reference` regenerates the reference data from it. It is deleted in one commit once 2.0 passes every reference. |
+| The C++ tree | Removed in one commit at the owner's request (November 2026): the repository is Rust only. 1.x is kept at the tag `v1-cpp-final`; the reference data it wrote is frozen in `reference/cpp-1.x`, and regenerating it means building that tag. |
 | Approach | Port, not translate. Use what Manguebyte has; write in Caecilia only what is organ-specific; ask the framework's owner for what is generic and missing (section 6). |
 
 ### Clean-room rules
@@ -77,8 +77,8 @@ reverb, EQ and limiter, which have their own tests — is what
 
 ## 3. Reference data
 
-`tools/reference/Main.cpp` (`caecilia-reference`, JUCE-free) drives the 1.x
-instrument down the plugin's path and writes `reference/cpp-1.x/reference.json`:
+`tools/reference/Main.cpp` (`caecilia-reference`, JUCE-free, at the tag
+`v1-cpp-final`) drove the 1.x instrument down the plugin's path and writes `reference/cpp-1.x/reference.json`:
 
 - **`organ`** — every windchest, division and stop of the demo organ, with each
   stop's 8'-referenced spectrum (ratio, rank base ratio, level, wind
@@ -97,7 +97,8 @@ instrument down the plugin's path and writes `reference/cpp-1.x/reference.json`:
   envelope it puts on the note.
 
 The partials drift on a deterministic random walk, so the tests compare these
-figures within stated tolerances, not samples. To regenerate:
+figures within stated tolerances, not samples. To regenerate, from a checkout
+of the tag `v1-cpp-final`:
 
 ```sh
 cmake -S . -B <build> -DCAECILIA_CORE_ONLY=ON -DCAECILIA_BUILD_TESTS=OFF -DCAECILIA_BUILD_TOOLS=ON

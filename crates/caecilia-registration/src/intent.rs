@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! A registration's meaning, carried across organs.
 
 use caecilia_model::{ChorusRole, Organ};

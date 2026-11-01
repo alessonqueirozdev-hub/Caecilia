@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The demo organ and its voicing, against what 1.x built.
 //!
-//! `reference/cpp-1.x/reference.json` is written by `tools/reference` from the
+//! `reference/cpp-1.x/reference.json` was written by 1.x's `tools/reference` (tag `v1-cpp-final`) from the
 //! C++ instrument. The voicing is deterministic, so this is not a tolerance on
 //! a sound but agreement on data: identical seeds, identical structure, and
 //! floats equal to the last few ulps (the two math libraries may round a
@@ -16,7 +19,7 @@ fn reference() -> Value {
         env!("CARGO_MANIFEST_DIR"),
         "/../../reference/cpp-1.x/reference.json"
     );
-    let text = std::fs::read_to_string(path).expect("reference.json (run tools/reference)");
+    let text = std::fs::read_to_string(path).expect("reference/cpp-1.x/reference.json");
     serde_json::from_str(&text).expect("valid JSON")
 }
 

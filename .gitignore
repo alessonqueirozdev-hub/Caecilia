@@ -1,75 +1,32 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
-# ---- Build output ---------------------------------------------------------
-/build/
-/build-*/
-/out/
-/cmake-build-*/
-*.o
-*.obj
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-*.exe
-*.pdb
-*.ilk
-*.exp
+# ---- Rust (the shared build folder normally lives outside the tree) --------
+/target/
 
-# ---- CMake artifacts ------------------------------------------------------
-CMakeCache.txt
-CMakeFiles/
-CMakeUserPresets.json
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-Testing/
-
-# ---- Fetched dependencies (JUCE, Catch2 via FetchContent) -----------------
-/_deps/
-**/_deps/
-/deps/
-/external/JUCE/
-/external/Catch2/
-
-# ---- Plugin build products ------------------------------------------------
+# ---- Plugin build products -------------------------------------------------
+*.clap
 *.vst3
 *.component
-*.aaxplugin
-*.app
+*.exe
+*.dll
+*.pdb
 
-# ---- IDE / editor ---------------------------------------------------------
+# ---- IDE / editor ----------------------------------------------------------
 .vs/
 .vscode/
 .idea/
-*.user
-*.suo
-*.ncb
-*.sln
-*.vcxproj*
-.cache/
 *.swp
 *~
 
-# ---- OS junk --------------------------------------------------------------
+# ---- OS junk ---------------------------------------------------------------
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ---- Local / secret -------------------------------------------------------
+# ---- Local / secret --------------------------------------------------------
 /local/
 *.local
 settings.local.json
 dist/
 scratch-*
-
-# Local audio render artifacts (dev harnesses)
-tools/dev/*.wav
-
-# WebView2 SDK, fetched by NuGet for the Windows plugin build (see CONTRIBUTING.md)
-packages/
-
-# Rust (the shared build folder normally lives outside the tree)
-/target/

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! What the audio thread tells the console: the wind in each chest, the
 //! keys held, the voices sounding, how much of the block the render took.
 //!

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The wind of one block, frozen, for voices rendering on other threads.
 
 use caecilia_model::WindchestId;

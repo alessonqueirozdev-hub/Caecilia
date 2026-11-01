@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Procedural spectra per tonal family.
 //!
 //! Each recipe is a rank's steady spectrum at its own pitch (ratio 1 is the

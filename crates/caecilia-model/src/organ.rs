@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The compiled instrument.
 //!
 //! Every element's id is its index in the organ's arrays. The organ is built

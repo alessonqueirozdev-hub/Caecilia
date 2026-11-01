@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The console's materials: wood, ivory, ebony, brass, in the night's
 //! light and the day's, and the toolkit's theme dressed in them.
 

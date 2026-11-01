@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The registration as the audio thread sees it.
 
 use caecilia_model::{CouplerId, DivisionId, Organ, RankVoicing, StopId, WindchestId};

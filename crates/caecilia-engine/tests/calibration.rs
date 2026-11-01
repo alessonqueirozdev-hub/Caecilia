@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! What 2.0 does better than 1.x, and by how much.
 //!
 //! Every test renders the same case under `Calibration::OneX` (1.x, reproduced

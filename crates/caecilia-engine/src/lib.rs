@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The organ engine.
 //!
 //! A key is ONE event; the engine expands it into one voice per engaged rank of

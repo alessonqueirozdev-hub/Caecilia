@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The console: Caecilia's editor, drawn with `manguebyte-ui`.
 //!
 //! A French console as the approved mockup has it

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The sound after the pipes: the room the organ stands in, and the master
 //! EQ that voices the whole instrument, as 1.x had them.
 

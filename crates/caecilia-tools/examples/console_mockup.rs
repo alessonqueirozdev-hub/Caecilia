@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Caecilia's console as a picture: the mockup to agree on before the
 //! console itself is written. Drawn headless with the toolkit the console
 //! will be written in, from the demonstration organ as it is.

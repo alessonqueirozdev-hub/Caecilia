@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Every change to a registration, as a value.
 
 use caecilia_model::{CouplerId, DivisionId, Organ, StopId, TonalFamily};

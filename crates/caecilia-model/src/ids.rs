@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! Identities and the semantic vocabulary every crate speaks.
 //!
 //! Every id is a dense index into the organ's own arrays, so a lookup is an

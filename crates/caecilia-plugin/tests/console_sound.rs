@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The sound panel: the level, the reverb and its room, the master EQ, each
 //! moved from the console as a gesture the host records.
 

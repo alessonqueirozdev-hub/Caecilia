@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! The console's memory: general pistons and MIDI-learned controls.
 //!
 //! Both live beside the host parameters, in atomics, so the audio thread

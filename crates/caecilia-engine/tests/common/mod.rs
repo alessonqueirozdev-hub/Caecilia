@@ -1,4 +1,7 @@
-//! What `tools/reference` measures, measured the same way.
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
+//! What 1.x's `tools/reference` measured (tag `v1-cpp-final`), measured the same way.
 
 #![allow(dead_code)]
 

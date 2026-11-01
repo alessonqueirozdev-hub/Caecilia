@@ -13,10 +13,9 @@ CLAP, VST3 and a standalone application.**
 > Status: **2.0 alpha.** Caecilia 2.0 is the instrument rewritten in Rust on the
 > [Manguebyte Audio Framework](https://github.com/alessonqueirozdev-hub/manguebyte):
 > no JUCE, no WebView, no JavaScript. It builds and plays on Windows as CLAP,
-> VST3 and a standalone application. The 1.x C++/JUCE sources still sit in
-> `src/`, `tests/` and `tools/` while the port is checked against them; they go
-> in one commit once 2.0 passes every reference (see
-> [docs/PORTING.md](docs/PORTING.md)).
+> VST3 and a standalone application. The 1.x C++/JUCE instrument it replaces
+> is kept at the tag [`v1-cpp-final`](https://github.com/alessonqueirozdev-hub/Caecilia/tree/v1-cpp-final);
+> what it measured is frozen in `reference/cpp-1.x`, which 2.0 is tested against.
 
 ## What it is
 
@@ -70,10 +69,10 @@ by side. Check Manguebyte out at `C:/manguebyte` (the path is set in
 
 ```bash
 # Every test
-cargo test --profile caecilia
+cargo test --profile caecilia --workspace
 
-# The CLAP and VST3 bundles (Windows)
-powershell -ExecutionPolicy Bypass -File scripts/bundle-windows.ps1
+# The CLAP and VST3 bundles, with Manguebyte's bundler
+cargo run --release --manifest-path C:/manguebyte/crates/cargo-mangue/Cargo.toml --     mangue bundle -p caecilia-plugin --profile caecilia-release --format clap,vst3
 
 # The standalone application: the console in its own window, on the sound card
 cargo run --profile caecilia-release -p caecilia-plugin --features standalone --bin caecilia

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
 //! How the console's parts are drawn: wood, plates, drawstops, tablets,
 //! pistons, gauges, shoes. Plain functions of a scene, so the widgets that
 //! use them stay about state and input.
