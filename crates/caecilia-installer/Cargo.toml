@@ -14,8 +14,8 @@ name = "caecilia-setup"
 path = "src/main.rs"
 
 [[bin]]
-name = "caecilia-pack"
-path = "src/bin/caecilia-pack.rs"
+name = "caecilia-dist"
+path = "src/bin/caecilia-dist.rs"
 
 [dependencies]
 serde_json.workspace = true

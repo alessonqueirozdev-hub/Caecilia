@@ -4,7 +4,7 @@
 # Builds Caecilia 2.0 on Windows: formatting, clippy, every test, the CLAP
 # and VST3 bundles (made by Manguebyte's own `cargo mangue`) put through a
 # host, and the standalone application; uploads the bundles and the
-# application.
+# application; builds the installer (caecilia-dist) and uploads it too.
 #
 # Caecilia depends on Manguebyte by path while both are developed side by
 # side (`C:/manguebyte/crates/...` in Cargo.toml), so the job checks the
@@ -55,6 +55,9 @@ jobs:
       - name: Standalone application
         run: cargo build --profile caecilia-release -p caecilia-plugin --features standalone --bin caecilia
 
+      - name: Installer
+        run: cargo run --profile caecilia-release -p caecilia-installer --bin caecilia-dist -- build --target-dir C:\manguebyte\target
+
       - uses: actions/upload-artifact@v4
         with:
           name: Caecilia-windows
@@ -62,3 +65,4 @@ jobs:
             C:\manguebyte\target\bundled\Caecilia.clap
             C:\manguebyte\target\bundled\Caecilia.vst3
             C:\manguebyte\target\caecilia-release\caecilia.exe
+            C:\manguebyte\target\installer\Caecilia-Setup-*.exe

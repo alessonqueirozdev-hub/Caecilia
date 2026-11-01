@@ -41,9 +41,8 @@ mod windows_main {
     use caecilia_installer::job::{self, SelfLauncher};
     use caecilia_installer::log::{Log, stamp};
     use caecilia_installer::payload::Payload;
-    use caecilia_installer::record::Record;
+    use caecilia_installer::record::{RECORD, Record};
     use caecilia_installer::run::{self, Found, Host};
-    use caecilia_installer::system::System;
     use caecilia_installer::text::{Lang, fill};
     use caecilia_installer::ui::{self, Env, Facts, Wizard};
     use caecilia_installer::win::{self, WinSystem};
@@ -67,24 +66,21 @@ mod windows_main {
                 return exit::USAGE;
             }
         };
-        if args.mode == Mode::Uninstall && !args.relocated && !args.engine {
-            if let Some(code) = relocate(&args) {
-                return code;
-            }
+        let mut args = args;
+        if args.mode == Mode::Uninstall && args.dir.is_none() {
+            // The uninstaller removes the installation it sits in. It runs
+            // from there: the engine moves it out of the folder, which
+            // Windows allows of a running program, so the folder can go.
+            args.dir = std::env::current_exe()
+                .ok()
+                .and_then(|me| me.parent().map(Path::to_owned))
+                .filter(|dir| dir.join(RECORD).is_file());
         }
-        let code = if args.engine || args.silent {
+        if args.engine || args.silent {
             headless(&args)
         } else {
             gui(&args)
-        };
-        if args.relocated {
-            // The copy in the temporary folder goes when Windows restarts,
-            // if this is an administrator; else the folder's cleaning does.
-            if let Ok(me) = std::env::current_exe() {
-                WinSystem.delete_at_restart(&me);
-            }
         }
-        code
     }
 
     fn lang(args: &Args) -> Lang {
@@ -94,32 +90,6 @@ mod windows_main {
 
     fn product() -> String {
         Payload::parse(PAYLOAD).map_or_else(|_| "Caecilia".into(), |p| p.manifest.product)
-    }
-
-    /// The uninstaller cannot remove the folder it runs from: it runs again
-    /// from a copy in the temporary folder. `None` when that fails, and it
-    /// goes on from where it is.
-    fn relocate(args: &Args) -> Option<i32> {
-        let me = std::env::current_exe().ok()?;
-        let copy = std::env::temp_dir().join(format!(
-            "{}-Uninstall-{}.exe",
-            product(),
-            std::process::id()
-        ));
-        std::fs::copy(&me, &copy).ok()?;
-        let mut line: Vec<String> = std::env::args().skip(1).collect();
-        line.push("--relocated".into());
-        if args.dir.is_none() {
-            line.push("--dir".into());
-            line.push(me.parent()?.to_string_lossy().into_owned());
-        }
-        let mut child = Command::new(&copy).args(&line).spawn().ok()?;
-        if args.silent {
-            // Whoever runs the quiet uninstall waits for its result.
-            Some(child.wait().ok()?.code().unwrap_or(exit::FAILED))
-        } else {
-            Some(exit::OK)
-        }
     }
 
     fn headless(args: &Args) -> i32 {

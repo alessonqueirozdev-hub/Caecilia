@@ -257,13 +257,26 @@ fn delete_or_defer(path: &Path, sys: &mut dyn System, log: &mut Log) -> (Option<
             (None, true)
         }
         Err(e) => {
-            log.note(format_args!(
-                "{} is in use ({e}): deleted by the next run",
-                path.display()
-            ));
+            let by = if path.starts_with(std::env::temp_dir()) {
+                "left to the temporary folder's cleaning"
+            } else {
+                "deleted by the next run"
+            };
+            log.note(format_args!("{} is in use ({e}): {by}", path.display()));
             (Some(path.to_owned()), false)
         }
     }
+}
+
+/// Moves a file in use out of the way: into the temporary folder, which a
+/// running program's file can be renamed into on the same disk, else
+/// beside itself. Returns where it went.
+fn move_out(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let temp = std::env::temp_dir().join(format!("{name}.{}.caecilia-old", std::process::id()));
+    [temp, beside(path, ".caecilia-old")]
+        .into_iter()
+        .find(|to| fs::rename(path, to).is_ok())
 }
 
 /// Installs and removes, writing what it does to a log.
@@ -540,15 +553,20 @@ impl Engine<'_> {
                 Ok(Some(h)) if h == f.sha256 => {
                     let (left, at_restart) = match fs::remove_file(&f.path) {
                         Ok(()) => (None, false),
-                        // In use: moved aside so its folder can go, then
+                        // In use (the uninstaller itself, a plugin a DAW
+                        // has loaded): moved out, so its folder can go, then
                         // deleted when it can be.
-                        Err(_) => {
-                            let aside = beside(&f.path, ".caecilia-old");
-                            match fs::rename(&f.path, &aside) {
-                                Ok(()) => delete_or_defer(&aside, self.sys, self.log),
-                                Err(_) => (Some(f.path.clone()), false),
+                        Err(_) => match move_out(&f.path) {
+                            Some(aside) => {
+                                let (left, at_restart) =
+                                    delete_or_defer(&aside, self.sys, self.log);
+                                // In the temporary folder it is out of the
+                                // installation; its cleaning takes it.
+                                let temp = std::env::temp_dir();
+                                (left.filter(|p| !p.starts_with(&temp)), at_restart)
                             }
-                        }
+                            None => (Some(f.path.clone()), false),
+                        },
                     };
                     restart |= at_restart;
                     match left {

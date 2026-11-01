@@ -142,7 +142,10 @@ fn pad(v: &mut Vec<u8>) {
 }
 
 fn utf16z(s: &str) -> Vec<u8> {
-    s.encode_utf16().chain([0]).flat_map(u16::to_le_bytes).collect()
+    s.encode_utf16()
+        .chain([0])
+        .flat_map(u16::to_le_bytes)
+        .collect()
 }
 
 /// A node of a version resource: its key, its value and its children,
@@ -208,5 +211,11 @@ fn version_info(n: [u16; 4], version: &str) -> Vec<u8> {
     let translation: Vec<u8> = [LANG, 1200].iter().flat_map(|v| v.to_le_bytes()).collect();
     let var = node("Translation", &translation, 4, false, &[]);
     let var_info = node("VarFileInfo", &[], 0, true, &[var]);
-    node("VS_VERSION_INFO", &fixed, 52, false, &[string_info, var_info])
+    node(
+        "VS_VERSION_INFO",
+        &fixed,
+        52,
+        false,
+        &[string_info, var_info],
+    )
 }

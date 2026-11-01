@@ -404,9 +404,55 @@ fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     assert!(!outcome.record.leftovers[0].exists());
 }
 
-/// What the test above runs: a program that keeps running.
 #[test]
-#[ignore = "run by a_running_app_is_replaced_and_its_old_copy_cleared_later"]
+fn the_running_uninstaller_leaves_no_folder_behind() {
+    let scratch = Scratch::new("selfremove");
+    let places = places(&scratch.0);
+    let files = payload("2.0.0", false);
+    let plan = Plan::new(
+        &files.manifest,
+        &Choices::defaults(Scope::User),
+        &places,
+        14,
+    );
+    // The uninstaller is a real program: this test binary.
+    let me = fs::read(std::env::current_exe().unwrap()).unwrap();
+    let mut sys = MemorySystem::default();
+    let mut log = Log::in_memory();
+    let record = Engine {
+        sys: &mut sys,
+        log: &mut log,
+        cancelled: &|| false,
+    }
+    .install(&plan, &files, &me, None)
+    .unwrap()
+    .record;
+    let mut running = std::process::Command::new(&plan.uninstaller)
+        .args(["--ignored", "--exact", "sleeper", "--test-threads=1"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let gone = uninstall(&mut sys, &record, None);
+    running.kill().unwrap();
+    running.wait().unwrap();
+    assert!(gone.kept.is_empty(), "{:?}", gone.kept);
+    assert!(!plan.program_dir.exists(), "the folder went with it");
+    // What the temporary folder's cleaning would take.
+    let moved =
+        std::env::temp_dir().join(format!("uninstall.exe.{}.caecilia-old", std::process::id()));
+    for _ in 0..100 {
+        if fs::remove_file(&moved).is_ok() || !moved.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// What the tests above run: a program that keeps running.
+#[test]
+#[ignore = "run by the tests of programs in use"]
 fn sleeper() {
     std::thread::sleep(std::time::Duration::from_secs(30));
 }

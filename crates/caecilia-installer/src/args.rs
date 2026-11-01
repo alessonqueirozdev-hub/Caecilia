@@ -61,9 +61,6 @@ pub struct Args {
     pub purge: bool,
     /// The person's data folder to purge, as the window found it.
     pub purge_dir: Option<PathBuf>,
-    /// The uninstaller already runs from a copy, so it can remove its
-    /// folder.
-    pub relocated: bool,
 }
 
 impl Default for Args {
@@ -83,7 +80,6 @@ impl Default for Args {
             force: false,
             purge: false,
             purge_dir: None,
-            relocated: false,
         }
     }
 }
@@ -138,7 +134,6 @@ impl Args {
                     a.purge_dir = Some(PathBuf::from(value("a folder")?));
                 }
                 "uninstall" => a.mode = Mode::Uninstall,
-                "relocated" => a.relocated = true,
                 "engine" => {
                     a.engine = true;
                     a.mode = match value("install or uninstall")?.as_str() {

@@ -5,14 +5,25 @@ Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # Caecilia 2.0 — Windows Installer
 
-> Status: **approved and built** (`crates/caecilia-installer`, `scripts/build-installer.ps1`).
+> Status: **approved and built** (`crates/caecilia-installer`).
 > Screens: [`mockups/installer.html`](mockups/installer.html). Since the mockup was
 > approved: the window opens by day (light), speaks Spanish too, has a
 > **Licence** page to accept before anything installs, and credits the
 > Manguebyte Audio Framework.
-> Replaces the 1.x Inno Setup script (`installer/caecilia.iss` on `main`). No
-> Inno Setup, NSIS, WiX or MSI: one Rust program, `Caecilia-Setup-<version>-x64.exe`,
-> drawn with the same toolkit and materials as the console.
+>
+> Replaces 1.x's Inno Setup script (gone with the C++ tree). No Inno Setup,
+> NSIS, WiX or MSI, and no script in another language: one Rust program,
+> `Caecilia-Setup-<version>-x64.exe`, drawn with the same toolkit and materials
+> as the console, built by another, `caecilia-dist`:
+>
+> ```text
+> cargo run --profile caecilia-release -p caecilia-installer --bin caecilia-dist -- build
+>     [--target-dir C:/manguebyte/target] [--offline] [--sign <thumbprint>]
+> ```
+>
+> It builds the application, has `cargo mangue bundle` make the CLAP and VST3
+> bundles, packs the payload and builds the installer with it inside, as
+> `<target>/installer/Caecilia-Setup-<version>-x64.exe`.
 
 ## 1. What it installs
 
@@ -47,15 +58,15 @@ bundle.
    src/args.rs, log.rs, text.rs (en, pt, es), version.rs
    src/ui/           the wizard, on manguebyte-ui / manguebyte-window
    src/main.rs       caecilia-setup: GUI, /S, --uninstall, --engine …
-   src/bin/caecilia-pack.rs   builds the payload
+   src/bin/caecilia-dist.rs   build: app + bundles -> payload -> installer; pack
    build.rs          embeds the payload; writes the .res (manifest, icon, version)
- scripts/build-installer.ps1  app + bundles -> payload -> installer
 ```
 
 **Payload embedded in the exe, checked by hash.**
 
-1. `pack` collects the inputs (the release `caecilia.exe`, the two bundles from
-   `target/bundled/`, the demo organ, `LICENSE`, `NOTICE`, the icon) and writes
+1. `caecilia-dist pack` collects the inputs (the release `caecilia.exe`, the
+   two bundles `cargo mangue bundle` left in `target/bundled/`, the demo organ,
+   `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, the icon) and writes
    `caecilia.payload`: a small header, a JSON manifest, then the file blobs,
    **content-addressed**: each distinct file is stored once (the `.clap` and the
    VST3 `.vst3` binary are byte-identical today, so the plugin goes in once).
@@ -135,9 +146,12 @@ from it alone — nothing is removed that it did not install.
   shortcuts, the keys, then the folders it created **if empty**. A file the
   person changed (say, an edited demo organ) stays, and the last page says so.
   Organs the person added and `session.txt` stay unless they tick
-  *Also remove my organs and settings*. To remove its own folder it runs from a
-  copy in `%TEMP%`, which Windows deletes at the next restart when the removal
-  ran as an administrator (else it stays for the temporary folder's cleaning).
+  *Also remove my organs and settings*. It runs where it is, so its exit code
+  is the removal's: a file in use (the uninstaller itself, a plugin a DAW has
+  loaded) cannot be deleted but can be renamed, so it is moved into `%TEMP%`
+  on the same disk and its folder goes; Windows deletes it at the next restart
+  when the removal ran as an administrator, else the temporary folder's
+  cleaning does.
 
 ## 6. Silent mode
 
@@ -177,7 +191,7 @@ There is no certificate yet; the design keeps the place for one:
 3. Sign the installer exe (`signtool sign /fd SHA256 /tr <timestamp> /td SHA256`),
    then `uninstall.exe` is that same signed file.
 
-`scripts/build-installer.ps1 -Sign <thumbprint>` will do 1 and 3 when given a
+`caecilia-dist build --sign <thumbprint>` does 1 and 3 when given a
 certificate (Authenticode, ideally EV or Azure Trusted Signing for SmartScreen
 reputation). Unsigned, Windows shows *Unknown publisher* in the UAC prompt and
 SmartScreen may warn on download; nothing else changes.
