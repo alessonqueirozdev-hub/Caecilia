@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use caecilia_model::{Diagnostic, Organ, demo_organ};
 use caecilia_registration::{MASK_CAPACITY, Piston, factory_generals};
@@ -62,6 +63,8 @@ pub struct CaeciliaParams {
     /// The organ, and the way to change it; its file is saved with the
     /// session.
     pub organ: OrganSlot,
+    /// The console in the day's light rather than the night's.
+    day: AtomicBool,
 }
 
 /// The parameter id of stop `n`. Stable across versions: a host keys its
@@ -75,6 +78,25 @@ pub fn coupler_param_id(n: usize) -> String {
     format!("coupler-{n:02}")
 }
 
+/// What the host calls stop parameter `n` on `organ`.
+fn stop_name(organ: &Organ, n: usize) -> String {
+    match organ.stops().get(n) {
+        Some(s) => {
+            let division = organ.division(s.division).map_or("", |d| d.name.as_str());
+            format!("{division} {}", s.name)
+        }
+        None => format!("Stop {n:02} (unused)"),
+    }
+}
+
+/// What the host calls coupler parameter `n` on `organ`.
+fn coupler_name(organ: &Organ, n: usize) -> String {
+    organ
+        .couplers()
+        .get(n)
+        .map_or_else(|| format!("Coupler {n:02} (unused)"), |c| c.name.clone())
+}
+
 impl CaeciliaParams {
     /// The parameters for `organ` (read from `path`, if it was), drawn as it
     /// opens, and the audio thread's end of the organ slot.
@@ -82,22 +104,16 @@ impl CaeciliaParams {
         let opening = organ.default_opening_registration(organ.primary_manual());
         let stops = (0..MASK_CAPACITY)
             .map(|n| {
-                let (name, on) = match organ.stops().get(n) {
-                    Some(s) => {
-                        let division = organ.division(s.division).map_or("", |d| d.name.as_str());
-                        (format!("{division} {}", s.name), opening.contains(&s.id))
-                    }
-                    None => (format!("Stop {n:02} (unused)"), false),
-                };
-                BoolParam::new(&stop_param_id(n), &name, on)
+                let on = organ
+                    .stops()
+                    .get(n)
+                    .is_some_and(|s| opening.contains(&s.id));
+                BoolParam::new(&stop_param_id(n), &stop_name(&organ, n), on)
             })
             .collect();
         let couplers = (0..MAX_COUPLERS)
             .map(|n| {
-                let name = organ
-                    .couplers()
-                    .get(n)
-                    .map_or_else(|| format!("Coupler {n:02} (unused)"), |c| c.name.clone());
+                let name = coupler_name(&organ, n);
                 BoolParam::new(&coupler_param_id(n), &name, false)
             })
             .collect();
@@ -139,6 +155,7 @@ impl CaeciliaParams {
             couplers,
             console,
             organ,
+            day: AtomicBool::new(false),
         };
         (params, audio)
     }
@@ -179,7 +196,20 @@ impl CaeciliaParams {
         });
         let generals = ConsoleMemory::default();
         set_factory_generals(&generals, &organ);
+        let stop_names: Vec<String> = (0..self.stops.len())
+            .map(|n| stop_name(&organ, n))
+            .collect();
+        let coupler_names: Vec<String> = (0..self.couplers.len())
+            .map(|n| coupler_name(&organ, n))
+            .collect();
         self.organ.switch(organ, path, registration)?;
+        // The host's names follow the organ: the wrappers tell the host.
+        for (p, name) in self.stops.iter().zip(&stop_names) {
+            p.info().set_display_name(name);
+        }
+        for (p, name) in self.couplers.iter().zip(&coupler_names) {
+            p.info().set_display_name(name);
+        }
         for n in 0..GENERALS {
             let (stops, couplers) = generals.general(n).unwrap_or_default();
             self.console.set_general(n, stops, couplers);
@@ -211,6 +241,17 @@ impl CaeciliaParams {
         if let Err(e) = result {
             eprintln!("Caecilia: the session's organ {wanted} did not load: {e}");
         }
+    }
+
+    /// Whether the console is in the day's light.
+    pub fn console_day(&self) -> bool {
+        self.day.load(Ordering::Relaxed)
+    }
+
+    /// Put the console in the day's light, or the night's. Saved with the
+    /// session.
+    pub fn set_console_day(&self, day: bool) {
+        self.day.store(day, Ordering::Relaxed);
     }
 
     /// The drawn stops, bit `n` being stop `n`. Real-time safe.
@@ -271,6 +312,7 @@ impl ParamSet for CaeciliaParams {
             "organ",
             &path.map_or_else(String::new, |p| p.display().to_string()),
         );
+        section("console", if self.console_day() { "day" } else { "night" });
         section("generals", &self.console.generals_text());
         section("midi-learn", &self.console.bindings_text());
     }
@@ -279,6 +321,10 @@ impl ParamSet for CaeciliaParams {
         match name {
             "organ" => {
                 self.restore_organ(text);
+                true
+            }
+            "console" => {
+                self.set_console_day(text.trim() == "day");
                 true
             }
             "generals" => self.console.load_generals(text),

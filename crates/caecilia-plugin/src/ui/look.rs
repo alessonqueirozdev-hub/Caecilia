@@ -71,8 +71,7 @@ pub(crate) const NIGHT: Look = Look {
     wood_accent: Color::hex(0xE0AE55),
 };
 
-/// The day's light, which the console offers with its next part.
-#[allow(dead_code)]
+/// The day's light.
 pub(crate) const DAY: Look = Look {
     night: false,
     ground: Color::hex(0xEDE4D3),

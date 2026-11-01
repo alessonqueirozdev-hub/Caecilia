@@ -7,11 +7,9 @@ use std::rc::Rc;
 use manguebyte_gfx::{Point, Rect, Scene, Size, Transform};
 use manguebyte_ui::access::{AccessItem, AccessNode, Action, Actions, Role};
 use manguebyte_ui::{
-    AccessCx, Button, Event, EventCx, Handled, KeyboardState, MeasureCx, Modifiers, NoteEvent,
-    PaintCx, UpdateCx, Widget,
+    AccessCx, Button, Event, EventCx, Handled, MeasureCx, Modifiers, PaintCx, UpdateCx, Widget,
 };
 
-use super::actions;
 use super::snapshot::{Snapshot, Source};
 
 type Draw = dyn Fn(Size, &mut Scene, &Snapshot);
@@ -184,7 +182,12 @@ impl Widget for Live {
 
     fn update(&mut self, cx: &mut UpdateCx<'_>) {
         let snapshot = self.source.get(cx.now());
-        let key = (self.key)(&snapshot);
+        // Another organ or another light is always something to show.
+        let key = (self.key)(&snapshot)
+            ^ super::snapshot::hash_of(|h| {
+                use std::hash::Hash;
+                (Rc::as_ptr(&snapshot.layout) as usize, snapshot.look.night).hash(h);
+            });
         if self.seen != Some(key) {
             self.seen = Some(key);
             self.shown = Some(snapshot);
@@ -246,62 +249,5 @@ impl Widget for Live {
             cx.request_paint();
         }
         handled
-    }
-}
-
-/// Nothing to see: lights the keys held on each manual, sends the keys
-/// played on them to the organ, and keeps the frames coming so the wind
-/// moves.
-pub(crate) struct KeysPoller {
-    source: Rc<Source>,
-    keyboards: Vec<(KeyboardState, Option<usize>)>,
-    seen: Vec<u128>,
-}
-
-impl KeysPoller {
-    pub(crate) fn new(source: &Rc<Source>, keyboards: Vec<(KeyboardState, Option<usize>)>) -> Self {
-        let seen = vec![0; keyboards.len()];
-        Self {
-            source: Rc::clone(source),
-            keyboards,
-            seen,
-        }
-    }
-}
-
-impl Widget for KeysPoller {
-    fn access(&self, _cx: &AccessCx<'_>) -> AccessNode {
-        AccessNode::new(Role::Group, "")
-    }
-
-    fn measure(&mut self, _cx: &MeasureCx<'_>) -> Size {
-        Size::new(0.0, 0.0)
-    }
-
-    fn paint(&mut self, _cx: &PaintCx<'_>, _scene: &mut Scene) {}
-
-    fn update(&mut self, cx: &mut UpdateCx<'_>) {
-        let snapshot = self.source.get(cx.now());
-        for ((keys, channel), seen) in self.keyboards.iter().zip(&mut self.seen) {
-            if let Some(channel) = channel {
-                for event in keys.take_events() {
-                    match event {
-                        NoteEvent::On { note, .. } => {
-                            actions::play(self.source.shared(), *channel, note, true);
-                        }
-                        NoteEvent::Off { note } => {
-                            actions::play(self.source.shared(), *channel, note, false);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            let held = channel.map_or(0, |c| snapshot.held[c]);
-            if held != *seen {
-                *seen = held;
-                keys.set_sounding((0..128u8).filter(|k| held & (1 << k) != 0));
-            }
-        }
-        cx.request_frame();
     }
 }

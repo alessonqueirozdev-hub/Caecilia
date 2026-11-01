@@ -13,7 +13,9 @@
 //! drawn again only when what it shows has changed.
 
 mod actions;
+mod bench;
 mod controls;
+mod library;
 mod live;
 mod look;
 mod paint;
@@ -48,10 +50,9 @@ pub(crate) struct Shared {
 
 /// The console for an instance, built each time a host opens it.
 pub(crate) fn editor(shared: Shared) -> Editor {
-    let lit = look::NIGHT;
     Editor::new(EDITOR_SIZE, move || {
-        let source = snapshot::Source::new(shared.clone(), lit);
+        let source = snapshot::Source::new(shared.clone());
         parts::screen(&source)
     })
-    .with_theme(look::theme(&lit))
+    .with_theme(look::theme(&look::NIGHT))
 }

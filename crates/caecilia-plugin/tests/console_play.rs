@@ -136,20 +136,28 @@ fn pistons_recall_set_stores_and_cancel_clears() {
 
     c.click(Role::Button, "General 4");
     assert_eq!(c.drawn(), general(&c, 3).0);
-    assert_eq!(c.says("Generals"), "General 4 recalled");
+    assert!(
+        c.says("Manuals").starts_with("General 4 recalled"),
+        "{}",
+        c.says("Manuals")
+    );
 
     // Next steps along the row; the crescendo shoe follows.
     c.click(Role::Button, "Next general");
-    assert_eq!(c.says("Generals"), "General 5 recalled");
+    assert!(
+        c.says("Manuals").starts_with("General 5 recalled"),
+        "{}",
+        c.says("Manuals")
+    );
     assert_eq!(c.drawn(), general(&c, 4).0);
 
     // Set, then General 12: what is drawn goes into it.
     let drawn = c.drawn();
     c.click(Role::Button, "Set");
-    assert!(c.says("Generals").contains("Set pressed"));
+    assert!(c.says("Manuals").contains("Set pressed"));
     c.click(Role::Button, "General 12");
     assert_eq!(general(&c, 11).0, drawn);
-    assert!(!c.says("Generals").contains("Set pressed"));
+    assert!(!c.says("Manuals").contains("Set pressed"));
 
     // Cancel retires everything, and undo brings it back.
     c.click(Role::Button, "Cancel");
@@ -188,7 +196,11 @@ fn the_shoes_open_the_swell_and_crescendo_through_the_generals() {
     c.ui.move_to(Point::new(crescendo.center().x, crescendo.y + 1.0));
     c.ui.release(Point::new(crescendo.center().x, crescendo.y + 1.0));
     c.settle();
-    assert_eq!(c.says("Generals"), "General 8 recalled");
+    assert!(
+        c.says("Manuals").starts_with("General 8 recalled"),
+        "{}",
+        c.says("Manuals")
+    );
 }
 
 #[test]
@@ -207,16 +219,8 @@ fn keys_and_pedals_played_on_the_console_sound() {
     c.settle();
     assert_eq!(c.says("P\u{e9}dalier"), "no pedal held");
 
-    // Middle C on the lower manual, the Grand-Orgue: both manuals have a
-    // C4, the Récit's above.
-    let mut c4: Vec<AccessEntry> =
-        c.ui.access_tree()
-            .into_iter()
-            .filter(|e| e.node.role == Role::Button && e.node.name == "C4")
-            .collect();
-    c4.sort_by(|a, b| a.bounds.y.total_cmp(&b.bounds.y));
-    let lower = c4.last().expect("a C4").bounds;
-    let at = Point::new(lower.center().x, lower.y + lower.height * 0.85);
+    // Middle C on the Grand-Orgue's manual.
+    let at = c.get(Role::Button, "Grand-Orgue C4").bounds.center();
     c.ui.press(at);
     c.settle();
     c.settle();

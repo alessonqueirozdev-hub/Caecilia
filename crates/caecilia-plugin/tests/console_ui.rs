@@ -82,7 +82,7 @@ fn the_console_shows_what_the_organ_plays() {
         "Right jamb",
         "Registration",
         "Wind",
-        "Generals",
+        "Manuals",
         "Shoes",
         "P\u{e9}dalier",
     ] {
@@ -127,7 +127,11 @@ fn the_console_shows_what_the_organ_plays() {
     h.render(4800);
     ui.tick();
 
-    assert_eq!(says(&ui, "Generals"), "General 4 recalled");
+    assert!(
+        says(&ui, "Manuals").starts_with("General 4 recalled"),
+        "{}",
+        says(&ui, "Manuals")
+    );
     assert!(
         says(&ui, "Right jamb").contains("Basson-Hautbois 8"),
         "{}",

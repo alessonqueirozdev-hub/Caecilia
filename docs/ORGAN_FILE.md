@@ -63,8 +63,13 @@ controller. Keys held go on sounding on the new organ while the old one fades
 out; the new one opens on its opening registration and its factory generals.
 A file with an error changes nothing. The session remembers the file (by its
 absolute path) and opens it again, with the session's own registration and
-pistons. A host keeps showing the first organ's stop names on its parameters
-until it reloads the plugin.
+pistons. The host shows the new organ's stop names on its parameters.
+
+On the console, **Organ…** opens the organ library: the demonstration organ
+and every `.organ.json` in the organs folder (the folder named by
+`CAECILIA_ORGANS`, else `%APPDATA%\Caecilia\Organs`, or
+`~/.config/caecilia/organs` elsewhere) and beside the organ playing. Put an
+organ file there to find it.
 
 ## The shape of it
 

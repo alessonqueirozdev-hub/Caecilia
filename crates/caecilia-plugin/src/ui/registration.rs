@@ -128,11 +128,19 @@ fn draw_body(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
 /// The registration panel.
 pub(crate) fn registration(source: &Rc<Source>) -> View {
     let shared = source.shared().clone();
-    let look = source.look();
-    let back = canvas("", Size::new(540.0, HEIGHT), move |cx, scene| {
-        let size = cx.size();
-        panel(scene, &look, Rect::new(0.0, 0.0, size.width, size.height));
-    });
+    let back = live(
+        "",
+        Size::new(540.0, HEIGHT),
+        source,
+        |_| 0,
+        |size, scene, snapshot| {
+            panel(
+                scene,
+                &snapshot.look,
+                Rect::new(0.0, 0.0, size.width, size.height),
+            );
+        },
+    );
     let head = live(
         "",
         Size::new(540.0, FIELD_TOP),
@@ -218,6 +226,8 @@ pub(crate) struct SelectorLine {
     typed: Vec<String>,
     recalled: Option<usize>,
     note: Note,
+    /// The light it was last drawn in.
+    night: Option<bool>,
 }
 
 impl SelectorLine {
@@ -230,6 +240,7 @@ impl SelectorLine {
             typed: Vec::new(),
             recalled: None,
             note: Note::Hint,
+            night: None,
         }
     }
 
@@ -433,6 +444,11 @@ impl Widget for SelectorLine {
     }
 
     fn update(&mut self, cx: &mut UpdateCx<'_>) {
+        let night = self.source.look().night;
+        if self.night != Some(night) {
+            self.night = Some(night);
+            cx.request_paint();
+        }
         // What the selector takes follows what is drawn.
         if !self.text.is_empty() && !matches!(self.note, Note::Done(_)) {
             let note = self.examine();

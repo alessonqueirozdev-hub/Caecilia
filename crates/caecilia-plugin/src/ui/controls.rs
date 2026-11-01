@@ -399,159 +399,160 @@ fn general_pressed(cx: &mut manguebyte_ui::EventCx<'_>, source: &Source, n: usiz
     }
 }
 
-/// The key slip: the general pistons, the sequencer, cancel and set.
-pub(crate) fn key_slip(source: &Rc<Source>) -> View {
-    let here = Rc::clone(source);
-    live(
-        "Generals",
-        Size::new(1200.0, 58.0),
-        source,
-        Snapshot::generals_key,
-        |size, scene, snapshot| {
-            let look = snapshot.look;
-            let plan = slip_plan(size);
-            let rect = plan.wood;
-            let wood = [
-                Stop::new(0.0, look.wood_top),
-                Stop::new(1.0, look.wood_bottom),
-            ];
-            scene.fill(RoundedRect::new(rect, 6.0), vertical(rect, &wood));
-            scene.fill(Rect::new(rect.x, rect.y, rect.width, 1.0), look.sheen);
-            let current = snapshot.general;
-            let under = |scene: &mut Scene, c: Point, label: &str, color: Color| {
-                text(
-                    scene,
-                    label,
-                    style(9.5, 650.0, color),
-                    Point::new(c.x, c.y + 17.0),
-                    0.5,
-                );
-            };
-            for (control, c) in &plan.pistons {
-                let c = *c;
-                match *control {
-                    SlipControl::General(n) => {
-                        let kind = if n < 8 {
-                            PistonKind::Ivory
-                        } else {
-                            PistonKind::Ebony
-                        };
-                        let lit = current == Some(n);
-                        let label = format!("{}", n + 1);
-                        piston(scene, &look, c, SLIP_RADIUS, &label, kind, lit);
-                        let tag = if n < 8 {
-                            FACTORY_GENERALS.get(n).map_or("", |g| g.tag)
-                        } else if snapshot.generals_set[n] {
-                            "set"
-                        } else {
-                            ""
-                        };
-                        let color = if lit { look.accent } else { look.text2 };
-                        under(scene, c, tag, color);
-                    }
-                    SlipControl::Previous | SlipControl::Next => {
-                        piston(scene, &look, c, SLIP_RADIUS, "", PistonKind::Ebony, false);
-                        arrow(scene, c, *control == SlipControl::Next, look.ivory);
-                    }
-                    SlipControl::Cancel => {
-                        piston(scene, &look, c, SLIP_RADIUS, "0", PistonKind::Ivory, false);
-                        under(scene, c, "cancel", look.text2);
-                    }
-                    SlipControl::Set => {
-                        let armed = snapshot.set_armed;
-                        piston(scene, &look, c, SLIP_RADIUS, "S", PistonKind::Set, armed);
-                        let color = if armed { look.accent } else { look.text2 };
-                        under(scene, c, if armed { "choose" } else { "set" }, color);
-                    }
-                }
-            }
-            // The sequencer's display.
-            let display = plan.display;
-            let shape = RoundedRect::new(display, 6.0);
-            let lcd = Color::hex(0xF2B95A);
-            scene.fill(shape, Color::hex(0x0B0806));
-            scene.shadow(shape, Shadow::glow(8.0, lcd.with_alpha(0x20)));
-            let tag = |n: usize| FACTORY_GENERALS.get(n).map(|g| g.tag);
-            let (number, line) = if snapshot.set_armed {
-                ("S".to_string(), "press a general".to_string())
-            } else {
-                match current {
-                    Some(n) => {
-                        let next = (n + 1).min(GENERALS - 1);
-                        let here = tag(n).map_or_else(|| "general".to_string(), str::to_string);
-                        let line = match tag(next) {
-                            Some(t) if next != n => format!("{here}  \u{b7}  next {t}"),
-                            _ => here,
-                        };
-                        (format!("{}", n + 1), line)
-                    }
-                    None => ("\u{2013}".to_string(), "no general yet".to_string()),
-                }
-            };
-            let w = text(
-                scene,
-                &number,
-                style(17.0, 700.0, lcd),
-                Point::new(display.x + 12.0, display.y + 4.0),
-                0.0,
-            )
-            .width;
-            text(
-                scene,
-                &line,
-                style(11.0, 600.0, lcd.with_alpha(0xD0)),
-                Point::new(display.x + 20.0 + w, display.y + 8.0),
-                0.0,
-            );
-        },
-    )
-    .describe(|s| {
-        let general = match s.general {
-            Some(n) => format!("General {} recalled", n + 1),
-            None => "no general recalled".into(),
-        };
-        if s.set_armed {
-            format!("{general}; Set pressed")
-        } else {
-            general
-        }
-    })
-    .items(|_, size| {
-        slip_plan(size)
-            .pistons
-            .into_iter()
-            .map(|(control, c)| Item {
-                role: Role::Button,
-                name: slip_name(control),
-                checked: None,
-                rect: around(c, PISTON_REACH),
-            })
-            .collect()
-    })
-    .input(move |cx, event, at, size, _snapshot| {
-        if !pressed(event) {
-            return Handled::No;
-        }
-        let plan = slip_plan(size);
-        let Some((control, _)) = plan
-            .pistons
-            .iter()
-            .find(|(_, c)| near(*c, at, PISTON_REACH))
-        else {
-            return Handled::No;
-        };
-        let shared = here.shared();
+/// The key slip's height.
+pub(crate) const SLIP: f32 = 58.0;
+
+/// The key slip: the general pistons, the sequencer's display and arrows,
+/// cancel and set, drawn in a strip `size` large.
+pub(crate) fn draw_slip(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
+    let look = snapshot.look;
+    let plan = slip_plan(size);
+    let rect = plan.wood;
+    let wood = [
+        Stop::new(0.0, look.wood_top),
+        Stop::new(1.0, look.wood_bottom),
+    ];
+    scene.fill(RoundedRect::new(rect, 6.0), vertical(rect, &wood));
+    scene.fill(Rect::new(rect.x, rect.y, rect.width, 1.0), look.sheen);
+    let current = snapshot.general;
+    let under = |scene: &mut Scene, c: Point, label: &str, color: Color| {
+        text(
+            scene,
+            label,
+            style(9.5, 650.0, color),
+            Point::new(c.x, c.y + 17.0),
+            0.5,
+        );
+    };
+    for (control, c) in &plan.pistons {
+        let c = *c;
         match *control {
-            SlipControl::General(n) => general_pressed(cx, &here, n),
-            SlipControl::Previous => actions::step(cx.context(), shared, false),
-            SlipControl::Next => actions::step(cx.context(), shared, true),
-            SlipControl::Cancel => actions::cancel(cx.context(), shared),
-            SlipControl::Set => here.arm_set(!here.set_armed()),
+            SlipControl::General(n) => {
+                let kind = if n < 8 {
+                    PistonKind::Ivory
+                } else {
+                    PistonKind::Ebony
+                };
+                let lit = current == Some(n);
+                let label = format!("{}", n + 1);
+                piston(scene, &look, c, SLIP_RADIUS, &label, kind, lit);
+                let tag = if n < 8 {
+                    FACTORY_GENERALS.get(n).map_or("", |g| g.tag)
+                } else if snapshot.generals_set[n] {
+                    "set"
+                } else {
+                    ""
+                };
+                let color = if lit { look.accent } else { look.text2 };
+                under(scene, c, tag, color);
+            }
+            SlipControl::Previous | SlipControl::Next => {
+                piston(scene, &look, c, SLIP_RADIUS, "", PistonKind::Ebony, false);
+                arrow(scene, c, *control == SlipControl::Next, look.ivory);
+            }
+            SlipControl::Cancel => {
+                piston(scene, &look, c, SLIP_RADIUS, "0", PistonKind::Ivory, false);
+                under(scene, c, "cancel", look.text2);
+            }
+            SlipControl::Set => {
+                let armed = snapshot.set_armed;
+                piston(scene, &look, c, SLIP_RADIUS, "S", PistonKind::Set, armed);
+                let color = if armed { look.accent } else { look.text2 };
+                under(scene, c, if armed { "choose" } else { "set" }, color);
+            }
         }
-        Handled::Yes
-    })
-    .height(58.0)
-    .into_view()
+    }
+    // The sequencer's display.
+    let display = plan.display;
+    let shape = RoundedRect::new(display, 6.0);
+    let lcd = Color::hex(0xF2B95A);
+    scene.fill(shape, Color::hex(0x0B0806));
+    scene.shadow(shape, Shadow::glow(8.0, lcd.with_alpha(0x20)));
+    let tag = |n: usize| FACTORY_GENERALS.get(n).map(|g| g.tag);
+    let (number, line) = if snapshot.set_armed {
+        ("S".to_string(), "press a general".to_string())
+    } else {
+        match current {
+            Some(n) => {
+                let next = (n + 1).min(GENERALS - 1);
+                let here = tag(n).map_or_else(|| "general".to_string(), str::to_string);
+                let line = match tag(next) {
+                    Some(t) if next != n => format!("{here}  \u{b7}  next {t}"),
+                    _ => here,
+                };
+                (format!("{}", n + 1), line)
+            }
+            None => ("\u{2013}".to_string(), "no general yet".to_string()),
+        }
+    };
+    let w = text(
+        scene,
+        &number,
+        style(17.0, 700.0, lcd),
+        Point::new(display.x + 12.0, display.y + 4.0),
+        0.0,
+    )
+    .width;
+    text(
+        scene,
+        &line,
+        style(11.0, 600.0, lcd.with_alpha(0xD0)),
+        Point::new(display.x + 20.0 + w, display.y + 8.0),
+        0.0,
+    );
+}
+
+/// What the key slip says it shows.
+pub(crate) fn describe_slip(s: &Snapshot) -> String {
+    let general = match s.general {
+        Some(n) => format!("General {} recalled", n + 1),
+        None => "no general recalled".into(),
+    };
+    if s.set_armed {
+        format!("{general}; Set pressed")
+    } else {
+        general
+    }
+}
+
+/// The key slip's pistons, for assistive technology and tests.
+pub(crate) fn slip_items(size: Size) -> Vec<Item> {
+    slip_plan(size)
+        .pistons
+        .into_iter()
+        .map(|(control, c)| Item {
+            role: Role::Button,
+            name: slip_name(control),
+            checked: None,
+            rect: around(c, PISTON_REACH),
+        })
+        .collect()
+}
+
+/// A press at `at` in the key slip.
+pub(crate) fn slip_press(
+    cx: &mut manguebyte_ui::EventCx<'_>,
+    source: &Source,
+    at: Point,
+    size: Size,
+) -> Handled {
+    let plan = slip_plan(size);
+    let Some((control, _)) = plan
+        .pistons
+        .iter()
+        .find(|(_, c)| near(*c, at, PISTON_REACH))
+    else {
+        return Handled::No;
+    };
+    let shared = source.shared();
+    match *control {
+        SlipControl::General(n) => general_pressed(cx, source, n),
+        SlipControl::Previous => actions::step(cx.context(), shared, false),
+        SlipControl::Next => actions::step(cx.context(), shared, true),
+        SlipControl::Cancel => actions::cancel(cx.context(), shared),
+        SlipControl::Set => source.arm_set(!source.set_armed()),
+    }
+    Handled::Yes
 }
 
 // ---------------------------------------------------------------- shoes
@@ -1029,14 +1030,27 @@ fn draw_pedalboard(size: Size, scene: &mut Scene, snapshot: &Snapshot, low: u8, 
 enum StatusButton {
     Undo,
     Redo,
+    Light,
     Organ,
 }
 
-const STATUS_BUTTONS: [(StatusButton, &str); 3] = [
-    (StatusButton::Undo, "Undo"),
-    (StatusButton::Redo, "Redo"),
-    (StatusButton::Organ, "Organ\u{2026}"),
+const STATUS_BUTTONS: [StatusButton; 4] = [
+    StatusButton::Undo,
+    StatusButton::Redo,
+    StatusButton::Light,
+    StatusButton::Organ,
 ];
+
+/// A status button's label: the light it would change to, for Light.
+fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
+    match button {
+        StatusButton::Undo => "Undo",
+        StatusButton::Redo => "Redo",
+        StatusButton::Light if snapshot.look.night => "Day",
+        StatusButton::Light => "Night",
+        StatusButton::Organ => "Organ\u{2026}",
+    }
+}
 
 /// A status chip: where, what, and the colour of its dot if it has one.
 type Chip = (Rect, String, Option<Color>);
@@ -1048,8 +1062,8 @@ fn status_plan(size: Size, snapshot: &Snapshot) -> (Vec<Chip>, Vec<(StatusButton
     let y = (size.height - 30.0) / 2.0;
     let mut x = size.width;
     let mut buttons = Vec::new();
-    for (button, label) in STATUS_BUTTONS.iter().rev() {
-        let w = width_of(label, s) + 32.0;
+    for button in STATUS_BUTTONS.iter().rev() {
+        let w = width_of(status_label(*button, snapshot), s) + 32.0;
         x -= w;
         buttons.push((*button, Rect::new(x, y, w, 30.0)));
         x -= 10.0;
@@ -1080,11 +1094,12 @@ fn status_plan(size: Size, snapshot: &Snapshot) -> (Vec<Chip>, Vec<(StatusButton
 /// undo and redo through the history, and the organ.
 pub(crate) fn status(source: &Rc<Source>) -> View {
     let shared = source.shared().clone();
+    let here = Rc::clone(source);
     live(
         "Status",
         Size::new(900.0, 34.0),
         source,
-        |s| s.status_key() ^ s.registration_key(),
+        |s| s.status_key() ^ s.registration_key() ^ u64::from(s.library.is_some()),
         |size, scene, snapshot| {
             let look = snapshot.look;
             let s = style(12.5, 500.0, look.text);
@@ -1110,7 +1125,8 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
                 }
                 text(scene, label, s, Point::new(tx, r.y + 7.0), 0.0);
             }
-            for ((button, r), (_, label)) in buttons.iter().zip(STATUS_BUTTONS) {
+            for (button, r) in &buttons {
+                let label = status_label(*button, snapshot);
                 let shape = RoundedRect::new(*r, 15.0);
                 let primary = *button == StatusButton::Organ;
                 if primary {
@@ -1139,10 +1155,9 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
         let (_, buttons) = status_plan(size, s);
         buttons
             .into_iter()
-            .zip(STATUS_BUTTONS)
-            .map(|((_, rect), (_, label))| Item {
+            .map(|(button, rect)| Item {
                 role: Role::Button,
-                name: label.to_string(),
+                name: status_label(button, s).to_string(),
                 checked: None,
                 rect,
             })
@@ -1160,8 +1175,12 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
         {
             Some(StatusButton::Undo) => actions::undo(cx.context(), &shared),
             Some(StatusButton::Redo) => actions::redo(cx.context(), &shared),
-            // Choosing an organ comes with the console's last part.
-            Some(StatusButton::Organ) => {}
+            Some(StatusButton::Light) => {
+                let params = &here.shared().params;
+                params.set_console_day(!params.console_day());
+                here.refresh();
+            }
+            Some(StatusButton::Organ) => here.toggle_library(),
             None => return Handled::No,
         }
         Handled::Yes

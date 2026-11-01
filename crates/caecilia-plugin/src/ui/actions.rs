@@ -155,6 +155,22 @@ pub(crate) fn travel(context: &EditorContext, shared: &Shared, distance: i32) {
     announce(context, shared, before);
 }
 
+/// Play the organ `entry` names: its file, or the demonstration organ.
+/// The host is told the parameters' names and values changed.
+pub(crate) fn load_organ(
+    context: &EditorContext,
+    shared: &Shared,
+    entry: &super::library::Entry,
+) -> Result<(), String> {
+    let loaded = match &entry.path {
+        Some(path) => shared.params.load_organ_file(path).map(|_| ()),
+        None => shared.params.use_organ(caecilia_model::demo_organ()),
+    };
+    loaded.map_err(|e| e.to_string())?;
+    context.values_changed();
+    Ok(())
+}
+
 /// Begin moving the swell shoe.
 pub(crate) fn swell_gesture(context: &EditorContext, shared: &Shared) -> Gesture {
     let p = &shared.params.swell;

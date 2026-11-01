@@ -13,7 +13,8 @@ use caecilia_model::{DivisionKind, Organ, StopId};
 use caecilia_registration::{FACTORY_GENERALS, Reason, RegistrationEngine, RegistrationState};
 
 use super::Shared;
-use super::look::Look;
+use super::library::{Entry, organs_folder, scan};
+use super::look::{DAY, Look, NIGHT};
 use crate::console::GENERALS;
 use crate::params::{KEY_NAMES, TEMPERAMENT_NAMES};
 use crate::telemetry::TELEMETRY_CHESTS;
@@ -202,6 +203,16 @@ pub(crate) struct Why {
 /// the registration is), and why.
 type RegistrationText = (String, Vec<Step>, Vec<Why>);
 
+/// The organ library as the wind panel shows it while it is open: each
+/// organ's name and whether it is the one playing, what went wrong
+/// loading one, and where organs are found.
+#[derive(Clone, PartialEq, Hash)]
+pub(crate) struct LibraryView {
+    pub(crate) entries: Vec<(String, bool)>,
+    pub(crate) message: Option<String>,
+    pub(crate) folder: String,
+}
+
 /// One frame's reading.
 pub(crate) struct Snapshot {
     pub(crate) look: Look,
@@ -228,9 +239,11 @@ pub(crate) struct Snapshot {
     pub(crate) tuning: String,
     pub(crate) wind_steady: bool,
     pub(crate) cpu: String,
+    /// The organ library, while it is open.
+    pub(crate) library: Option<LibraryView>,
 }
 
-fn hash_of(f: impl FnOnce(&mut DefaultHasher)) -> u64 {
+pub(crate) fn hash_of(f: impl FnOnce(&mut DefaultHasher)) -> u64 {
     let mut h = DefaultHasher::new();
     f(&mut h);
     h.finish()
@@ -240,11 +253,6 @@ impl Snapshot {
     /// What the jambs show.
     pub(crate) fn stops_key(&self) -> u64 {
         hash_of(|h| (&self.drawn, &self.couplers, self.tremulant).hash(h))
-    }
-
-    /// What the key slip and the toe studs show.
-    pub(crate) fn generals_key(&self) -> u64 {
-        hash_of(|h| (self.general, self.generals_set, self.set_armed).hash(h))
     }
 
     /// What the shoes show.
@@ -268,6 +276,7 @@ impl Snapshot {
     /// What the wind panel shows.
     pub(crate) fn wind_key(&self) -> u64 {
         hash_of(|h| {
+            self.library.hash(h);
             for c in &self.chests {
                 c.now_mm.to_bits().hash(h);
                 c.note.hash(h);
@@ -281,11 +290,6 @@ impl Snapshot {
     /// What the status chips show.
     pub(crate) fn status_key(&self) -> u64 {
         hash_of(|h| (&self.tuning, self.wind_steady, &self.cpu).hash(h))
-    }
-
-    /// What a keyboard's plate shows.
-    pub(crate) fn couplers_key(&self) -> u64 {
-        hash_of(|h| self.couplers.hash(h))
     }
 }
 
@@ -349,9 +353,10 @@ pub(crate) fn bare_name(name: &str) -> &str {
 /// The reading, made at most once a frame, and the wind's recent past.
 pub(crate) struct Source {
     shared: Shared,
-    look: Look,
-    organ: Arc<Organ>,
-    layout: Rc<Layout>,
+    /// The organ shown, its layout, and the slot's generation it is of.
+    organ: RefCell<Arc<Organ>>,
+    layout: RefCell<Rc<Layout>>,
+    generation: Cell<u32>,
     current: RefCell<Option<(Duration, Rc<Snapshot>)>>,
     traces: RefCell<Vec<VecDeque<f32>>>,
     /// The registration's text when the controller was last free.
@@ -359,22 +364,26 @@ pub(crate) struct Source {
     set_armed: Cell<bool>,
     /// The stop under the pointer, whose "why" the panel shows.
     focus: Cell<Option<usize>>,
+    /// The organ library, while it is open, and what went wrong last.
+    library: RefCell<Option<(Vec<Entry>, Option<String>)>>,
 }
 
 impl Source {
-    pub(crate) fn new(shared: Shared, look: Look) -> Rc<Source> {
+    pub(crate) fn new(shared: Shared) -> Rc<Source> {
         let organ = shared.params.organ.organ();
         let layout = Rc::new(Layout::of(&organ));
+        let generation = shared.params.organ.generation();
         Rc::new(Source {
             shared,
-            look,
-            organ,
-            layout,
+            organ: RefCell::new(organ),
+            layout: RefCell::new(layout),
+            generation: Cell::new(generation),
             current: RefCell::new(None),
             traces: RefCell::default(),
             last_registration: RefCell::default(),
             set_armed: Cell::new(false),
             focus: Cell::new(None),
+            library: RefCell::new(None),
         })
     }
 
@@ -385,6 +394,39 @@ impl Source {
     /// Whether Set is pressed.
     pub(crate) fn set_armed(&self) -> bool {
         self.set_armed.get()
+    }
+
+    /// Whether the organ library is open.
+    pub(crate) fn library_open(&self) -> bool {
+        self.library.borrow().is_some()
+    }
+
+    /// Open the organ library, looking for organs now, or close it.
+    pub(crate) fn toggle_library(&self) {
+        let open = self.library_open();
+        *self.library.borrow_mut() = if open {
+            None
+        } else {
+            let playing = self.shared.params.organ.path();
+            Some((scan(playing.as_deref()), None))
+        };
+        self.refresh();
+    }
+
+    /// The organ the library lists `n`th.
+    pub(crate) fn library_entry(&self, n: usize) -> Option<Entry> {
+        self.library
+            .borrow()
+            .as_ref()
+            .and_then(|(entries, _)| entries.get(n).cloned())
+    }
+
+    /// What went wrong loading an organ, shown in the library.
+    pub(crate) fn library_message(&self, message: Option<String>) {
+        if let Some((_, slot)) = self.library.borrow_mut().as_mut() {
+            *slot = message;
+        }
+        self.refresh();
     }
 
     /// The stop under the pointer, if any.
@@ -402,16 +444,38 @@ impl Source {
         *self.current.borrow_mut() = None;
     }
 
+    /// The light the console is in: the night's or the day's, as the
+    /// session keeps it.
     pub(crate) fn look(&self) -> Look {
-        self.look
-    }
-
-    pub(crate) fn layout(&self) -> Rc<Layout> {
-        Rc::clone(&self.layout)
+        if self.shared.params.console_day() {
+            DAY
+        } else {
+            NIGHT
+        }
     }
 
     pub(crate) fn organ(&self) -> Arc<Organ> {
-        Arc::clone(&self.organ)
+        Arc::clone(&self.organ.borrow())
+    }
+
+    /// The next reading is read afresh: something changed this frame.
+    pub(crate) fn refresh(&self) {
+        *self.current.borrow_mut() = None;
+    }
+
+    /// Follow the organ the slot holds, if it changed: another organ, laid
+    /// out again, its wind's past forgotten.
+    fn follow_organ(&self) {
+        let slot = &self.shared.params.organ;
+        let generation = slot.generation();
+        if generation == self.generation.get() {
+            return;
+        }
+        let organ = slot.organ();
+        *self.layout.borrow_mut() = Rc::new(Layout::of(&organ));
+        *self.organ.borrow_mut() = organ;
+        self.traces.borrow_mut().clear();
+        self.generation.set(generation);
     }
 
     /// This frame's reading.
@@ -427,9 +491,10 @@ impl Source {
     }
 
     fn read(&self) -> Snapshot {
+        self.follow_organ();
         let params = &self.shared.params;
         let telemetry = &self.shared.telemetry;
-        let organ = &self.organ;
+        let organ = &self.organ();
         let stops = params.stop_mask();
         let couplers = params.coupler_mask();
         let console = &params.console;
@@ -524,10 +589,25 @@ impl Source {
             telemetry.voices()
         );
 
+        let playing = params.organ.path();
+        let library = self
+            .library
+            .borrow()
+            .as_ref()
+            .map(|(entries, message)| LibraryView {
+                entries: entries
+                    .iter()
+                    .map(|e| (e.name.clone(), e.path == playing))
+                    .collect(),
+                message: message.clone(),
+                folder: organs_folder().map_or_else(String::new, |f| f.display().to_string()),
+            });
+
         Snapshot {
-            look: self.look,
+            library,
+            look: self.look(),
             organ: Arc::clone(organ),
-            layout: Rc::clone(&self.layout),
+            layout: Rc::clone(&self.layout.borrow()),
             drawn: (0..organ.stops().len())
                 .map(|n| stops & (1 << n) != 0)
                 .collect(),
@@ -552,7 +632,7 @@ impl Source {
 
     /// A chest by the division it feeds, if one: "Récit" for "Récit chest".
     fn chest_name(&self, index: usize) -> String {
-        let organ = &self.organ;
+        let organ = &self.organ();
         let Some(chest) = organ.windchests().get(index) else {
             return String::new();
         };
