@@ -268,6 +268,35 @@ fn delete_or_defer(path: &Path, sys: &mut dyn System, log: &mut Log) -> (Option<
     }
 }
 
+/// Deletes `path` when nothing is to take its place. In use (the
+/// uninstaller itself, a plugin a DAW has loaded), it is moved out, so its
+/// folder can go, then deleted when it can be. Returns what is left where
+/// it was, and whether a restart deletes something.
+fn remove_for_good(path: &Path, sys: &mut dyn System, log: &mut Log) -> (Option<PathBuf>, bool) {
+    match fs::remove_file(path) {
+        Ok(()) => (None, false),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => (None, false),
+        Err(_) => match move_out(path) {
+            Some(aside) => {
+                let (left, at_restart) = delete_or_defer(&aside, sys, log);
+                // In the temporary folder it is out of the installation;
+                // its cleaning takes it.
+                let temp = std::env::temp_dir();
+                (left.filter(|p| !p.starts_with(&temp)), at_restart)
+            }
+            // Not even that: deleted at restart if it can be, else kept.
+            None if sys.delete_at_restart(path) => {
+                log.note(format_args!(
+                    "{} is in use: deleted when Windows restarts",
+                    path.display()
+                ));
+                (None, true)
+            }
+            None => (Some(path.to_owned()), false),
+        },
+    }
+}
+
 /// Moves a file in use out of the way: into the temporary folder, which a
 /// running program's file can be renamed into on the same disk, else
 /// beside itself. Returns where it went.
@@ -563,11 +592,27 @@ impl Engine<'_> {
             record.version,
             record.program_dir.display()
         ));
-        self.clear_leftovers(&record.leftovers);
         self.log
             .line("units", record.files.len() + record.shortcuts.len() + 1);
         let mut kept = Vec::new();
         let mut restart = false;
+        // What earlier runs left: the record goes with this removal, so one
+        // still in use is moved out or deleted at restart, not forgotten.
+        for path in record.leftovers.iter().filter(|p| p.exists()) {
+            let (left, at_restart) = remove_for_good(path, self.sys, self.log);
+            restart |= at_restart;
+            match left {
+                None => self.log.note(format_args!(
+                    "deleted {}, left by the last run",
+                    path.display()
+                )),
+                Some(p) => {
+                    self.log
+                        .line("kept", format_args!("{} (in use)", p.display()));
+                    kept.push(p);
+                }
+            }
+        }
         self.log.line("step", "files");
         for f in record.files.iter().rev() {
             match hash_of(&f.path) {
@@ -576,23 +621,7 @@ impl Engine<'_> {
                     format_args!("{} (already gone)", f.path.display()),
                 ),
                 Ok(Some(h)) if h == f.sha256 => {
-                    let (left, at_restart) = match fs::remove_file(&f.path) {
-                        Ok(()) => (None, false),
-                        // In use (the uninstaller itself, a plugin a DAW
-                        // has loaded): moved out, so its folder can go, then
-                        // deleted when it can be.
-                        Err(_) => match move_out(&f.path) {
-                            Some(aside) => {
-                                let (left, at_restart) =
-                                    delete_or_defer(&aside, self.sys, self.log);
-                                // In the temporary folder it is out of the
-                                // installation; its cleaning takes it.
-                                let temp = std::env::temp_dir();
-                                (left.filter(|p| !p.starts_with(&temp)), at_restart)
-                            }
-                            None => (Some(f.path.clone()), false),
-                        },
-                    };
+                    let (left, at_restart) = remove_for_good(&f.path, self.sys, self.log);
                     restart |= at_restart;
                     match left {
                         None => self.log.line("removed", f.path.display()),

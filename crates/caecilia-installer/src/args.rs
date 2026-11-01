@@ -47,10 +47,10 @@ pub struct Args {
     pub organs_dir: Option<PathBuf>,
     /// The components, if said.
     pub components: Option<Components>,
-    /// Shortcuts on the desktop.
-    pub desktop: bool,
-    /// Shortcuts in the Start menu.
-    pub start_menu: bool,
+    /// A shortcut on the desktop, if said.
+    pub desktop: Option<bool>,
+    /// A shortcut in the Start menu, if said.
+    pub start_menu: Option<bool>,
     /// Where to write the log, if said.
     pub log: Option<PathBuf>,
     /// The language, if said.
@@ -73,8 +73,8 @@ impl Default for Args {
             dir: None,
             organs_dir: None,
             components: None,
-            desktop: true,
-            start_menu: true,
+            desktop: None,
+            start_menu: None,
             log: None,
             lang: None,
             force: false,
@@ -117,11 +117,11 @@ impl Args {
                     let c = Components::parse(&v).ok_or(format!("unknown component in '{v}'"))?;
                     a.components = Some(c);
                 }
-                "noshortcuts" => (a.desktop, a.start_menu) = (false, false),
-                "nodesktop" => a.desktop = false,
-                "nostartmenu" => a.start_menu = false,
-                "desktop" => a.desktop = value("0 or 1")? != "0",
-                "start-menu" => a.start_menu = value("0 or 1")? != "0",
+                "noshortcuts" => (a.desktop, a.start_menu) = (Some(false), Some(false)),
+                "nodesktop" => a.desktop = Some(false),
+                "nostartmenu" => a.start_menu = Some(false),
+                "desktop" => a.desktop = Some(value("0 or 1")? != "0"),
+                "start-menu" => a.start_menu = Some(value("0 or 1")? != "0"),
                 "log" => a.log = Some(PathBuf::from(value("a file")?)),
                 "lang" => {
                     let v = value("en, pt or es")?;
@@ -155,8 +155,8 @@ impl Args {
             components: self.components.unwrap_or(Components::ALL),
             program_dir: self.dir.clone(),
             organs_dir: self.organs_dir.clone(),
-            desktop: self.desktop,
-            start_menu: self.start_menu,
+            desktop: self.desktop.unwrap_or(true),
+            start_menu: self.start_menu.unwrap_or(true),
         }
     }
 
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(a.scope, Some(Scope::Machine));
         assert_eq!(a.dir, Some(PathBuf::from("D:\\Apps\\Caecilia")));
         assert_eq!(a.components, Components::parse("vst3,clap"));
-        assert!(!a.desktop && a.start_menu);
+        assert_eq!((a.desktop, a.start_menu), (Some(false), None));
         assert_eq!(a.log, Some(PathBuf::from("C:\\x.log")));
         assert_eq!(a.lang, Some(Lang::Pt));
         assert_eq!(

@@ -92,13 +92,17 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
     let mut choices = args.choices(scope);
     let previous = found.map(|f| f.record);
     if let Some(old) = &previous {
-        // An update stays where it was, and keeps where the organs went.
+        // An update stays where it was, keeps where the organs went, and
+        // keeps what was chosen, unless the command line says otherwise.
         if choices.program_dir.is_none() {
             choices.program_dir = Some(old.program_dir.clone());
         }
         if choices.organs_dir.is_none() {
             choices.organs_dir = old.organs_dir.clone();
         }
+        choices.components = args.components.unwrap_or(old.components);
+        choices.desktop = args.desktop.unwrap_or(old.desktop);
+        choices.start_menu = args.start_menu.unwrap_or(old.start_menu);
     }
     if choices.components.is_empty() {
         log.error("nothing to install");
@@ -179,6 +183,7 @@ fn copy_log(log: &Log, dir: &Path) {
 mod tests {
     use super::*;
     use crate::payload::{PayloadBuilder, Root};
+    use crate::plan::Components;
     use crate::system::MemorySystem;
 
     fn payload(version: &str) -> Vec<u8> {
@@ -233,7 +238,12 @@ mod tests {
         assert!(!outside.exists());
         host.elevated = false;
         assert_eq!(
-            install(&parse(&["/S", "/CURRENTUSER"]), &v1, &mut host, &mut log),
+            install(
+                &parse(&["/S", "/CURRENTUSER", "/COMPONENTS=app", "/NODESKTOP"]),
+                &v1,
+                &mut host,
+                &mut log
+            ),
             exit::OK
         );
         let dir = host.places.program_dir(Scope::User, "Caecilia");
@@ -250,6 +260,24 @@ mod tests {
             exit::OK
         );
         assert_eq!(std::fs::read(dir.join("caecilia.exe")).unwrap(), b"2.0.1");
+        // And keeps what was chosen.
+        let r = Record::load(&dir).unwrap();
+        assert_eq!(r.components, Components::parse("app").unwrap());
+        assert_eq!((r.desktop, r.start_menu), (false, true));
+        assert!(!host.places.plugin_dir(Scope::User, "CLAP").exists());
+        // Unless the command line says otherwise.
+        assert_eq!(
+            install(
+                &parse(&["/S", "/COMPONENTS=app,clap", "/NOSTARTMENU"]),
+                &payload("2.0.1"),
+                &mut host,
+                &mut log
+            ),
+            exit::OK
+        );
+        let r = Record::load(&dir).unwrap();
+        assert!(r.components.clap);
+        assert_eq!((r.desktop, r.start_menu), (false, false));
         // Going back needs /FORCE.
         assert_eq!(
             install(&parse(&["/S"]), &v1, &mut host, &mut log),

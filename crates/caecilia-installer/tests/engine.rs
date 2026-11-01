@@ -402,6 +402,67 @@ fn a_dropped_plugin_a_host_still_holds_is_not_forgotten() {
 }
 
 #[test]
+fn a_removal_does_not_forget_a_leftover_a_host_still_holds() {
+    use std::os::windows::fs::OpenOptionsExt;
+    // Held so it can be neither deleted nor moved: an administrator's
+    // removal has it deleted at restart, a person's says it was kept.
+    for admin in [false, true] {
+        let scratch = Scratch::new(&format!("leftover-removal-{admin}"));
+        let places = places(&scratch.0);
+        let old_files = payload("2.0.0", false);
+        let old_plan = Plan::new(
+            &old_files.manifest,
+            &Choices::defaults(Scope::User),
+            &places,
+            14,
+        );
+        let mut sys = MemorySystem::default();
+        let old = install(&mut sys, &old_plan, &old_files, None)
+            .unwrap()
+            .record;
+        let clap = old_plan
+            .files
+            .iter()
+            .find(|f| f.entry.root == Root::Clap)
+            .unwrap()
+            .dest
+            .clone();
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&clap)
+            .unwrap();
+        let new_files = payload("2.0.1", false);
+        let mut choices = Choices::defaults(Scope::User);
+        choices.components = Components::parse("app,vst3,organ").unwrap();
+        let new_plan = Plan::new(&new_files.manifest, &choices, &places, 14);
+        let new = install(&mut sys, &new_plan, &new_files, Some(&old))
+            .unwrap()
+            .record;
+        assert_eq!(new.leftovers, std::slice::from_ref(&clap));
+
+        sys.can_delete_at_restart = admin;
+        let mut log = Log::in_memory();
+        let gone = Engine {
+            sys: &mut sys,
+            log: &mut log,
+            cancelled: &|| false,
+        }
+        .uninstall(&new, None)
+        .unwrap();
+        drop(held);
+        assert!(!new_plan.program_dir.exists());
+        if admin {
+            assert!(gone.restart && gone.kept.is_empty(), "{:?}", gone.kept);
+            assert_eq!(sys.at_restart, std::slice::from_ref(&clap));
+        } else {
+            assert!(!gone.restart);
+            assert_eq!(gone.kept, std::slice::from_ref(&clap));
+        }
+    }
+}
+
+#[test]
 fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     let scratch = Scratch::new("inuse");
     let places = places(&scratch.0);
