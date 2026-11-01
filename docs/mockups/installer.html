@@ -1,0 +1,573 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
+Caecilia — Installer Mockup
+===========================
+A design reference for the Rust installer (docs/INSTALLER.md), not shipping
+code: the real installer draws these pages with manguebyte-ui in the console's
+materials (crates/caecilia-plugin/src/ui/look.rs). Every colour below is a
+`Look` field of the same name, night and day.
+
+Self-contained: no network, open it directly in a browser. The bar above the
+window switches page, language and light; nothing installs.
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caecilia — Installer Mockup</title>
+<style>
+  :root, [data-look="night"] {
+    --ground:#0D0A08; --wood-top:#2B1B13; --wood-bottom:#1A100B; --grain:rgba(0,0,0,.19);
+    --panel-top:#211A15; --panel-bottom:#17120F; --edge:#3A2D23; --sheen:rgba(255,240,216,.08);
+    --ebony:#120D0A; --ebony-light:#3A2E26;
+    --ivory-light:#FFFBF0; --ivory:#EFE5CF; --ivory-shade:#C9B994; --ink:#1C1510;
+    --brass-light:#F6DA95; --brass:#CFA24E; --brass-dark:#8A6326; --plate-ink:#2B1D0C;
+    --text:#F1E6D2; --text2:#C4B294; --muted:#8C7B65; --accent:#E0AE55;
+    --dial:#16110D; --dial-ink:#E9DDC6; --good:#7FB77E; --set-red:#B33A2C;
+    --raised:#2A2019; --field:#120E0B;
+    --chrome:#1F1F1F; --chrome-ink:#E8E8E8; --page:#050403;
+  }
+  [data-look="day"] {
+    --ground:#EDE4D3; --wood-top:#D7BE95; --wood-bottom:#C3A273; --grain:rgba(90,58,26,.13);
+    --panel-top:#FBF6EC; --panel-bottom:#F3EBDC; --edge:#D9CAB0; --sheen:rgba(255,255,255,.6);
+    --ebony:#1A130F; --ebony-light:#4A3B30;
+    --ivory-light:#FFFDF6; --ivory:#F6EEDC; --ivory-shade:#D4C29E; --ink:#1C1510;
+    --brass-light:#F4D58C; --brass:#C0913E; --brass-dark:#7E5A20; --plate-ink:#2B1D0C;
+    --text:#2A1E14; --text2:#5E4B36; --muted:#8E7B63; --accent:#A8742A;
+    --dial:#FBF6EA; --dial-ink:#2A1E14; --good:#4E8A4D; --set-red:#B33A2C;
+    --raised:#FFFDF8; --field:#FFFDF8;
+    --chrome:#F3F3F3; --chrome-ink:#1B1B1B; --page:#D9CFBD;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; }
+  body {
+    background:var(--page); color:var(--text);
+    font:14px/1.4 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+    min-height:100vh; padding:16px; transition:background .3s;
+  }
+  /* ---- the mockup's own bar ---- */
+  .bar { max-width:760px; margin:0 auto 14px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .bar .pages { display:flex; flex-wrap:wrap; gap:4px; flex:1; }
+  .bar button {
+    font:inherit; font-size:12px; border:1px solid var(--edge); background:var(--panel-bottom);
+    color:var(--text2); padding:4px 10px; border-radius:999px; cursor:pointer;
+  }
+  .bar button[aria-pressed="true"] { background:var(--accent); color:var(--plate-ink); border-color:var(--accent); font-weight:600; }
+  .note { max-width:760px; margin:14px auto 0; color:var(--muted); font-size:12.5px; }
+
+  /* ---- the window, scaled to fit narrow screens ---- */
+  .fit { max-width:760px; margin:0 auto; }
+  .win {
+    width:760px; transform-origin:top left; border-radius:8px; overflow:hidden;
+    box-shadow:0 20px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.4);
+  }
+  .titlebar {
+    height:32px; background:var(--chrome); color:var(--chrome-ink); font-size:12px;
+    display:flex; align-items:center; padding-left:10px; gap:8px;
+  }
+  .titlebar .ico { width:16px; height:16px; border-radius:3px; background:radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 55%, var(--brass-dark)); }
+  .titlebar .sp { flex:1; }
+  .titlebar .ctl { width:46px; height:32px; display:grid; place-items:center; opacity:.8; }
+  .body { height:520px; display:grid; grid-template-columns:216px 1fr; background:var(--ground); padding:12px; gap:12px; }
+
+  /* the jamb: wood, grain, gilded beading */
+  .jamb {
+    position:relative; border-radius:14px; padding:22px 18px 18px;
+    background:
+      repeating-linear-gradient(176deg, transparent 0 5px, var(--grain) 5px 6px, transparent 6px 11px, var(--grain) 11px 13px, transparent 13px 19px),
+      linear-gradient(var(--wood-top), var(--wood-bottom));
+    box-shadow:0 10px 30px -6px rgba(0,0,0,.55), inset 0 0 0 1px var(--sheen);
+    display:flex; flex-direction:column; gap:14px;
+  }
+  .jamb::after { content:""; position:absolute; inset:7px; border-radius:9px; border:1.2px solid color-mix(in srgb, var(--brass) 70%, transparent); box-shadow:0 0 0 1.2px rgba(0,0,0,.35); pointer-events:none; }
+  .plate {
+    position:relative; height:46px; border-radius:4px; display:grid; place-items:center;
+    background:linear-gradient(var(--brass-light), var(--brass) 45%, var(--brass-dark));
+    box-shadow:0 2px 4px rgba(0,0,0,.5); color:var(--plate-ink);
+    font:760 17px/1 Georgia,"Iowan Old Style",serif; letter-spacing:.32em; text-indent:.32em;
+  }
+  .plate::before, .plate::after { content:""; position:absolute; top:50%; width:5px; height:5px; margin-top:-2.5px; border-radius:50%; background:var(--brass-dark); box-shadow:inset 1px 1px 0 var(--brass-light); }
+  .plate::before { left:7px; } .plate::after { right:7px; }
+  .plate small { position:absolute; bottom:3px; font:600 8.5px/1 "Segoe UI",sans-serif; letter-spacing:.18em; opacity:.75; }
+  .steps { display:flex; flex-direction:column; gap:9px; margin-top:6px; }
+  .tab {
+    height:34px; border-radius:6px; display:flex; align-items:center; gap:10px; padding:0 12px;
+    background:linear-gradient(var(--ivory-light), var(--ivory) 60%, var(--ivory-shade));
+    color:var(--ink); font-size:12px; font-weight:680; box-shadow:0 4px 6px rgba(0,0,0,.45);
+    opacity:.55;
+  }
+  .tab .n { width:18px; height:18px; border-radius:50%; display:grid; place-items:center; font-size:10px; background:var(--ebony); color:var(--ivory); }
+  .tab.done { opacity:.85; } .tab.done .n { background:var(--good); }
+  .tab.on { opacity:1; box-shadow:0 1px 2px rgba(0,0,0,.6), 0 0 10px color-mix(in srgb, var(--accent) 50%, transparent), 0 0 0 1.6px var(--brass-light); background:linear-gradient(var(--ivory-shade), var(--ivory) 50%, var(--ivory-light)); }
+  .tab.on .n { background:var(--brass-dark); }
+  .jamb .foot { margin-top:auto; font-size:10.5px; color:var(--text2); opacity:.85; line-height:1.5; }
+  [data-look="day"] .jamb .foot { color:#3B2810; }
+
+  /* the panel: leather by night, paper by day */
+  .panel {
+    border-radius:12px; padding:22px 26px 18px; display:flex; flex-direction:column;
+    background:linear-gradient(var(--panel-top), var(--panel-bottom));
+    box-shadow:0 6px 18px rgba(0,0,0,.35), inset 0 0 0 1px var(--edge); min-width:0;
+  }
+  h1 { margin:0 0 4px; font:600 22px/1.2 "Segoe UI Variable Display","Segoe UI",sans-serif; }
+  h2 { margin:10px 0 5px; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); font-weight:650; }
+  p { margin:6px 0; color:var(--text2); }
+  .lead { font-size:14.5px; }
+  .grow { flex:1; min-height:0; }
+  .actions { display:flex; gap:10px; align-items:center; margin-top:12px; }
+  .actions .sp { flex:1; }
+  .meta { font-size:11.5px; color:var(--muted); }
+  a, .link { color:var(--accent); text-decoration:none; cursor:pointer; }
+  a:hover, .link:hover { text-decoration:underline; }
+  code, .path { font-family:"Cascadia Mono",Consolas,monospace; font-size:11.5px; color:var(--text2); }
+
+  /* buttons: ivory tablets, the primary one in brass */
+  .btn {
+    font:inherit; font-size:13px; font-weight:620; height:34px; padding:0 18px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--ivory-shade); color:var(--ink);
+    background:linear-gradient(var(--ivory-light), var(--ivory) 60%, var(--ivory-shade));
+    box-shadow:0 3px 5px rgba(0,0,0,.35); display:inline-flex; align-items:center; gap:7px;
+  }
+  .btn:active { transform:translateY(1px); box-shadow:0 1px 2px rgba(0,0,0,.4); }
+  .btn.primary { border-color:var(--brass-dark); color:var(--plate-ink); background:linear-gradient(var(--brass-light), var(--brass) 55%, var(--brass-dark)); }
+  .btn.danger { border-color:#6E1C14; color:#FFF3E6; background:linear-gradient(#E0705E, var(--set-red) 60%, #6E1C14); }
+  .btn.quiet { background:transparent; box-shadow:none; border-color:var(--edge); color:var(--text2); }
+  .shield { width:13px; height:15px; display:inline-block; background:
+      linear-gradient(90deg, #2F6FD6 50%, #F2C230 50%) top/100% 50% no-repeat,
+      linear-gradient(90deg, #F2C230 50%, #2F6FD6 50%) bottom/100% 50% no-repeat;
+    clip-path:polygon(50% 0, 100% 15%, 92% 62%, 50% 100%, 8% 62%, 0 15%); }
+
+  /* cards and rows */
+  .card { border-radius:10px; background:var(--raised); box-shadow:inset 0 0 0 1px var(--edge); padding:12px 14px; }
+  .what { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:13px; }
+  .what b { color:var(--text); font-weight:600; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); margin-top:6px; }
+
+  /* scope: two tablets side by side */
+  .scope { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .choice {
+    text-align:left; font:inherit; cursor:pointer; border-radius:10px; padding:9px 12px; border:1px solid var(--edge);
+    background:var(--raised); color:var(--text);
+  }
+  .choice b { display:flex; gap:7px; align-items:center; font-size:13px; }
+  .choice span { display:block; font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .choice[aria-pressed="true"] { border-color:var(--brass); box-shadow:0 0 0 1.5px var(--brass-light), 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  /* components: small drawknobs */
+  .rows { display:flex; flex-direction:column; gap:5px; }
+  .row { display:grid; grid-template-columns:26px 1fr auto; align-items:center; gap:10px; cursor:pointer; padding:1px 0; }
+  .knob { width:22px; height:22px; border-radius:50%; position:relative;
+    background:radial-gradient(circle at 38% 32%, var(--ebony-light), var(--ebony) 70%);
+    box-shadow:0 2px 3px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.08); }
+  .knob::after { content:""; position:absolute; inset:5px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--ivory-light), var(--ivory) 60%, var(--ivory-shade)); }
+  .row[aria-checked="true"] .knob { box-shadow:0 0 0 1.5px var(--brass-light), 0 0 9px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .row[aria-checked="true"] .knob::after { background:radial-gradient(circle at 35% 30%, var(--brass-light), var(--brass) 60%, var(--brass-dark)); }
+  .row .t { font-size:13px; } .row .t small { color:var(--muted); font-size:11.5px; margin-left:6px; }
+  .row .path { font-size:10.8px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:230px; }
+  .folder { display:flex; gap:8px; }
+  .field { flex:1; height:32px; border-radius:6px; background:var(--field); box-shadow:inset 0 0 0 1px var(--edge), inset 0 2px 3px rgba(0,0,0,.25); display:flex; align-items:center; padding:0 10px; min-width:0; }
+  .field .path { color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .checks { display:flex; gap:18px; flex-wrap:wrap; }
+  .check { display:flex; gap:7px; align-items:center; cursor:pointer; font-size:13px; color:var(--text2); }
+  .box { width:16px; height:16px; border-radius:4px; box-shadow:inset 0 0 0 1px var(--muted); display:grid; place-items:center; font-size:11px; color:var(--plate-ink); }
+  .check[aria-checked="true"] .box { background:var(--accent); box-shadow:none; }
+  .check[aria-checked="true"] .box::after { content:"✓"; font-weight:800; }
+
+  /* progress: the wind gauge */
+  .gaugewrap { display:grid; grid-template-columns:190px 1fr; gap:18px; align-items:center; }
+  .gaugewrap svg { width:190px; height:150px; }
+  .step-now { font-size:15px; color:var(--text); font-weight:600; }
+  .log {
+    margin-top:10px; height:118px; overflow:auto; border-radius:8px; padding:8px 10px;
+    background:var(--field); box-shadow:inset 0 0 0 1px var(--edge);
+    font:11px/1.55 "Cascadia Mono",Consolas,monospace; color:var(--text2); white-space:pre;
+  }
+  .log .ok { color:var(--good); }
+
+  /* done */
+  .placed { display:flex; flex-direction:column; gap:6px; font-size:13px; }
+  .placed div { display:grid; grid-template-columns:18px 132px 1fr; gap:8px; align-items:baseline; }
+  .placed .tick { color:var(--good); font-weight:800; }
+  .placed .path { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hint { border-left:3px solid var(--accent); padding:6px 10px; margin-top:12px; background:color-mix(in srgb, var(--accent) 10%, transparent); border-radius:0 6px 6px 0; font-size:12.5px; color:var(--text2); }
+
+  /* maintenance: big tablets */
+  .tasks { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:8px; }
+  .task { text-align:left; font:inherit; cursor:pointer; padding:12px; border-radius:10px; border:1px solid var(--edge); background:var(--raised); color:var(--text); min-height:96px; }
+  .task b { display:block; font-size:13.5px; margin-bottom:3px; }
+  .task span { font-size:11.5px; color:var(--muted); }
+  .task.main { border-color:var(--brass); box-shadow:0 0 0 1.5px var(--brass-light); }
+  .badge { display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; background:var(--accent); color:var(--plate-ink); margin-left:6px; vertical-align:2px; }
+
+  /* the sheet over a page */
+  .sheet { position:absolute; inset:0; background:rgba(0,0,0,.45); display:grid; place-items:center; }
+  .sheet .card { width:400px; padding:18px 20px; background:linear-gradient(var(--panel-top), var(--panel-bottom)); box-shadow:0 12px 40px rgba(0,0,0,.5), inset 0 0 0 1px var(--edge); }
+  .stage { position:relative; }
+  [hidden] { display:none !important; }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+
+<div class="bar" role="toolbar" aria-label="Mockup controls">
+  <div class="pages" id="pages"></div>
+  <button id="lang" aria-label="Language">PT</button>
+  <button id="light" aria-label="Night or day">☀</button>
+</div>
+
+<div class="fit" id="fit">
+  <div class="win" id="win" data-look="night">
+    <div class="titlebar">
+      <span class="ico"></span><span data-t="title"></span><span class="sp"></span>
+      <span class="ctl">—</span><span class="ctl">✕</span>
+    </div>
+    <div class="body">
+      <aside class="jamb">
+        <div class="plate">CAECILIA<small>2.0.0</small></div>
+        <div class="steps" id="steps"></div>
+        <div class="foot" data-t="free"></div>
+      </aside>
+      <div class="stage">
+        <main class="panel" id="panel" style="height:100%"></main>
+        <div class="sheet" id="sheet" hidden></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="note" data-t="note"></p>
+
+<script>
+const T = {
+  en: {
+    title: "Caecilia 2.0.0 Setup",
+    free: "Free software · Apache License 2.0<br>© 2026 Alesson Queiroz and the Caecilia contributors",
+    note: "Mockup of the Rust installer (docs/INSTALLER.md). The real one is drawn with manguebyte-ui in the console's materials; light follows Windows' app theme. Nothing here installs.",
+    s1: "Welcome", s2: "Options", s3: "Installing", s4: "Done",
+    p_welcome: "Welcome", p_options: "Options", p_progress: "Installing", p_done: "Done",
+    p_update: "Already installed", p_busy: "App is open", p_remove: "Uninstall", p_removed: "Removed",
+    w_h: "Caecilia, the pipe organ",
+    w_lead: "An organ to play from your MIDI keyboard — as an app of its own, and as a VST3 and CLAP instrument in your DAW.",
+    w_will: "This will install",
+    c_app: "Caecilia app", c_vst3: "VST3 plugin", c_clap: "CLAP plugin", c_organ: "Demonstration organ",
+    c_app_s: "standalone", c_vst3_s: "for most DAWs", c_clap_s: "for Bitwig, Reaper…", c_organ_s: "in your Organs folder",
+    w_for: "For everyone on this PC, with shortcuts on the desktop and in the Start menu.",
+    w_lic: "By installing you accept the <a>Apache License 2.0</a>.",
+    b_options: "Options…", b_install: "Install", b_back: "Back", b_cancel: "Cancel", b_finish: "Finish",
+    b_change: "Change…", b_close: "Close", b_retry: "Retry", b_remove: "Remove", b_keep: "Keep it",
+    o_h: "Options",
+    o_who: "Who is it for?",
+    o_all: "Everyone on this PC", o_all_s: "Plugins go where every DAW looks. Asks for administrator once.",
+    o_me: "Just me", o_me_s: "No administrator needed. Some older DAWs don't look in your own plugin folders.",
+    o_what: "What to install", o_where: "Program folder", o_short: "Shortcuts",
+    o_desk: "Desktop", o_start: "Start menu",
+    o_space: "Needs 14 MB · 112 GB free on C:",
+    g_h: "Installing Caecilia",
+    g_steps: ["Checking the installer…", "Installing the Caecilia app…", "Installing the VST3 plugin…", "Installing the CLAP plugin…", "Adding the demonstration organ…", "Creating shortcuts…", "Registering the uninstaller…", "Checking every file…"],
+    g_details: "Details",
+    d_h: "Caecilia is installed",
+    d_lead: "Everything is in place and every file checked.",
+    d_open: "Open Caecilia now",
+    d_hint: "In your DAW, rescan plugins: Caecilia appears among the instruments, as VST3 and as CLAP.",
+    d_log: "Installation log",
+    u_h: "Caecilia is already installed",
+    u_lead: "Version 2.0.0 is here, for everyone on this PC. This installer has 2.0.1.",
+    u_update: "Update to 2.0.1", u_update_s: "Keeps your folder, components and organs.",
+    u_repair: "Repair", u_repair_s: "Puts back any file that is missing or changed.",
+    u_remove: "Remove", u_remove_s: "Uninstalls Caecilia from this PC.",
+    u_new: "new",
+    x_h: "Caecilia is open",
+    x_lead: "Close Caecilia so its files can be updated, then choose Retry. Your session is saved when it closes.",
+    r_h: "Remove Caecilia?",
+    r_lead: "This removes what the installer put on this PC:",
+    r_purge: "Also remove my organs and settings",
+    r_purge_s: "%APPDATA%\\Caecilia — organs you added, your last session. Off: they stay for next time.",
+    k_h: "Caecilia was removed",
+    k_lead: "Everything the installer placed is gone.",
+    k_kept: "Kept, because you changed it after installing:",
+  },
+  pt: {
+    title: "Instalação do Caecilia 2.0.0",
+    free: "Software livre · Licença Apache 2.0<br>© 2026 Alesson Queiroz e os colaboradores do Caecilia",
+    note: "Mockup do instalador em Rust (docs/INSTALLER.md). O de verdade é desenhado com o manguebyte-ui nos materiais do console; a luz segue o tema de apps do Windows. Nada aqui instala.",
+    s1: "Boas-vindas", s2: "Opções", s3: "Instalando", s4: "Pronto",
+    p_welcome: "Boas-vindas", p_options: "Opções", p_progress: "Instalando", p_done: "Pronto",
+    p_update: "Já instalado", p_busy: "App aberto", p_remove: "Desinstalar", p_removed: "Removido",
+    w_h: "Caecilia, o órgão de tubos",
+    w_lead: "Um órgão para tocar do seu teclado MIDI — como aplicativo próprio e como instrumento VST3 e CLAP na sua DAW.",
+    w_will: "Será instalado",
+    c_app: "Aplicativo Caecilia", c_vst3: "Plugin VST3", c_clap: "Plugin CLAP", c_organ: "Órgão de demonstração",
+    c_app_s: "standalone", c_vst3_s: "para a maioria das DAWs", c_clap_s: "para Bitwig, Reaper…", c_organ_s: "na sua pasta Organs",
+    w_for: "Para todos neste PC, com atalhos na área de trabalho e no menu Iniciar.",
+    w_lic: "Ao instalar, você aceita a <a>Licença Apache 2.0</a>.",
+    b_options: "Opções…", b_install: "Instalar", b_back: "Voltar", b_cancel: "Cancelar", b_finish: "Concluir",
+    b_change: "Alterar…", b_close: "Fechar", b_retry: "Tentar de novo", b_remove: "Remover", b_keep: "Manter",
+    o_h: "Opções",
+    o_who: "Para quem?",
+    o_all: "Todos neste PC", o_all_s: "Os plugins vão para onde toda DAW procura. Pede administrador uma vez.",
+    o_me: "Só para mim", o_me_s: "Sem administrador. Algumas DAWs antigas não procuram nas pastas de plugins do usuário.",
+    o_what: "O que instalar", o_where: "Pasta do programa", o_short: "Atalhos",
+    o_desk: "Área de trabalho", o_start: "Menu Iniciar",
+    o_space: "Precisa de 14 MB · 112 GB livres em C:",
+    g_h: "Instalando o Caecilia",
+    g_steps: ["Verificando o instalador…", "Instalando o aplicativo Caecilia…", "Instalando o plugin VST3…", "Instalando o plugin CLAP…", "Adicionando o órgão de demonstração…", "Criando atalhos…", "Registrando o desinstalador…", "Conferindo cada arquivo…"],
+    g_details: "Detalhes",
+    d_h: "O Caecilia está instalado",
+    d_lead: "Tudo no lugar, e cada arquivo conferido.",
+    d_open: "Abrir o Caecilia agora",
+    d_hint: "Na sua DAW, reescaneie os plugins: o Caecilia aparece entre os instrumentos, como VST3 e como CLAP.",
+    d_log: "Log da instalação",
+    u_h: "O Caecilia já está instalado",
+    u_lead: "A versão 2.0.0 está aqui, para todos neste PC. Este instalador traz a 2.0.1.",
+    u_update: "Atualizar para 2.0.1", u_update_s: "Mantém sua pasta, componentes e órgãos.",
+    u_repair: "Reparar", u_repair_s: "Repõe qualquer arquivo que falte ou tenha mudado.",
+    u_remove: "Remover", u_remove_s: "Desinstala o Caecilia deste PC.",
+    u_new: "nova",
+    x_h: "O Caecilia está aberto",
+    x_lead: "Feche o Caecilia para que os arquivos dele possam ser atualizados e escolha Tentar de novo. Sua sessão é salva ao fechar.",
+    r_h: "Remover o Caecilia?",
+    r_lead: "Isto remove o que o instalador colocou neste PC:",
+    r_purge: "Remover também meus órgãos e configurações",
+    r_purge_s: "%APPDATA%\\Caecilia — órgãos que você adicionou, sua última sessão. Desmarcado: ficam para a próxima vez.",
+    k_h: "O Caecilia foi removido",
+    k_lead: "Tudo o que o instalador colocou foi retirado.",
+    k_kept: "Mantido, porque você o alterou depois de instalar:",
+  },
+};
+
+const state = {
+  page: "welcome", lang: "en",
+  look: matchMedia("(prefers-color-scheme: light)").matches ? "day" : "night",
+  machine: true, comps: { app: true, vst3: true, clap: true, organ: true },
+  desk: true, start: true, open: true, purge: false, details: true, progress: 0,
+};
+const PAGES = ["welcome", "options", "progress", "done", "update", "busy", "remove", "removed"];
+const STEP_OF = { welcome: 1, options: 2, progress: 3, done: 4, update: 1, busy: 3 };
+const t = k => T[state.lang][k];
+
+function dirs() {
+  return state.machine ? {
+    app: "C:\\Program Files\\Caecilia", vst3: "C:\\Program Files\\Common Files\\VST3\\Caecilia.vst3",
+    clap: "C:\\Program Files\\Common Files\\CLAP\\Caecilia.clap",
+  } : {
+    app: "%LOCALAPPDATA%\\Programs\\Caecilia", vst3: "%LOCALAPPDATA%\\Programs\\Common\\VST3\\Caecilia.vst3",
+    clap: "%LOCALAPPDATA%\\Programs\\Common\\CLAP\\Caecilia.clap",
+  };
+}
+const ORGANS = "%APPDATA%\\Caecilia\\Organs";
+const shield = () => state.machine ? '<span class="shield" aria-hidden="true"></span>' : "";
+
+function components(interactive) {
+  const d = dirs();
+  const where = { app: d.app, vst3: d.vst3, clap: d.clap, organ: ORGANS };
+  return `<div class="rows">${["app", "vst3", "clap", "organ"].map(c => `
+    <div class="row" role="checkbox" tabindex="0" aria-checked="${state.comps[c]}" ${interactive ? `data-comp="${c}"` : ""}>
+      <span class="knob"></span>
+      <span class="t">${t("c_" + c)}<small>${t("c_" + c + "_s")}</small></span>
+      <span class="path" title="${where[c]}">${where[c]}</span>
+    </div>`).join("")}</div>`;
+}
+
+const VIEW = {
+  welcome: () => `
+    <h1>${t("w_h")}</h1>
+    <p class="lead">${t("w_lead")}</p>
+    <h2>${t("w_will")}</h2>
+    <div class="card">${components(false)}</div>
+    <p class="meta" style="margin-top:10px">${t("w_for")}</p>
+    <div class="grow"></div>
+    <p class="meta">${t("w_lic")}</p>
+    <div class="actions">
+      <button class="btn quiet" data-go="options">${t("b_options")}</button><span class="sp"></span>
+      <button class="btn primary" data-go="progress">${shield()}${t("b_install")}</button>
+    </div>`,
+  options: () => `
+    <h1>${t("o_h")}</h1>
+    <h2>${t("o_who")}</h2>
+    <div class="scope">
+      <button class="choice" aria-pressed="${state.machine}" data-scope="1"><b><span class="shield"></span>${t("o_all")}</b><span>${t("o_all_s")}</span></button>
+      <button class="choice" aria-pressed="${!state.machine}" data-scope="0"><b>${t("o_me")}</b><span>${t("o_me_s")}</span></button>
+    </div>
+    <h2>${t("o_what")}</h2>
+    ${components(true)}
+    <h2>${t("o_where")}</h2>
+    <div class="folder"><div class="field"><span class="path">${dirs().app}</span></div><button class="btn">${t("b_change")}</button></div>
+    <div class="actions" style="margin-top:12px">
+      <div class="checks">
+        ${["desk", "start"].map(k => `<span class="check" role="checkbox" tabindex="0" aria-checked="${state[k]}" data-flag="${k}"><span class="box"></span>${t(k === "desk" ? "o_desk" : "o_start")}</span>`).join("")}
+      </div>
+      <span class="sp"></span><span class="meta">${t("o_space")}</span>
+    </div>
+    <div class="grow"></div>
+    <div class="actions">
+      <button class="btn quiet" data-go="welcome">${t("b_back")}</button><span class="sp"></span>
+      <button class="btn primary" data-go="progress">${shield()}${t("b_install")}</button>
+    </div>`,
+  progress: () => `
+    <h1>${t("g_h")}</h1>
+    <div class="gaugewrap" style="margin-top:8px">
+      ${gauge()}
+      <div><div class="step-now" id="stepnow"></div><div class="path" id="file" style="margin-top:4px"></div></div>
+    </div>
+    <span class="link" data-flag="details" style="font-size:12.5px">${state.details ? "▾" : "▸"} ${t("g_details")}</span>
+    <div class="log" id="log" ${state.details ? "" : "hidden"}></div>
+    <div class="grow"></div>
+    <div class="actions"><span class="sp"></span><button class="btn" data-go="welcome">${t("b_cancel")}</button></div>`,
+  done: () => {
+    const d = dirs();
+    const rows = [["c_app", d.app], ["c_vst3", d.vst3], ["c_clap", d.clap], ["c_organ", ORGANS]];
+    return `
+    <h1>${t("d_h")}</h1>
+    <p class="lead">${t("d_lead")}</p>
+    <div class="card placed" style="margin-top:10px">${rows.map(([k, p]) => `<div><span class="tick">✓</span><span>${t(k)}</span><span class="path" title="${p}">${p}</span></div>`).join("")}</div>
+    <div class="hint">${t("d_hint")}</div>
+    <div class="grow"></div>
+    <div class="actions">
+      <span class="check" role="checkbox" tabindex="0" aria-checked="${state.open}" data-flag="open"><span class="box"></span>${t("d_open")}</span>
+      <span class="sp"></span><a class="meta">${t("d_log")}</a>
+      <button class="btn primary" data-go="welcome">${t("b_finish")}</button>
+    </div>`;
+  },
+  update: () => `
+    <h1>${t("u_h")}</h1>
+    <p class="lead">${t("u_lead")}</p>
+    <div class="tasks">
+      <button class="task main" data-go="progress"><b>${t("u_update")}<span class="badge">${t("u_new")}</span></b><span>${t("u_update_s")}</span></button>
+      <button class="task" data-go="progress"><b>${t("u_repair")}</b><span>${t("u_repair_s")}</span></button>
+      <button class="task" data-go="remove"><b>${t("u_remove")}</b><span>${t("u_remove_s")}</span></button>
+    </div>
+    <div class="grow"></div>
+    <div class="actions"><button class="btn quiet" data-go="options">${t("b_options")}</button><span class="sp"></span><button class="btn" data-go="welcome">${t("b_close")}</button></div>`,
+  busy: () => VIEW.progress(),
+  remove: () => {
+    const d = dirs();
+    return `
+    <h1>${t("r_h")}</h1>
+    <p class="lead">${t("r_lead")}</p>
+    <div class="card placed">${[["c_app", d.app], ["c_vst3", d.vst3], ["c_clap", d.clap], ["c_organ", ORGANS + "\\caecilia-demo.organ.json"]].map(([k, p]) => `<div><span class="tick" style="color:var(--set-red)">−</span><span>${t(k)}</span><span class="path" title="${p}">${p}</span></div>`).join("")}</div>
+    <div style="margin-top:14px">
+      <span class="check" role="checkbox" tabindex="0" aria-checked="${state.purge}" data-flag="purge"><span class="box"></span>${t("r_purge")}</span>
+      <p class="meta" style="margin:4px 0 0 23px">${t("r_purge_s")}</p>
+    </div>
+    <div class="grow"></div>
+    <div class="actions"><span class="sp"></span><button class="btn" data-go="update">${t("b_keep")}</button><button class="btn danger" data-go="removed">${shield()}${t("b_remove")}</button></div>`;
+  },
+  removed: () => `
+    <h1>${t("k_h")}</h1>
+    <p class="lead">${t("k_lead")}</p>
+    ${state.purge ? "" : `<p class="meta" style="margin-top:12px">${t("k_kept")}</p>
+    <div class="card placed"><div><span class="tick" style="color:var(--accent)">•</span><span>${t("c_organ")}</span><span class="path">${ORGANS}\\caecilia-demo.organ.json</span></div></div>`}
+    <div class="grow"></div>
+    <div class="actions"><span class="sp"></span><button class="btn primary" data-go="welcome">${t("b_close")}</button></div>`,
+};
+
+/* The wind gauge, as the console draws it: a dark dial, brass rim, ticks, an
+   arc that fills, a needle. */
+function gauge() {
+  const ticks = Array.from({ length: 11 }, (_, i) => {
+    const a = Math.PI * (1.15 - 1.3 * i / 10), r1 = 62, r2 = i % 5 ? 56 : 52;
+    return `<line x1="${95 + r1 * Math.cos(a)}" y1="${92 - r1 * Math.sin(a)}" x2="${95 + r2 * Math.cos(a)}" y2="${92 - r2 * Math.sin(a)}" stroke="var(--dial-ink)" stroke-width="${i % 5 ? 1 : 2}" opacity=".7"/>`;
+  }).join("");
+  return `<svg viewBox="0 0 190 150" aria-label="progress">
+    <defs><linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--brass-light)"/><stop offset=".5" stop-color="var(--brass)"/><stop offset="1" stop-color="var(--brass-dark)"/></linearGradient></defs>
+    <circle cx="95" cy="92" r="76" fill="url(#rim)"/>
+    <circle cx="95" cy="92" r="70" fill="var(--dial)"/>
+    ${ticks}
+    <path id="arcbg" d="" fill="none" stroke="var(--edge)" stroke-width="5" stroke-linecap="round"/>
+    <path id="arc" d="" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/>
+    <line id="needle" x1="95" y1="92" x2="95" y2="40" stroke="var(--set-red)" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="95" cy="92" r="6" fill="url(#rim)"/>
+    <text id="pct" x="95" y="128" text-anchor="middle" fill="var(--dial-ink)" font-size="15" font-weight="700" font-family="Segoe UI, sans-serif">0%</text>
+    <text x="95" y="66" text-anchor="middle" fill="var(--dial-ink)" opacity=".6" font-size="8.5" letter-spacing="2" font-family="Segoe UI, sans-serif">WIND</text>
+  </svg>`;
+}
+function arc(p) {
+  const a0 = Math.PI * 1.15, a1 = Math.PI * (1.15 - 1.3 * p), r = 46;
+  const x0 = 95 + r * Math.cos(a0), y0 = 92 - r * Math.sin(a0), x1 = 95 + r * Math.cos(a1), y1 = 92 - r * Math.sin(a1);
+  return `M${x0} ${y0} A${r} ${r} 0 ${1.3 * p > 1 ? 1 : 0} 1 ${x1} ${y1}`;
+}
+
+const FILES = [
+  ["payload", "sha256 9f2c…41d0  ok"], ["C:\\Program Files\\Caecilia\\caecilia.exe", "4.4 MB  sha256 ok"],
+  ["…\\VST3\\Caecilia.vst3\\Contents\\x86_64-win\\Caecilia.vst3", "4.2 MB  sha256 ok"],
+  ["…\\CLAP\\Caecilia.clap", "4.2 MB  sha256 ok"], ["…\\Organs\\caecilia-demo.organ.json", "38 KB  sha256 ok"],
+  ["Desktop\\Caecilia.lnk, Start\\Caecilia.lnk", "ok"], ["HKLM\\…\\Uninstall\\Caecilia", "ok"], ["install.json", "11 entries, all match"],
+];
+let timer = null;
+function animate() {
+  clearInterval(timer);
+  state.progress = 0;
+  const log = document.getElementById("log");
+  let shown = -1;
+  timer = setInterval(() => {
+    const busy = state.page === "busy";
+    state.progress = Math.min(1, state.progress + 0.006);
+    if (busy && state.progress > 0.2) { state.progress = 0.2; showSheet(); }
+    const p = state.progress, i = Math.min(7, Math.floor(p * 8));
+    document.getElementById("arcbg").setAttribute("d", arc(1));
+    document.getElementById("arc").setAttribute("d", arc(Math.max(p, 0.001)));
+    const a = Math.PI * (1.15 - 1.3 * p);
+    const n = document.getElementById("needle");
+    n.setAttribute("x2", 95 + 50 * Math.cos(a)); n.setAttribute("y2", 92 - 50 * Math.sin(a));
+    document.getElementById("pct").textContent = Math.round(p * 100) + "%";
+    document.getElementById("stepnow").textContent = t("g_steps")[i];
+    document.getElementById("file").textContent = FILES[i][0];
+    while (shown < i) { shown++; log.innerHTML += `${FILES[shown][0]}  <span class="ok">${FILES[shown][1]}</span>\n`; log.scrollTop = 1e6; }
+    if (p >= 1) { clearInterval(timer); setTimeout(() => state.page === "progress" && go("done"), 700); }
+  }, 30);
+}
+function showSheet() {
+  const s = document.getElementById("sheet");
+  if (!s.hidden) return;
+  s.hidden = false;
+  s.innerHTML = `<div class="card"><h1 style="font-size:17px">${t("x_h")}</h1><p>${t("x_lead")}</p>
+    <div class="actions"><span class="sp"></span><button class="btn" data-go="welcome">${t("b_cancel")}</button><button class="btn primary" data-go="progress">${t("b_retry")}</button></div></div>`;
+}
+
+function render() {
+  const win = document.getElementById("win");
+  win.dataset.look = state.look;
+  document.body.dataset.look = state.look;
+  document.documentElement.lang = state.lang === "pt" ? "pt-BR" : "en";
+  document.querySelectorAll("[data-t]").forEach(e => e.innerHTML = t(e.dataset.t));
+  const step = STEP_OF[state.page] || 0;
+  document.getElementById("steps").innerHTML = state.page === "remove" || state.page === "removed"
+    ? `<div class="tab on"><span class="n">−</span>${t("p_remove")}</div>`
+    : [1, 2, 3, 4].map(n => `<div class="tab ${n === step ? "on" : n < step ? "done" : ""}"><span class="n">${n < step ? "✓" : n}</span>${t("s" + n)}</div>`).join("");
+  document.getElementById("panel").innerHTML = VIEW[state.page]();
+  document.getElementById("sheet").hidden = true;
+  document.getElementById("pages").innerHTML = PAGES.map(p => `<button data-go="${p}" aria-pressed="${p === state.page}">${t("p_" + p)}</button>`).join("");
+  document.getElementById("lang").textContent = state.lang === "en" ? "PT" : "EN";
+  document.getElementById("light").textContent = state.look === "night" ? "☀" : "☾";
+  if (state.page === "progress" || state.page === "busy") animate(); else clearInterval(timer);
+  fit();
+}
+function go(page) { state.page = page; render(); }
+function fit() {
+  const box = document.getElementById("fit"), win = document.getElementById("win");
+  const k = Math.min(1, box.clientWidth / 760);
+  win.style.transform = `scale(${k})`;
+  box.style.height = (win.offsetHeight * k) + "px";
+}
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-go],[data-scope],[data-comp],[data-flag]");
+  if (!el) return;
+  if (el.dataset.go) return go(el.dataset.go);
+  if (el.dataset.scope) state.machine = el.dataset.scope === "1";
+  if (el.dataset.comp) state.comps[el.dataset.comp] = !state.comps[el.dataset.comp];
+  if (el.dataset.flag === "details") {
+    state.details = !state.details;
+    document.getElementById("log").hidden = !state.details;
+    el.textContent = `${state.details ? "▾" : "▸"} ${t("g_details")}`;
+    return;
+  }
+  if (el.dataset.flag) state[el.dataset.flag] = !state[el.dataset.flag];
+  render();
+});
+document.addEventListener("keydown", e => {
+  if ((e.key === " " || e.key === "Enter") && e.target.matches("[role=checkbox]")) { e.preventDefault(); e.target.click(); }
+});
+document.getElementById("lang").onclick = () => { state.lang = state.lang === "en" ? "pt" : "en"; render(); };
+document.getElementById("light").onclick = () => { state.look = state.look === "night" ? "day" : "night"; render(); };
+addEventListener("resize", fit);
+render();
+</script>
