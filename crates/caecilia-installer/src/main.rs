@@ -56,7 +56,14 @@ mod windows_main {
         let args = match Args::parse(std::env::args().skip(1)) {
             Ok(args) => args,
             Err(e) => {
-                win::message("Caecilia", &e);
+                // Asked for silence, it shows nothing: the exit code says it.
+                let silent = std::env::args().skip(1).any(|a| {
+                    let a = a.trim_start_matches(['/', '-']).to_ascii_lowercase();
+                    a == "s" || a == "silent" || a == "quiet" || a == "engine"
+                });
+                if !silent {
+                    win::message("Caecilia", &e);
+                }
                 return exit::USAGE;
             }
         };

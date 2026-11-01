@@ -3,9 +3,13 @@ SPDX-License-Identifier: Apache-2.0
 Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
-# Caecilia 2.0 — Windows Installer (design)
+# Caecilia 2.0 — Windows Installer
 
-> Status: **design, awaiting approval.** Screens: [`mockups/installer.html`](mockups/installer.html).
+> Status: **approved and built** (`crates/caecilia-installer`, `scripts/build-installer.ps1`).
+> Screens: [`mockups/installer.html`](mockups/installer.html). Since the mockup was
+> approved: the window opens by day (light), speaks Spanish too, has a
+> **Licence** page to accept before anything installs, and credits the
+> Manguebyte Audio Framework.
 > Replaces the 1.x Inno Setup script (`installer/caecilia.iss` on `main`). No
 > Inno Setup, NSIS, WiX or MSI: one Rust program, `Caecilia-Setup-<version>-x64.exe`,
 > drawn with the same toolkit and materials as the console.
@@ -33,14 +37,19 @@ bundle.
 ```
  crates/caecilia-installer/
    src/payload.rs    payload format: read, verify, (build side) write        — no Windows
-   src/plan.rs       components + scope -> the list of files/dirs/keys to make — no Windows
-   src/engine.rs     carry out a plan as a transaction; record; uninstall     — std::fs
+   src/plan.rs       components + scope -> the files and shortcuts to make   — no Windows
+   src/engine.rs     carry out a plan as a transaction; uninstall from a record
    src/record.rs     install.json: exactly what was made, with hashes
-   src/win/          registry, known folders, shortcuts (.lnk), elevation    — the only `unsafe`
+   src/system.rs     the registry and shortcuts behind a trait (+ an in-memory double)
+   src/win.rs        known folders, registry, shortcuts (.lnk), elevation    — the only `unsafe`
+   src/run.rs        the work without a window: /S, and the engine the window starts
+   src/job.rs        the window following that engine through its log
+   src/args.rs, log.rs, text.rs (en, pt, es), version.rs
    src/ui/           the wizard, on manguebyte-ui / manguebyte-window
-   src/main.rs       arguments: GUI, /S, --uninstall, --engine …
-   build.rs          embeds the payload, the icon, the manifest, version info
- xtask (scripts/build-installer.ps1 + `cargo run -p caecilia-installer --bin pack`)
+   src/main.rs       caecilia-setup: GUI, /S, --uninstall, --engine …
+   src/bin/caecilia-pack.rs   builds the payload
+   build.rs          embeds the payload; writes the .res (manifest, icon, version)
+ scripts/build-installer.ps1  app + bundles -> payload -> installer
 ```
 
 **Payload embedded in the exe, checked by hash.**
@@ -84,9 +93,11 @@ from it alone — nothing is removed that it did not install.
 - *Just me* never elevates.
 - *Everyone on this PC* shows the shield on **Install**. On click, the
   installer starts a copy of itself elevated (`ShellExecuteEx` `runas`) with
-  the choices on the command line (`--engine --scope machine --components … --dir …`)
-  and the name of a progress pipe; the visible window stays the same
-  unelevated process and draws the progress the elevated one reports.
+  the choices on the command line (`--engine install --scope machine --components …
+  --dir … --organs-dir … --log …`); the visible window stays the same
+  unelevated process and draws the progress from the log the elevated one
+  writes (the log is the progress channel). *Cancel* drops a `<log>.cancel`
+  file, which the engine checks between steps before undoing everything.
 - Because the window never runs elevated, **Open Caecilia** on the last page
   starts the app as the person, not as administrator.
 - If UAC is declined, the page says so and offers *Just me* instead.
@@ -95,8 +106,9 @@ from it alone — nothing is removed that it did not install.
 
 - The default is **Everyone on this PC**: the machine-wide plugin folders are
   the ones every DAW scans. *Just me* is one click away and needs no admin.
-- The two do not coexist: if Caecilia is installed in the other scope, the
-  installer offers to remove that one first (it reads that scope's record).
+- The two do not coexist: an installation already here fixes the scope (the
+  options show the other one locked; `/S` for the other scope fails). To
+  switch, remove Caecilia first.
 - The organs folder is always the installing person's own `%APPDATA%`; other
   people on the PC get the demonstration organ built into the app anyway.
 
@@ -108,13 +120,15 @@ from it alone — nothing is removed that it did not install.
   "Caecilia 2.0.0 is installed — this updates it to 2.0.1", keeping its scope,
   folder and components. New files go in by the same transaction; files the old
   record has and the new plan does not are removed; the record is replaced.
-- **Same version**: the page offers *Repair* (re-lay every file whose hash no
-  longer matches), *Change* (components, shortcuts) and *Remove*.
+- **Same version**: the page offers *Repair* (lay every file again, by the
+  same transaction), *Change* (components, shortcuts) and *Remove*.
 - **Older installer than installed**: refuses, unless `/FORCE`.
-- **Caecilia 1.x** (Inno key `{7C1E9F2A-3B84-4C7D-9A1E-CAEC11A00001}_is1`): offered
-  for removal through its own quiet uninstaller, with consent.
-- **Running app**: if `caecilia.exe` cannot be replaced, the page asks to close
-  it (*Retry* / *Cancel*); DAWs holding the plugin are handled by rename (§2).
+- **Caecilia 1.x** (Inno key `{7C1E9F2A-3B84-4C7D-9A1E-CAEC11A00001}_is1`):
+  detected, and the first page says it is there and can be removed from
+  *Apps & features*; the 2.0 installer does not run 1.x's uninstaller itself.
+- **Running app**: if `caecilia.exe` is open, the window asks to close it
+  (*Retry* / *Cancel*). `/S` does not ask: the running copy is renamed aside
+  and deleted later (§2); DAWs holding the plugin are handled the same way.
 - **Uninstaller**: the installer copies itself into the program folder as
   `uninstall.exe` (so *Change* and *Repair* work from *Apps & features*).
   Uninstall removes the files in the record whose hash still matches, the
@@ -122,17 +136,21 @@ from it alone — nothing is removed that it did not install.
   person changed (say, an edited demo organ) stays, and the last page says so.
   Organs the person added and `session.txt` stay unless they tick
   *Also remove my organs and settings*. To remove its own folder it runs from a
-  copy in `%TEMP%`, which is deleted at the next reboot.
+  copy in `%TEMP%`, which Windows deletes at the next restart when the removal
+  ran as an administrator (else it stays for the temporary folder's cleaning).
 
 ## 6. Silent mode
 
 ```
 Caecilia-Setup-2.0.0-x64.exe /S [/ALLUSERS | /CURRENTUSER] [/DIR="D:\Apps\Caecilia"]
-    [/COMPONENTS=app,vst3,clap,organ] [/NOSHORTCUTS] [/NODESKTOP] [/LOG="path"] [/FORCE]
-uninstall.exe /S [/PURGE]
+    [/COMPONENTS=app,vst3,clap,organ] [/NOSHORTCUTS] [/NODESKTOP] [/NOSTARTMENU]
+    [/LOG="path"] [/LANG=en|pt|es] [/FORCE]
+uninstall.exe --uninstall /S [/PURGE]
 ```
 
-- `/S` shows nothing. Defaults as in the GUI (`/ALLUSERS`, everything).
+- `/S` shows nothing. Defaults as in the GUI (`/ALLUSERS`, everything); an
+  update follows the installation already there. Whoever deploys with `/S`
+  accepts the licence, as with every silent installer.
 - A machine install from an unelevated prompt does not raise UAC: it exits
   `740` (`ERROR_ELEVATION_REQUIRED`), as deployment tools expect.
 - Exit codes: `0` done, `1` failed, `2` cancelled/declined, `3` damaged
@@ -141,7 +159,8 @@ uninstall.exe /S [/PURGE]
 
 ## 7. Logging
 
-- Every run writes `%TEMP%\Caecilia-Setup-<yyyymmdd-hhmmss>.log` (or `/LOG`):
+- Every run writes `%TEMP%\Caecilia-Setup-<yyyymmdd-hhmmss>.log` (or
+  `Caecilia-Uninstall-…`, or `/LOG`; times in UTC):
   version, Windows version, scope, choices, each step with its path and hash,
   the result, and the exit code. No personal data beyond paths.
 - On success the log is also copied to `<program folder>\install.log`.
@@ -169,10 +188,21 @@ The installer is a Manguebyte app window (`App` + `AppWindowOptions::fixed`),
 760 × 520 logical pixels inside, in the console's materials: a turned wooden jamb on
 the left with the brass name plate and the steps as drawstop tablets; a leather
 (night) or paper (day) panel on the right; buttons as pistons and ivory tablets;
-progress as a brass wind gauge filling. Night or day follows Windows' app
-theme, with the same sun/moon switch as the console. The folder picker is
-`Dialogs::pick_folder`. Text in English and Brazilian Portuguese, by the
-Windows display language.
+progress as a brass wind gauge filling. It opens by day; a switch on the jamb
+turns it to night. The folder picker is `Dialogs::pick_folder`. Text in
+English, Brazilian Portuguese and Spanish, by the Windows display language
+(`/LANG` to choose), with a switch on the jamb. The jamb's foot says
+*Built in Rust with the Manguebyte Audio Framework*.
+
+The **Licence** page shows the Apache License 2.0 in full, in a box that
+scrolls, and *Install* waits for *I have read and accept the terms of the
+licence*. The Apache licence does not need accepting to use the program; the
+page is there so that "no warranty" is read before installing.
+
+The whole window is one widget that draws every page and keeps where each
+control is, so the pointer, the keyboard (Tab, Enter, Space, Escape, the arrows
+in the licence) and assistive technology (each control an accessibility item)
+reach the same controls.
 
 The colours are the console's `Look` (`crates/caecilia-plugin/src/ui/look.rs`);
 the installer keeps a copy until the console's materials move into a crate both
@@ -197,8 +227,16 @@ no `embed-resource`).
   tree exactly as before; a file changed after install is kept; an injected
   failure half-way rolls back to the previous state; an upgrade removes the
   files the new version dropped.
-- silent: argument parsing and exit codes.
-- UI: the pages drawn headless, night and day, every page once.
+- an application really running from the program folder is replaced, and its
+  old copy deleted by the next run.
+- silent: argument parsing and every exit code (`run.rs`).
+- Windows: argument quoting, the known folders, a real shell link in a
+  temporary folder.
+- UI (`tests/wizard.rs`): every flow driven through the accessibility tree
+  with pretend work (first install, refused elevation and *Just me*, the app
+  open, a failure, update/change/remove), and every page in every language,
+  night and day, checked for accessibility.
+  `CAECILIA_INSTALLER_SHOTS=<folder>` saves each page as a PNG.
 
 Nothing in the tests writes to the real Program Files, registry `HKLM`, Start
 menu or desktop: they are all behind a `Places` value the tests fill with temp
