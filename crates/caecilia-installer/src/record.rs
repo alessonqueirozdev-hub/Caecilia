@@ -26,6 +26,18 @@ pub struct RecordedFile {
     pub sha256: Digest,
 }
 
+/// A file an earlier run could not delete yet, because it was in use; a
+/// later run deletes it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Leftover {
+    /// Where.
+    pub path: PathBuf,
+    /// Its SHA-256 as installed, for a file left where it was: one that no
+    /// longer has it was replaced since, and is kept. None for a file the
+    /// installer named itself (`….caecilia-old`), which is always its own.
+    pub sha256: Option<Digest>,
+}
+
 /// What an installation made.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Record {
@@ -49,7 +61,7 @@ pub struct Record {
     pub shortcuts: Vec<PathBuf>,
     /// Old files that were in use and could not be deleted yet; the next
     /// run deletes them.
-    pub leftovers: Vec<PathBuf>,
+    pub leftovers: Vec<Leftover>,
     /// Whether the desktop and Start menu shortcuts were asked for (an
     /// upgrade asks again for what was).
     pub desktop: bool,
@@ -83,7 +95,10 @@ impl Record {
             "files": files,
             "dirs": paths(&self.dirs),
             "shortcuts": paths(&self.shortcuts),
-            "leftovers": paths(&self.leftovers),
+            "leftovers": self.leftovers.iter().map(|l| json!({
+                "path": l.path.to_string_lossy(),
+                "sha256": l.sha256.map(|d| d.hex()),
+            })).collect::<Vec<_>>(),
         });
         serde_json::to_string_pretty(&v).unwrap_or_default()
     }
@@ -110,6 +125,21 @@ impl Record {
                 sha256: Digest::from_hex(f.get("sha256")?.as_str()?)?,
             });
         }
+        let mut leftovers = Vec::new();
+        for l in v
+            .get("leftovers")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+        {
+            leftovers.push(Leftover {
+                path: PathBuf::from(l.get("path")?.as_str()?),
+                sha256: match l.get("sha256").and_then(Value::as_str) {
+                    Some(hex) => Some(Digest::from_hex(hex)?),
+                    None => None,
+                },
+            });
+        }
         Some(Record {
             product: s("product")?.into(),
             version: s("version")?.into(),
@@ -122,7 +152,7 @@ impl Record {
             files,
             dirs: paths("dirs")?,
             shortcuts: paths("shortcuts")?,
-            leftovers: paths("leftovers").unwrap_or_default(),
+            leftovers,
         })
     }
 
@@ -152,7 +182,16 @@ mod tests {
             }],
             dirs: vec!["C:\\Program Files\\Caecilia".into()],
             shortcuts: vec!["C:\\Users\\Public\\Desktop\\Caecilia.lnk".into()],
-            leftovers: vec![],
+            leftovers: vec![
+                Leftover {
+                    path: "C:\\Program Files\\Common Files\\CLAP\\Caecilia.clap".into(),
+                    sha256: Some(Digest::of(b"clap")),
+                },
+                Leftover {
+                    path: "C:\\Program Files\\Caecilia\\caecilia.exe.caecilia-old".into(),
+                    sha256: None,
+                },
+            ],
             desktop: true,
             start_menu: false,
         };

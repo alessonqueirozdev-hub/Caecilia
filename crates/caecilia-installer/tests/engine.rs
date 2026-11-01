@@ -9,7 +9,7 @@ use caecilia_installer::engine::{Engine, Error};
 use caecilia_installer::log::Log;
 use caecilia_installer::payload::{Payload, PayloadBuilder, Root, Unpacked};
 use caecilia_installer::plan::{Choices, Components, Places, Plan, Scope};
-use caecilia_installer::record::Record;
+use caecilia_installer::record::{Leftover, Record};
 use caecilia_installer::system::{MemorySystem, System};
 
 /// A folder of its own for each test, removed at the end.
@@ -99,6 +99,21 @@ fn places(base: &Path) -> Places {
         fs::create_dir_all(d).unwrap();
     }
     p
+}
+
+fn paths(leftovers: &[Leftover]) -> Vec<&PathBuf> {
+    leftovers.iter().map(|l| &l.path).collect()
+}
+
+/// The bytes of the first file under `root` in `files`.
+fn files_bytes_of(files: &Unpacked, root: Root) -> Vec<u8> {
+    let entry = files
+        .manifest
+        .entries
+        .iter()
+        .find(|e| e.root == root)
+        .unwrap();
+    files.bytes(entry).to_vec()
 }
 
 fn install(
@@ -392,10 +407,18 @@ fn a_dropped_plugin_a_host_still_holds_is_not_forgotten() {
             assert_eq!(sys.at_restart, std::slice::from_ref(&clap));
             assert!(outcome.record.leftovers.is_empty());
         } else {
-            assert_eq!(outcome.record.leftovers, std::slice::from_ref(&clap));
+            assert_eq!(paths(&outcome.record.leftovers), [&clap]);
             assert_eq!(Record::load(&new_plan.program_dir).unwrap(), outcome.record);
+            // Once someone has put their own file there, it is theirs.
+            fs::write(&clap, b"another plugin").unwrap();
             let again = install(&mut sys, &new_plan, &new_files, Some(&outcome.record)).unwrap();
             assert!(again.record.leftovers.is_empty());
+            assert_eq!(fs::read(&clap).unwrap(), b"another plugin");
+            // While it is still the installer's, the next run clears it.
+            let mut ours = outcome.record.clone();
+            fs::write(&clap, files_bytes_of(&old_files, Root::Clap)).unwrap();
+            ours.leftovers[0].path = clap.clone();
+            install(&mut sys, &new_plan, &new_files, Some(&ours)).unwrap();
             assert!(!clap.exists(), "the next run cleared it");
         }
     }
@@ -439,7 +462,7 @@ fn a_removal_does_not_forget_a_leftover_a_host_still_holds() {
         let new = install(&mut sys, &new_plan, &new_files, Some(&old))
             .unwrap()
             .record;
-        assert_eq!(new.leftovers, std::slice::from_ref(&clap));
+        assert_eq!(paths(&new.leftovers), [&clap]);
 
         sys.can_delete_at_restart = admin;
         let mut log = Log::in_memory();
@@ -460,6 +483,30 @@ fn a_removal_does_not_forget_a_leftover_a_host_still_holds() {
             assert_eq!(gone.kept, std::slice::from_ref(&clap));
         }
     }
+}
+
+#[test]
+fn a_removal_started_inside_the_program_folder_still_removes_it() {
+    let scratch = Scratch::new("cwd");
+    let places = places(&scratch.0);
+    let files = payload("2.0.0", false);
+    let plan = Plan::new(
+        &files.manifest,
+        &Choices::defaults(Scope::User),
+        &places,
+        14,
+    );
+    let mut sys = MemorySystem::default();
+    let record = install(&mut sys, &plan, &files, None).unwrap().record;
+    // As from a prompt opened in the program folder.
+    let was = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&plan.program_dir).unwrap();
+    let gone = uninstall(&mut sys, &record, None);
+    let now = std::env::current_dir().unwrap();
+    std::env::set_current_dir(was).unwrap();
+    assert!(gone.kept.is_empty(), "{:?}", gone.kept);
+    assert!(!plan.program_dir.exists());
+    assert_eq!(now, std::env::temp_dir());
 }
 
 #[test]
@@ -507,18 +554,18 @@ fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
         1,
         "the old copy waits for the next run"
     );
-    assert!(outcome.record.leftovers[0].exists());
+    assert!(outcome.record.leftovers[0].path.exists());
 
     // Windows lets go of a program's image a moment after it has ended.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while caecilia_installer::engine::in_use(&outcome.record.leftovers[0])
+    while caecilia_installer::engine::in_use(&outcome.record.leftovers[0].path)
         && std::time::Instant::now() < deadline
     {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     let again = install(&mut sys, &plan2, &files2, Some(&outcome.record)).unwrap();
     assert!(again.record.leftovers.is_empty());
-    assert!(!outcome.record.leftovers[0].exists());
+    assert!(!outcome.record.leftovers[0].path.exists());
 }
 
 #[test]

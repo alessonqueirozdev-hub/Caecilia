@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use crate::log::Log;
 use crate::payload::{Digest, PayloadError, Unpacked};
 use crate::plan::{Plan, Scope};
-use crate::record::{LOG_COPY, RECORD, Record, RecordedFile};
+use crate::record::{LOG_COPY, Leftover, RECORD, Record, RecordedFile};
 use crate::system::System;
 
 /// What stopped an installation.
@@ -238,12 +238,13 @@ impl Transaction {
     }
 
     /// Deletes the old files moved aside. Returns those still in use.
-    fn finish(self, sys: &mut dyn System, log: &mut Log) -> (Vec<PathBuf>, bool) {
+    fn finish(self, sys: &mut dyn System, log: &mut Log) -> (Vec<Leftover>, bool) {
         let mut leftovers = Vec::new();
         let mut restart = false;
         for old in self.placed.into_iter().filter_map(|(_, old)| old) {
             let (left, at_restart) = delete_or_defer(&old, sys, log);
-            leftovers.extend(left);
+            // Named by the installer: its own whatever it holds.
+            leftovers.extend(left.map(|path| Leftover { path, sha256: None }));
             restart |= at_restart;
         }
         (leftovers, restart)
@@ -272,6 +273,26 @@ fn delete_or_defer(path: &Path, sys: &mut dyn System, log: &mut Log) -> (Option<
             log.note(format_args!("{} is in use ({e}): {by}", path.display()));
             (Some(path.to_owned()), false)
         }
+    }
+}
+
+/// Whether `path` is `dir` or inside it, as Windows compares paths.
+fn inside(path: &Path, dir: &Path) -> bool {
+    let parts = |p: &Path| -> Vec<String> {
+        std::path::absolute(p)
+            .unwrap_or_else(|_| p.to_owned())
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+            .collect()
+    };
+    parts(path).starts_with(&parts(dir))
+}
+
+/// Whether the leftover `l` is still what the installer left.
+fn is_ours(l: &Leftover) -> bool {
+    match l.sha256 {
+        None => true,
+        Some(d) => matches!(hash_of(&l.path), Ok(Some(h)) if h == d),
     }
 }
 
@@ -321,7 +342,7 @@ struct Dropped {
     /// Changed since they were placed, so kept.
     kept: Vec<PathBuf>,
     /// In use, so left for the next run.
-    leftovers: Vec<PathBuf>,
+    leftovers: Vec<Leftover>,
     /// Some are deleted when Windows restarts.
     restart: bool,
 }
@@ -425,12 +446,12 @@ impl Engine<'_> {
         // Old files an earlier run left that are still there, before this
         // run moves anything aside under the same names. One this plan
         // places again is no longer left over: the new file takes its name.
-        let surviving: Vec<PathBuf> = previous
+        let surviving: Vec<Leftover> = previous
             .map(|r| {
                 r.leftovers
                     .iter()
-                    .filter(|p| p.exists())
-                    .filter(|p| !plan.files.iter().any(|f| same_path(&f.dest, p)))
+                    .filter(|l| l.path.exists() && is_ours(l))
+                    .filter(|l| !plan.files.iter().any(|f| same_path(&f.dest, &l.path)))
                     .cloned()
                     .collect()
             })
@@ -556,7 +577,10 @@ impl Engine<'_> {
                     match left {
                         None => self.log.line("removed", f.path.display()),
                         // In use: the new record keeps it, for the next run.
-                        Some(left) => dropped.leftovers.push(left),
+                        Some(path) => dropped.leftovers.push(Leftover {
+                            path,
+                            sha256: Some(f.sha256),
+                        }),
                     }
                 }
                 Ok(None) => {}
@@ -578,8 +602,25 @@ impl Engine<'_> {
         dropped
     }
 
-    fn clear_leftovers(&mut self, leftovers: &[PathBuf]) {
-        for path in leftovers {
+    /// Whether a leftover is still what the installer left: a file left
+    /// where it was that someone has since replaced or changed is theirs.
+    fn still_ours(&mut self, l: &Leftover) -> bool {
+        let ours = is_ours(l);
+        if !ours {
+            self.log.line(
+                "kept",
+                format_args!("{} (changed since it was installed)", l.path.display()),
+            );
+        }
+        ours
+    }
+
+    fn clear_leftovers(&mut self, leftovers: &[Leftover]) {
+        for l in leftovers {
+            let path = &l.path;
+            if !self.still_ours(l) {
+                continue;
+            }
             if fs::remove_file(path).is_ok() {
                 self.log.note(format_args!(
                     "deleted {}, left by the last run",
@@ -605,7 +646,12 @@ impl Engine<'_> {
         let mut restart = false;
         // What earlier runs left: the record goes with this removal, so one
         // still in use is moved out or deleted at restart, not forgotten.
-        for path in record.leftovers.iter().filter(|p| p.exists()) {
+        for l in record.leftovers.iter().filter(|l| l.path.exists()) {
+            let path = &l.path;
+            if !self.still_ours(l) {
+                kept.push(path.clone());
+                continue;
+            }
             let (left, at_restart) = remove_for_good(path, self.sys, self.log);
             restart |= at_restart;
             match left {
@@ -672,6 +718,19 @@ impl Engine<'_> {
             ));
         }
         self.log.line("unregistered", record.scope.name());
+        // No process can remove the folder it works in: one started inside
+        // a folder going now (a prompt opened there) steps out first.
+        let going = |cwd: &Path| {
+            record
+                .dirs
+                .iter()
+                .map(PathBuf::as_path)
+                .chain(purge)
+                .any(|d| inside(cwd, d))
+        };
+        if std::env::current_dir().is_ok_and(|cwd| going(&cwd)) {
+            let _ = std::env::set_current_dir(std::env::temp_dir());
+        }
         if let Some(dir) = purge {
             self.log.line("step", "purge");
             match fs::remove_dir_all(dir) {
