@@ -15,6 +15,7 @@
 mod actions;
 mod bench;
 mod controls;
+mod demos;
 mod library;
 mod live;
 mod look;
@@ -34,6 +35,11 @@ use crate::UiNote;
 use crate::controller::RegistrationController;
 use crate::params::CaeciliaParams;
 use crate::telemetry::Telemetry;
+
+/// The MIDI channel each part of a demonstration plays on, on `organ`.
+pub(crate) fn demo_channels(organ: &caecilia_model::Organ) -> [u8; 3] {
+    demos::parts(organ).map(|p| p.1)
+}
 
 /// The console's size at scale 1, in logical pixels.
 pub const EDITOR_SIZE: HostSize = HostSize::new(1600, 980);

@@ -100,6 +100,11 @@ pub(crate) fn cancel(context: &EditorContext, shared: &Shared) {
     );
 }
 
+/// Draw exactly `state`, as a demonstration asks.
+pub(crate) fn recall_state(context: &EditorContext, shared: &Shared, state: RegistrationState) {
+    command(context, shared, Command::RecallSnapshot(state));
+}
+
 /// Step back through the history.
 pub(crate) fn undo(context: &EditorContext, shared: &Shared) {
     let before = masks(shared);
@@ -181,7 +186,7 @@ pub(crate) fn swell_gesture(context: &EditorContext, shared: &Shared) -> Gesture
 /// drops it: the host's own notes are never held up for the console's.
 pub(crate) fn play(shared: &Shared, channel: usize, key: u8, on: bool) {
     if let Ok(mut notes) = shared.notes.lock() {
-        let _ = notes.push(UiNote {
+        let _ = notes.push(UiNote::Key {
             channel: channel as u8,
             key,
             on,

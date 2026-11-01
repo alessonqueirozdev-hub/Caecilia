@@ -17,6 +17,8 @@ pub struct Telemetry {
     /// Keys held on each MIDI channel, low and high halves.
     held: [[AtomicU64; 2]; 16],
     voices: AtomicU32,
+    /// The demonstration playing: its index plus one, or 0.
+    demo: AtomicU32,
     /// The render's share of the block's time, smoothed, as `f32` bits.
     load: AtomicU32,
 }
@@ -27,6 +29,7 @@ impl Default for Telemetry {
             pressure: std::array::from_fn(|_| AtomicU32::new(0)),
             held: std::array::from_fn(|_| [AtomicU64::new(0), AtomicU64::new(0)]),
             voices: AtomicU32::new(0),
+            demo: AtomicU32::new(0),
             load: AtomicU32::new(0),
         }
     }
@@ -69,6 +72,20 @@ impl Telemetry {
             slot[0].store(*keys as u64, Ordering::Relaxed);
             slot[1].store((*keys >> 64) as u64, Ordering::Relaxed);
         }
+    }
+
+    /// The demonstration playing, by its index (255 for the tour's
+    /// phrase), if one is.
+    pub fn demo(&self) -> Option<u8> {
+        match self.demo.load(Ordering::Relaxed) {
+            0 => None,
+            n => Some((n - 1) as u8),
+        }
+    }
+
+    pub(crate) fn set_demo(&self, demo: Option<u8>) {
+        let n = demo.map_or(0, |d| u32::from(d) + 1);
+        self.demo.store(n, Ordering::Relaxed);
     }
 
     pub(crate) fn set_voices(&self, voices: usize) {

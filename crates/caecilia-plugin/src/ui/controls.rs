@@ -1031,13 +1031,15 @@ enum StatusButton {
     Undo,
     Redo,
     Light,
+    Demos,
     Organ,
 }
 
-const STATUS_BUTTONS: [StatusButton; 4] = [
+const STATUS_BUTTONS: [StatusButton; 5] = [
     StatusButton::Undo,
     StatusButton::Redo,
     StatusButton::Light,
+    StatusButton::Demos,
     StatusButton::Organ,
 ];
 
@@ -1048,6 +1050,7 @@ fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
         StatusButton::Redo => "Redo",
         StatusButton::Light if snapshot.look.night => "Day",
         StatusButton::Light => "Night",
+        StatusButton::Demos => "Demos",
         StatusButton::Organ => "Organ\u{2026}",
     }
 }
@@ -1099,7 +1102,12 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
         "Status",
         Size::new(900.0, 34.0),
         source,
-        |s| s.status_key() ^ s.registration_key() ^ u64::from(s.library.is_some()),
+        |s| {
+            s.status_key()
+                ^ s.registration_key()
+                ^ u64::from(s.library.is_some())
+                ^ (u64::from(s.demos.is_some()) << 1)
+        },
         |size, scene, snapshot| {
             let look = snapshot.look;
             let s = style(12.5, 500.0, look.text);
@@ -1128,7 +1136,7 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
             for (button, r) in &buttons {
                 let label = status_label(*button, snapshot);
                 let shape = RoundedRect::new(*r, 15.0);
-                let primary = *button == StatusButton::Organ;
+                let primary = matches!(button, StatusButton::Organ | StatusButton::Demos);
                 if primary {
                     let stops = [
                         Stop::new(0.0, look.brass_light),
@@ -1180,6 +1188,7 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
                 params.set_console_day(!params.console_day());
                 here.refresh();
             }
+            Some(StatusButton::Demos) => here.toggle_demos(),
             Some(StatusButton::Organ) => here.toggle_library(),
             None => return Handled::No,
         }

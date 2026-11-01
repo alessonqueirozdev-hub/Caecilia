@@ -275,3 +275,34 @@ fn changing_the_organ_never_allocates_nor_frees() {
     }
     assert_eq!(params.organ.generation(), 2);
 }
+
+#[test]
+fn a_demonstration_never_allocates() {
+    let mut plugin = Caecilia::new();
+    let spec = ProcessSpec {
+        sample_rate: 48000.0,
+        max_block_size: 256,
+        num_channels: 2,
+    };
+    plugin.prepare(&spec);
+    let transport = Transport::default();
+    let mut buffer = AudioBuffer::<f32>::new(2, 256);
+    let empty = EventBuffer::with_capacity(1);
+    let mut run = |plugin: &mut Caecilia| {
+        let context = ProcessContext::new(&empty, &transport);
+        plugin.process(&mut buffer, &context);
+    };
+    run(&mut plugin);
+    for n in 0..Caecilia::demonstrations().len() {
+        assert!(plugin.play_demonstration(n));
+        HEAP_CALLS.with(|c| c.set(0));
+        WATCHING.with(|w| w.set(true));
+        // Its start, two seconds of it, and the next piece cutting it off.
+        for _ in 0..(2 * 48000 / 256) {
+            run(&mut plugin);
+        }
+        WATCHING.with(|w| w.set(false));
+        let calls = HEAP_CALLS.with(Cell::get);
+        assert_eq!(calls, 0, "demonstration {n} used the heap {calls} time(s)");
+    }
+}

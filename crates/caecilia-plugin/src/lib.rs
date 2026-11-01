@@ -27,6 +27,7 @@
 
 mod console;
 mod controller;
+mod demo;
 mod params;
 mod switch;
 mod telemetry;
@@ -124,13 +125,33 @@ fn organ_for_new_instance() -> ChosenOrgan {
     (Arc::new(demo_organ()), None)
 }
 
-/// A key or pedal played on the console: its MIDI channel, its key, and
-/// whether it went down.
+/// What the console sends the audio thread.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct UiNote {
-    pub(crate) channel: u8,
-    pub(crate) key: u8,
-    pub(crate) on: bool,
+pub(crate) enum UiNote {
+    /// A key or pedal played: its MIDI channel, its key, and whether it went
+    /// down.
+    Key { channel: u8, key: u8, on: bool },
+    /// Play a demonstration (see [`demo::piece`]), its parts on `channels`
+    /// and every key moved by `shift` semitones.
+    Play {
+        piece: u8,
+        channels: [u8; 3],
+        shift: i8,
+    },
+    /// Stop the demonstration.
+    Stop,
+}
+
+/// Orders `events` by offset, keeping the order of those on one sample:
+/// an insertion sort, in place, for the audio thread.
+fn sort_by_offset(events: &mut [Timed]) {
+    for i in 1..events.len() {
+        let mut j = i;
+        while j > 0 && events[j - 1].offset > events[j].offset {
+            events.swap(j - 1, j);
+            j -= 1;
+        }
+    }
 }
 
 /// Console notes that can wait for a block.
@@ -198,6 +219,8 @@ pub struct Caecilia {
     ui_notes: Consumer<UiNote>,
     /// The console's end of that ring, behind a lock only the console takes.
     ui_notes_in: Arc<Mutex<Producer<UiNote>>>,
+    /// The demonstration playing, if any.
+    demo: demo::Player,
     sample_rate: f64,
 }
 
@@ -325,6 +348,29 @@ impl Caecilia {
         })
     }
 
+    /// The demonstrations' names, in their order.
+    pub fn demonstrations() -> Vec<&'static str> {
+        demo::PIECES.iter().map(|p| p.name).collect()
+    }
+
+    /// Play demonstration `n` on the organ playing, its stops left as they
+    /// are; false if there is no such piece or it could not be sent.
+    pub fn play_demonstration(&self, n: usize) -> bool {
+        if n >= demo::PIECES.len() {
+            return false;
+        }
+        let channels = ui::demo_channels(&self.params.organ.organ());
+        self.ui_notes_in.lock().is_ok_and(|mut notes| {
+            notes
+                .push(UiNote::Play {
+                    piece: n as u8,
+                    channels,
+                    shift: 0,
+                })
+                .is_ok()
+        })
+    }
+
     /// The engine, once prepared.
     pub fn engine(&self) -> Option<&OrganEngine> {
         self.engine.as_ref()
@@ -349,6 +395,21 @@ impl Caecilia {
             }
         }
         engine.table_for(&self.organ, &stops[..n], &couplers[..m])
+    }
+
+    /// A key the console or a demonstration plays, at `offset` in the block.
+    fn play_key(&mut self, offset: u32, channel: u8, key: u8, on: bool) {
+        let c = usize::from(channel & 0x0F);
+        let bit = 1u128 << (key & 0x7F);
+        let division = self.division_of_channel[c];
+        let note = key & 0x7F;
+        if on {
+            self.held[c] |= bit;
+            self.push(offset, Command::NoteOn { division, note });
+        } else {
+            self.held[c] &= !bit;
+            self.push(offset, Command::NoteOff { division, note });
+        }
     }
 
     fn push(&mut self, offset: u32, command: Command) {
@@ -564,6 +625,7 @@ impl Plugin for Caecilia {
             telemetry,
             ui_notes,
             ui_notes_in,
+            demo: demo::Player::new(),
             sample_rate: 48_000.0,
         }
     }
@@ -705,19 +767,29 @@ impl Plugin for Caecilia {
         }
 
         // Keys played on the console, at the top of the block.
+        let rate = self.sample_rate;
         while let Some(n) = self.ui_notes.pop() {
-            let c = usize::from(n.channel & 0x0F);
-            let bit = 1u128 << (n.key & 0x7F);
-            let division = self.division_of_channel[c];
-            let note = n.key & 0x7F;
-            if n.on {
-                self.held[c] |= bit;
-                self.push(0, Command::NoteOn { division, note });
-            } else {
-                self.held[c] &= !bit;
-                self.push(0, Command::NoteOff { division, note });
+            match n {
+                UiNote::Key { channel, key, on } => self.play_key(0, channel, key, on),
+                UiNote::Play {
+                    piece,
+                    channels,
+                    shift,
+                } => {
+                    let mut demo = std::mem::replace(&mut self.demo, demo::Player::new());
+                    demo.start(demo::piece(piece), channels, shift, rate, |at, c, k, on| {
+                        self.play_key(at, c, k, on)
+                    });
+                    self.demo = demo;
+                }
+                UiNote::Stop => {
+                    let mut demo = std::mem::replace(&mut self.demo, demo::Player::new());
+                    demo.stop(rate, |at, c, k, on| self.play_key(at, c, k, on));
+                    self.demo = demo;
+                }
             }
         }
+        let first_host_event = self.events.len();
         for event in context.events {
             let channel_division = |c: u8| self.division_of_channel[usize::from(c & 0x0F)];
             let command = match event.kind {
@@ -780,6 +852,25 @@ impl Plugin for Caecilia {
                 self.push(event.offset, command);
             }
         }
+        // The demonstration's keys, each on its sample, among the host's.
+        if self.demo.playing().is_some() {
+            let host_events = self.events.len();
+            let mut demo = std::mem::replace(&mut self.demo, demo::Player::new());
+            demo.render(buffer.num_frames() as u32, rate, |at, c, k, on| {
+                self.play_key(at, c, k, on)
+            });
+            self.demo = demo;
+            if self.events.len() > host_events {
+                sort_by_offset(&mut self.events[first_host_event..]);
+            }
+        }
+        let playing = self.demo.playing().map(|p| {
+            demo::PIECES
+                .iter()
+                .position(|q| std::ptr::eq(p, q))
+                .map_or(demo::PHRASE_INDEX, |i| i as u8)
+        });
+        self.telemetry.set_demo(playing);
 
         let (left, right) = buffer.channel_pair_mut(0, 1);
         engine.process(left, right, &self.events);
@@ -814,6 +905,7 @@ impl Plugin for Caecilia {
         // The organ being left stops now; it is handed back next block.
         self.fade_done = self.fade_len;
         self.held = [0; 16];
+        self.demo = demo::Player::new();
         self.retune = true;
         self.stop_mask = u64::MAX;
         self.coupler_mask = u32::MAX;

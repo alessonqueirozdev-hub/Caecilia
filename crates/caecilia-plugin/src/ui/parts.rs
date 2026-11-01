@@ -16,10 +16,11 @@ use manguebyte_ui::{
 use super::actions;
 use super::bench::{BENCH, bench};
 use super::controls::{jamb_view, pedalboard, shoes, status};
+use super::demos::{self, TOUR_ROW};
 use super::live::{Item, live};
-use super::paint::{gauge, heading, panel, style, text, vertical, width_of};
+use super::paint::{arrow, gauge, heading, panel, style, text, vertical, width_of};
 use super::registration::registration;
-use super::snapshot::{Snapshot, Source};
+use super::snapshot::{DemosView, Snapshot, Source};
 
 /// A row of the organ library.
 const LIBRARY_ROW: f32 = 26.0;
@@ -44,6 +45,10 @@ fn draw_wind(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
     let look = snapshot.look;
     let rect = Rect::new(0.0, 0.0, size.width, size.height);
     panel(scene, &look, rect);
+    if let Some(demos) = &snapshot.demos {
+        draw_demos(size, scene, snapshot, demos);
+        return;
+    }
     if let Some(library) = &snapshot.library {
         // The music desk shows the organs while the library is open.
         heading(scene, &look, rect, "Organs", "choose one to play it");
@@ -121,6 +126,66 @@ fn draw_wind(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
     }
 }
 
+/// The demonstrations: a row for each piece and one for the tour, the one
+/// playing lit.
+fn draw_demos(size: Size, scene: &mut Scene, snapshot: &Snapshot, demos: &DemosView) {
+    let look = snapshot.look;
+    let rect = Rect::new(0.0, 0.0, size.width, size.height);
+    heading(
+        scene,
+        &look,
+        rect,
+        "Demonstrations",
+        "the organ plays itself",
+    );
+    let names = demos::names();
+    let rows = library_rows(size, names.len());
+    for (n, (r, name)) in rows.iter().zip(&names).enumerate() {
+        let playing = demos.playing == Some(n);
+        let shape = RoundedRect::new(*r, 8.0);
+        if playing {
+            scene.fill(shape, look.accent.with_alpha(0x2A));
+            scene.stroke(shape, Stroke::new(1.0), look.accent);
+        } else {
+            scene.fill(shape, look.edge.with_alpha(0x60));
+        }
+        // Play, or stop while it plays.
+        let c = Point::new(r.x + 14.0, r.center().y);
+        if playing {
+            scene.fill(Rect::new(c.x - 4.0, c.y - 4.0, 8.0, 8.0), look.accent);
+        } else {
+            arrow(scene, c, true, look.text2);
+        }
+        text(
+            scene,
+            name,
+            style(12.0, if playing { 650.0 } else { 500.0 }, look.text),
+            Point::new(r.x + 28.0, r.y + 4.0),
+            0.0,
+        );
+        if playing {
+            let what = match (&demos.tour, n == TOUR_ROW) {
+                (Some(stop), true) => stop.clone(),
+                _ => "playing".to_string(),
+            };
+            text(
+                scene,
+                &what,
+                style(10.5, 500.0, look.accent),
+                Point::new(r.right() - 12.0, r.y + 5.0),
+                1.0,
+            );
+        }
+    }
+    text(
+        scene,
+        "Each piece draws its own stops; the tour plays every stop alone.",
+        style(10.5, 450.0, look.muted),
+        Point::new(20.0, size.height - 26.0),
+        0.0,
+    );
+}
+
 /// The wind: a gauge for each chest; or, while the library is open, the
 /// organs to choose from.
 fn wind(source: &Rc<Source>) -> View {
@@ -133,6 +198,18 @@ fn wind(source: &Rc<Source>) -> View {
         draw_wind,
     )
     .describe(|s| {
+        if let Some(demos) = &s.demos {
+            let rows: Vec<String> = demos::names()
+                .iter()
+                .enumerate()
+                .map(|(n, name)| match (demos.playing == Some(n), &demos.tour) {
+                    (true, Some(stop)) if n == TOUR_ROW => format!("{name} (playing {stop})"),
+                    (true, _) => format!("{name} (playing)"),
+                    _ => name.to_string(),
+                })
+                .collect();
+            return format!("Demonstrations: {}", rows.join(", "));
+        }
         if let Some(library) = &s.library {
             let names: Vec<String> = library
                 .entries
@@ -159,6 +236,20 @@ fn wind(source: &Rc<Source>) -> View {
         chests.join("; ")
     })
     .items(|s, size| {
+        if let Some(demos) = &s.demos {
+            let names = demos::names();
+            return library_rows(size, names.len())
+                .into_iter()
+                .zip(names)
+                .enumerate()
+                .map(|(n, (rect, name))| Item {
+                    role: Role::Button,
+                    name: format!("Play {name}"),
+                    checked: Some(demos.playing == Some(n)),
+                    rect,
+                })
+                .collect();
+        }
         let Some(library) = &s.library else {
             return Vec::new();
         };
@@ -176,6 +267,14 @@ fn wind(source: &Rc<Source>) -> View {
     .input(move |cx, event, at, size, snapshot| {
         if !matches!(event, Event::PointerDown { .. }) {
             return Handled::No;
+        }
+        if snapshot.demos.is_some() {
+            let rows = library_rows(size, demos::names().len());
+            let Some(n) = rows.iter().position(|r| r.contains(at)) else {
+                return Handled::No;
+            };
+            here.press_demo(cx.context(), n);
+            return Handled::Yes;
         }
         let Some(library) = &snapshot.library else {
             return Handled::No;

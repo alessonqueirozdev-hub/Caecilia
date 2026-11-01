@@ -13,6 +13,7 @@ use caecilia_model::{DivisionKind, Organ, StopId};
 use caecilia_registration::{FACTORY_GENERALS, Reason, RegistrationEngine, RegistrationState};
 
 use super::Shared;
+use super::demos::{self, TOUR_ROW, Tour};
 use super::library::{Entry, organs_folder, scan};
 use super::look::{DAY, Look, NIGHT};
 use crate::console::GENERALS;
@@ -213,6 +214,24 @@ pub(crate) struct LibraryView {
     pub(crate) folder: String,
 }
 
+/// The demonstrations as the wind panel shows them while they are open:
+/// the row playing, and the stop the tour is on.
+#[derive(Clone, PartialEq, Hash)]
+pub(crate) struct DemosView {
+    pub(crate) playing: Option<usize>,
+    pub(crate) tour: Option<String>,
+}
+
+/// Remember that `mask` is the registration `name` drew, the last few only.
+pub(crate) fn name_registration(named: &RefCell<Vec<(u64, String)>>, mask: u64, name: &str) {
+    let mut named = named.borrow_mut();
+    named.retain(|(m, _)| *m != mask);
+    named.push((mask, name.to_string()));
+    if named.len() > 64 {
+        named.remove(0);
+    }
+}
+
 /// One frame's reading.
 pub(crate) struct Snapshot {
     pub(crate) look: Look,
@@ -241,6 +260,8 @@ pub(crate) struct Snapshot {
     pub(crate) cpu: String,
     /// The organ library, while it is open.
     pub(crate) library: Option<LibraryView>,
+    /// The demonstrations, while they are open.
+    pub(crate) demos: Option<DemosView>,
 }
 
 pub(crate) fn hash_of(f: impl FnOnce(&mut DefaultHasher)) -> u64 {
@@ -277,6 +298,7 @@ impl Snapshot {
     pub(crate) fn wind_key(&self) -> u64 {
         hash_of(|h| {
             self.library.hash(h);
+            self.demos.hash(h);
             for c in &self.chests {
                 c.now_mm.to_bits().hash(h);
                 c.note.hash(h);
@@ -366,6 +388,13 @@ pub(crate) struct Source {
     focus: Cell<Option<usize>>,
     /// The organ library, while it is open, and what went wrong last.
     library: RefCell<Option<(Vec<Entry>, Option<String>)>>,
+    /// Whether the demonstrations are open.
+    demos: Cell<bool>,
+    /// The tour of the stops, while it plays.
+    tour: RefCell<Option<Tour>>,
+    /// The registrations demonstrations drew, and what the history calls
+    /// them.
+    named: Rc<RefCell<Vec<(u64, String)>>>,
 }
 
 impl Source {
@@ -384,6 +413,9 @@ impl Source {
             set_armed: Cell::new(false),
             focus: Cell::new(None),
             library: RefCell::new(None),
+            demos: Cell::new(false),
+            tour: RefCell::new(None),
+            named: Rc::default(),
         })
     }
 
@@ -401,8 +433,45 @@ impl Source {
         self.library.borrow().is_some()
     }
 
+    /// Open the demonstrations, or close them; the library closes.
+    pub(crate) fn toggle_demos(&self) {
+        self.demos.set(!self.demos.get());
+        *self.library.borrow_mut() = None;
+        self.refresh();
+    }
+
+    /// Play the demonstration in row `n`, or the tour; or stop it if it is
+    /// the one playing.
+    pub(crate) fn press_demo(&self, context: &manguebyte_plugin::editor::EditorContext, n: usize) {
+        let playing = self.demo_playing();
+        self.tour.borrow_mut().take();
+        demos::stop(&self.shared);
+        if playing != Some(n) {
+            if n == TOUR_ROW {
+                *self.tour.borrow_mut() = Some(Tour::new(context, Rc::clone(&self.named)));
+            } else {
+                let mask = demos::play(context, &self.shared, &self.organ(), n);
+                name_registration(&self.named, mask, crate::demo::PIECES[n].short);
+            }
+        }
+        self.refresh();
+    }
+
+    /// The row playing: a piece, as the audio thread says, or the tour.
+    fn demo_playing(&self) -> Option<usize> {
+        if self.tour.borrow().is_some() {
+            return Some(TOUR_ROW);
+        }
+        self.shared
+            .telemetry
+            .demo()
+            .map(usize::from)
+            .filter(|n| *n < TOUR_ROW)
+    }
+
     /// Open the organ library, looking for organs now, or close it.
     pub(crate) fn toggle_library(&self) {
+        self.demos.set(false);
         let open = self.library_open();
         *self.library.borrow_mut() = if open {
             None
@@ -485,6 +554,15 @@ impl Source {
                 return Rc::clone(snapshot);
             }
         }
+        // The tour moves on with the console's clock.
+        let done = self
+            .tour
+            .borrow_mut()
+            .as_mut()
+            .is_some_and(|t| !t.advance(now, &self.shared, &self.organ()));
+        if done {
+            self.tour.borrow_mut().take();
+        }
         let snapshot = Rc::new(self.read());
         *self.current.borrow_mut() = Some((now, Rc::clone(&snapshot)));
         snapshot
@@ -564,7 +642,8 @@ impl Source {
         if let Ok(mut controller) = self.shared.controller.try_lock() {
             let engine = controller.engine();
             let focus = self.focus.get();
-            let text = registration_text(engine, organ, console, general, stops, focus);
+            let named = self.named.borrow();
+            let text = registration_text(engine, organ, console, general, stops, focus, &named);
             *self.last_registration.borrow_mut() = text;
         }
         let (summary, history, why) = self.last_registration.borrow().clone();
@@ -603,8 +682,18 @@ impl Source {
                 folder: organs_folder().map_or_else(String::new, |f| f.display().to_string()),
             });
 
+        let demos = self.demos.get().then(|| DemosView {
+            playing: self.demo_playing(),
+            tour: self.tour.borrow().as_ref().map(|t| {
+                let n = t.at();
+                let name = organ.stops().get(n).map_or("", |s| s.name.as_str());
+                format!("{name} \u{b7} {} of {}", n + 1, organ.stops().len())
+            }),
+        });
+
         Snapshot {
             library,
+            demos,
             look: self.look(),
             organ: Arc::clone(organ),
             layout: Rc::clone(&self.layout.borrow()),
@@ -649,6 +738,7 @@ impl Source {
 fn step_label(
     organ: &Organ,
     console: &crate::console::ConsoleMemory,
+    named: &[(u64, String)],
     state: &RegistrationState,
     before: Option<&RegistrationState>,
 ) -> String {
@@ -656,6 +746,11 @@ fn step_label(
         return "Opening".into();
     };
     let stops = state.stops.to_mask();
+    if state.couplers.is_empty() {
+        if let Some((_, name)) = named.iter().rev().find(|(m, _)| *m == stops) {
+            return name.clone();
+        }
+    }
     let couplers = state.couplers.iter().fold(0u32, |m, c| {
         m | 1u32.checked_shl(u32::from(c.0)).unwrap_or(0)
     });
@@ -702,6 +797,7 @@ fn why_for(
     organ: &Organ,
     console: &crate::console::ConsoleMemory,
     label_of: &dyn Fn(usize) -> String,
+    named: &[(u64, String)],
     stop: StopId,
 ) -> Why {
     let lead = organ
@@ -734,6 +830,7 @@ fn why_for(
         Reason::SnapshotRecall => match label_of(explained.node).as_str() {
             l if l.starts_with("General") => format!("drawn by {l}"),
             "Opening" => "drawn as the organ opened".to_string(),
+            l if named.iter().any(|(_, n)| n == l) => format!("drawn for the {l} demonstration"),
             _ => "drawn from the host".to_string(),
         },
     };
@@ -754,6 +851,7 @@ fn registration_text(
     general: Option<usize>,
     stops: u64,
     focus: Option<usize>,
+    named: &[(u64, String)],
 ) -> RegistrationText {
     let drawn = stops.count_ones();
     let summary = match general {
@@ -780,7 +878,7 @@ fn registration_text(
     let label_of = |i: usize| {
         let node = &nodes[i];
         let before = node.parent.map(|p| &nodes[p].state);
-        step_label(organ, console, &node.state, before)
+        step_label(organ, console, named, &node.state, before)
     };
     // Four steps back at most, two forward along the branch redo follows.
     let back = path.len().saturating_sub(5);
@@ -812,6 +910,7 @@ fn registration_text(
             organ,
             console,
             &label_of,
+            named,
             StopId(stop as u16),
         ));
     } else if let Some(parent) = current.parent {
@@ -825,7 +924,7 @@ fn registration_text(
             .filter(|s| !before.stops.contains(*s))
             .take(2)
         {
-            why.push(why_for(engine, organ, console, &label_of, stop));
+            why.push(why_for(engine, organ, console, &label_of, named, stop));
         }
         for stop in before
             .stops

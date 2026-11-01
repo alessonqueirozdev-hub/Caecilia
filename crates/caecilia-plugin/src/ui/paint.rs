@@ -563,12 +563,17 @@ pub(crate) fn gauge(
         angle(nominal_mm * 1.05) - angle(nominal_mm * 0.95),
     );
     scene.stroke(band, Stroke::new(5.0), look.good.with_alpha(0xC0));
-    // Ticks every 5 mm, figures every 20.
+    // Ticks every 5 mm; figures every 20, or every 40 on a small dial or a
+    // long scale, sized to the dial and kept clear of the hub.
+    let small = r < 44.0;
+    let major_every = if ticks > 24 || small { 8 } else { 4 };
+    let tick = if small { 7.0 } else { 12.0 };
+    let figure_size = (r * 0.2).clamp(7.0, 8.5);
     for k in 0..=ticks {
         let mm = k as f32 * 5.0;
         let a = angle(mm);
-        let major = k % if ticks > 24 { 8 } else { 4 } == 0;
-        let inner = if major { r - 12.0 } else { r - 8.0 };
+        let major = k % major_every == 0;
+        let inner = if major { r - tick } else { r - tick * 0.6 };
         let mut p = manguebyte_gfx::Path::new();
         p.move_to(at(a, inner));
         p.line_to(at(a, r - 3.0));
@@ -578,29 +583,40 @@ pub(crate) fn gauge(
             look.dial_ink.with_alpha(if major { 0xE0 } else { 0x90 }),
         );
         if major && k != 0 && k != ticks {
-            let s = style(8.5, 600.0, look.dial_ink.with_alpha(0xC0));
+            let s = style(figure_size, 600.0, look.dial_ink.with_alpha(0xC0));
             let figure = format!("{}", mm as u32);
-            let h = TextLayout::new(&figure, &s, None).size().height;
-            let p = at(a, r - 21.0);
-            text(scene, &figure, s, Point::new(p.x, p.y - h / 2.0), 0.5);
+            let size = TextLayout::new(&figure, &s, None).size();
+            // The figure's centre, as far in as its own half-width needs.
+            let p = at(a, r - tick - 2.0 - size.width.max(size.height) / 2.0);
+            text(
+                scene,
+                &figure,
+                s,
+                Point::new(p.x, p.y - size.height / 2.0),
+                0.5,
+            );
         }
     }
-    // The reading.
-    let s = style(17.0, 700.0, look.dial_ink);
+    // The reading, in the dial's lower half where the needle seldom goes.
+    let reading_size = (r * 0.34).clamp(10.0, 17.0);
+    let s = style(reading_size, 700.0, look.dial_ink);
     let reading = format!("{now_mm:.1}");
-    text(scene, &reading, s, Point::new(c.x, c.y + 17.0), 0.5);
-    text(
-        scene,
-        "mm",
-        style(8.5, 600.0, look.dial_ink.with_alpha(0xA0)),
-        Point::new(c.x, c.y + 37.0),
-        0.5,
-    );
+    let top = c.y + r * 0.3;
+    text(scene, &reading, s, Point::new(c.x, top), 0.5);
+    if !small {
+        text(
+            scene,
+            "mm",
+            style(8.5, 600.0, look.dial_ink.with_alpha(0xA0)),
+            Point::new(c.x, top + reading_size + 3.0),
+            0.5,
+        );
+    }
     // The needle.
     let a = angle(now_mm);
     let mut needle = manguebyte_gfx::Path::new();
     let tip = at(a, r - 6.0);
-    let back = at(a + std::f32::consts::PI, 10.0);
+    let back = at(a + std::f32::consts::PI, (r * 0.2).min(10.0));
     let side = |s: f32| at(a + std::f32::consts::FRAC_PI_2 * s, 2.2);
     needle.move_to(tip);
     needle.line_to(side(1.0));
@@ -760,4 +776,44 @@ pub(crate) fn shoe(
         Point::new(x, rect.bottom() + 25.0),
         0.5,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use manguebyte_gfx::{Pixmap, Point, Rect, Renderer, Scene};
+
+    use super::gauge;
+    use crate::ui::look::{DAY, NIGHT};
+
+    /// Gauges small and large, by night and by day, drawn for the eye:
+    /// `tmp/console/gauges.png` in the target folder.
+    #[test]
+    fn gauges_of_every_size_are_drawn() {
+        let radii = [28.0, 36.0, 44.0, 56.0];
+        let mut scene = Scene::new();
+        for (row, look) in [&NIGHT, &DAY].into_iter().enumerate() {
+            let y = row as f32 * 230.0;
+            scene.fill(Rect::new(0.0, y, 760.0, 230.0), look.panel_bottom);
+            for (i, r) in radii.iter().enumerate() {
+                let c = Point::new(95.0 + i as f32 * 190.0, y + 20.0 + r);
+                let trace = [99.0, 100.2, 99.4, 98.8, 99.9];
+                let (nominal, now) = if i % 2 == 0 {
+                    (102.0, 99.9)
+                } else {
+                    (84.5, 82.8)
+                };
+                gauge(
+                    &mut scene, look, c, *r, "Pédale", nominal, now, &trace, "steady",
+                );
+            }
+        }
+        let mut pixels = Pixmap::new(760, 460).unwrap();
+        Renderer::new().render(&scene, &mut pixels, 1.0);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target-tmp-console");
+        let dir = std::env::var_os("CARGO_TARGET_DIR")
+            .map(|t| std::path::PathBuf::from(t).join("tmp/console"))
+            .unwrap_or(dir);
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("gauges.png"), pixels.encode_png().unwrap()).unwrap();
+    }
 }
