@@ -246,6 +246,10 @@ pub struct Text {
     pub removed_lead: &'static str,
     /// Kept because changed.
     pub kept: &'static str,
+    /// Installed, but its record is lost.
+    pub unreadable_title: &'static str,
+    /// Under it: `{0}` its folder.
+    pub unreadable_lead: &'static str,
 }
 
 /// English.
@@ -354,6 +358,8 @@ pub const EN: Text = Text {
     removed_title: "Caecilia was removed",
     removed_lead: "Everything the installer placed is gone.",
     kept: "Kept, because it was changed after it was installed:",
+    unreadable_title: "Caecilia can't be removed safely",
+    unreadable_lead: "Its record of what it installed, in {0}, is missing or damaged, so the uninstaller cannot tell which files are its own. Run the Caecilia installer again to repair it, then remove it.",
 };
 
 /// Brazilian Portuguese.
@@ -468,6 +474,8 @@ pub const PT: Text = Text {
     removed_title: "O Caecilia foi removido",
     removed_lead: "Tudo o que o instalador colocou foi retirado.",
     kept: "Mantido, porque foi alterado depois de instalado:",
+    unreadable_title: "Não dá para remover o Caecilia com segurança",
+    unreadable_lead: "O registro do que ele instalou, em {0}, sumiu ou está danificado, e o desinstalador não sabe quais arquivos são dele. Rode o instalador do Caecilia de novo para repará-lo e depois remova.",
 };
 
 /// Spanish.
@@ -585,6 +593,8 @@ pub const ES: Text = Text {
     removed_title: "Caecilia se quitó",
     removed_lead: "Todo lo que el instalador colocó ya no está.",
     kept: "Se mantuvo, porque se cambió después de instalarlo:",
+    unreadable_title: "No se puede quitar Caecilia con seguridad",
+    unreadable_lead: "El registro de lo que instaló, en {0}, falta o está dañado, y el desinstalador no sabe qué archivos son suyos. Ejecuta de nuevo el instalador de Caecilia para repararlo y luego quítalo.",
 };
 
 /// A size in bytes, for people: `14 MB`.

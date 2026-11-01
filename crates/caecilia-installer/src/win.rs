@@ -22,7 +22,7 @@ use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_ALL_ACCESS, KEY_READ, KEY_WOW64_64KEY,
     KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SAM_FLAGS, REG_SZ, RegCloseKey,
-    RegCreateKeyExW, RegDeleteTreeW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
+    RegCopyTreeW, RegCreateKeyExW, RegDeleteTreeW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 };
 use windows_sys::Win32::System::Threading::{
     CreateMutexW, GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, WaitForSingleObject,
@@ -162,6 +162,10 @@ impl Key {
     }
 
     fn create(root: HKEY, path: &str) -> io::Result<Key> {
+        Key::create_with(root, path, KEY_WRITE)
+    }
+
+    fn create_with(root: HKEY, path: &str, access: REG_SAM_FLAGS) -> io::Result<Key> {
         let mut key = ptr::null_mut();
         // SAFETY: a NUL-terminated path, no class, no security attributes,
         // a place for the key.
@@ -172,7 +176,7 @@ impl Key {
                 0,
                 ptr::null(),
                 REG_OPTION_NON_VOLATILE,
-                KEY_WRITE | KEY_WOW64_64KEY,
+                access | KEY_WOW64_64KEY,
                 ptr::null(),
                 &mut key,
                 ptr::null_mut(),
@@ -267,43 +271,17 @@ impl System for WinSystem {
     }
 
     fn register(&mut self, scope: Scope, e: &UninstallEntry) -> io::Result<()> {
-        let key = Key::create(hive(scope), &format!(r"{UNINSTALL}\{}", e.name))?;
-        let exe = quoted(&e.uninstaller);
-        key.set_str("DisplayName", &e.name)?;
-        key.set_str("DisplayVersion", &e.version)?;
-        key.set_str("Publisher", &e.publisher)?;
-        key.set_str("DisplayIcon", &e.icon.to_string_lossy())?;
-        key.set_str("InstallLocation", &e.location.to_string_lossy())?;
-        key.set_str("UninstallString", &format!("{exe} --uninstall"))?;
-        key.set_str("QuietUninstallString", &format!("{exe} --uninstall /S"))?;
-        key.set_str("ModifyPath", &exe)?;
-        key.set_str(
-            "URLInfoAbout",
-            "https://github.com/alessonqueirozdev-hub/Caecilia",
-        )?;
-        key.set_str(
-            "HelpLink",
-            "https://github.com/alessonqueirozdev-hub/Caecilia",
-        )?;
-        key.set_str(
-            "InstallDate",
-            &crate::log::stamp(std::time::SystemTime::now())[..8],
-        )?;
-        key.set_dword("EstimatedSize", e.size_kib)?;
-        key.set_dword("NoRepair", 0)?;
-        Ok(())
+        replace_entry(
+            hive(scope),
+            UNINSTALL,
+            &e.name,
+            &format!(r"Software\{} Setup", e.name),
+            |key| write_entry(key, e),
+        )
     }
 
     fn unregister(&mut self, scope: Scope, product: &str) -> io::Result<()> {
-        let parent = Key::open_with(hive(scope), UNINSTALL, KEY_ALL_ACCESS)?;
-        // SAFETY: an open key and a NUL-terminated name.
-        let code = unsafe { RegDeleteTreeW(parent.0, wide(product).as_ptr()) };
-        match code {
-            ERROR_SUCCESS => Ok(()),
-            // ERROR_FILE_NOT_FOUND: already gone.
-            2 => Ok(()),
-            code => status(code),
-        }
+        delete_tree(hive(scope), UNINSTALL, product)
     }
 
     fn make_shortcut(&mut self, s: &Shortcut) -> io::Result<()> {
@@ -343,6 +321,91 @@ impl System for WinSystem {
             false
         }
     }
+}
+
+/// Writes the values of the entry `e` into `key`.
+fn write_entry(key: &Key, e: &UninstallEntry) -> io::Result<()> {
+    let exe = quoted(&e.uninstaller);
+    key.set_str("DisplayName", &e.name)?;
+    key.set_str("DisplayVersion", &e.version)?;
+    key.set_str("Publisher", &e.publisher)?;
+    key.set_str("DisplayIcon", &e.icon.to_string_lossy())?;
+    key.set_str("InstallLocation", &e.location.to_string_lossy())?;
+    key.set_str("UninstallString", &format!("{exe} --uninstall"))?;
+    key.set_str("QuietUninstallString", &format!("{exe} --uninstall /S"))?;
+    key.set_str("ModifyPath", &exe)?;
+    key.set_str(
+        "URLInfoAbout",
+        "https://github.com/alessonqueirozdev-hub/Caecilia",
+    )?;
+    key.set_str(
+        "HelpLink",
+        "https://github.com/alessonqueirozdev-hub/Caecilia",
+    )?;
+    key.set_str(
+        "InstallDate",
+        &crate::log::stamp(std::time::SystemTime::now())[..8],
+    )?;
+    key.set_dword("EstimatedSize", e.size_kib)?;
+    key.set_dword("NoRepair", 0)?;
+    Ok(())
+}
+
+/// Deletes the key `name` under `parent` and everything in it; gone already
+/// is fine.
+fn delete_tree(root: HKEY, parent: &str, name: &str) -> io::Result<()> {
+    // What deleting a tree needs of its parent, and no more.
+    const DELETE: REG_SAM_FLAGS = 0x0001_0000;
+    let parent = match Key::open_with(root, parent, DELETE | KEY_READ | KEY_WRITE) {
+        Ok(key) => key,
+        Err(e) if e.raw_os_error() == Some(2) => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    // SAFETY: an open key and a NUL-terminated name.
+    let code = unsafe { RegDeleteTreeW(parent.0, wide(name).as_ptr()) };
+    match code {
+        // ERROR_FILE_NOT_FOUND: already gone.
+        2 => Ok(()),
+        code => status(code),
+    }
+}
+
+/// Copies the key `from` with everything in it to a new key `to`.
+fn copy_tree(root: HKEY, from: &str, to: &str) -> io::Result<()> {
+    let src = Key::open(root, from)?;
+    // The copy takes the key's security too, so it needs every right on
+    // the key it makes.
+    let dest = Key::create_with(root, to, KEY_ALL_ACCESS)?;
+    // SAFETY: two open keys; no subkey name means `src` itself.
+    status(unsafe { RegCopyTreeW(src.0, ptr::null(), dest.0) })
+}
+
+/// Writes the key `name` under `parent` with `write`, all or nothing: what
+/// was there is kept under `backup` meanwhile, and put back if `write`
+/// fails part way, so a failed registration leaves the entry as it was.
+fn replace_entry(
+    root: HKEY,
+    parent: &str,
+    name: &str,
+    backup: &str,
+    write: impl FnOnce(&Key) -> io::Result<()>,
+) -> io::Result<()> {
+    let path = format!(r"{parent}\{name}");
+    let (backup_parent, backup_name) = backup.rsplit_once('\\').unwrap_or(("", backup));
+    delete_tree(root, backup_parent, backup_name)?;
+    let had = Key::open(root, &path).is_ok();
+    if had {
+        copy_tree(root, &path, backup)?;
+    }
+    let written = Key::create(root, &path).and_then(|key| write(&key));
+    if written.is_err() {
+        let _ = delete_tree(root, parent, name);
+        if had {
+            let _ = copy_tree(root, backup, &path);
+        }
+    }
+    let _ = delete_tree(root, backup_parent, backup_name);
+    written
 }
 
 fn shortcut(s: &Shortcut) -> windows::core::Result<()> {
@@ -523,6 +586,40 @@ mod tests {
         // The header of every .lnk: its size, 0x4C, then the link CLSID.
         assert_eq!(bytes[..4], [0x4C, 0, 0, 0]);
         assert_eq!(bytes[4..8], [0x01, 0x14, 0x02, 0x00]);
+    }
+
+    #[test]
+    fn a_failed_registration_leaves_the_entry_as_it_was() {
+        // Under a key of its own in the person's hive, never the real
+        // list of installed programs.
+        struct Gone(String);
+        impl Drop for Gone {
+            fn drop(&mut self) {
+                let _ = delete_tree(HKEY_CURRENT_USER, "Software", &self.0);
+            }
+        }
+        let test = Gone(format!("CaeciliaInstallerTest{}", std::process::id()));
+        let parent = format!(r"Software\{}", test.0);
+        let backup = format!(r"{parent}\Backup");
+        let entry = format!(r"{parent}\Entry");
+        let root = HKEY_CURRENT_USER;
+        let failing = |key: &Key| {
+            key.set_str("DisplayName", "half")?;
+            Err(io::Error::other("stops part way"))
+        };
+        // None before, none after.
+        assert!(replace_entry(root, &parent, "Entry", &backup, failing).is_err());
+        assert!(Key::open(root, &entry).is_err());
+        // One before, the same one after.
+        replace_entry(root, &parent, "Entry", &backup, |k| {
+            k.set_str("DisplayName", "whole")
+        })
+        .unwrap();
+        assert!(replace_entry(root, &parent, "Entry", &backup, failing).is_err());
+        let key = Key::open(root, &entry).unwrap();
+        assert_eq!(key.get_str("DisplayName").as_deref(), Some("whole"));
+        drop(key);
+        assert!(Key::open(root, &backup).is_err(), "no backup left");
     }
 
     #[test]

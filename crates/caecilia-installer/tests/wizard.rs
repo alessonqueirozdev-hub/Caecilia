@@ -90,6 +90,16 @@ impl Drop for Rig {
 }
 
 fn rig(name: &str, found: Option<Found>, uninstall: bool, lang: Lang) -> Rig {
+    rig_with(name, found, None, uninstall, lang)
+}
+
+fn rig_with(
+    name: &str,
+    found: Option<Found>,
+    unreadable: Option<(Scope, PathBuf)>,
+    uninstall: bool,
+    lang: Lang,
+) -> Rig {
     let dir = std::env::temp_dir().join(format!("caecilia-wizard-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let asked = Rc::new(RefCell::new(Asked::default()));
@@ -100,6 +110,7 @@ fn rig(name: &str, found: Option<Found>, uninstall: bool, lang: Lang) -> Rig {
         manifest: Ok(manifest()),
         places: Places::under(Path::new("C:\\")),
         found,
+        unreadable,
         uninstall,
         version_1: false,
         elevated: false,
@@ -164,7 +175,8 @@ fn found_machine(version: &str) -> Found {
         components: Components::parse("app,vst3,organ").unwrap(),
         program_dir: "C:\\Program Files\\Caecilia".into(),
         organs_dir: Some("C:\\AppData\\Caecilia\\Organs".into()),
-        data_dir: Some("C:\\AppData\\Caecilia".into()),
+        // Of whoever installed it, not of the person removing it.
+        data_dir: Some("C:\\Users\\owner\\AppData\\Caecilia".into()),
         files: vec![],
         dirs: vec![],
         shortcuts: vec![],
@@ -335,13 +347,53 @@ fn an_installation_here_offers_update_change_and_remove() {
         assert_eq!(&args[..2], ["--engine", "uninstall"]);
         assert!(
             args.windows(2)
-                .any(|w| w[0] == "--purge-dir" && w[1] == "C:\\AppData\\Caecilia")
+                .any(|w| w[0] == "--purge-dir" && w[1] == "C:\\Users\\owner\\AppData\\Caecilia")
         );
     }
     r.ui.frame();
     assert_eq!(r.page_title(), "Caecilia was removed");
     assert!(r.ui.describe().contains("Caecilia was removed"));
     r.shot("9-removed");
+}
+
+#[test]
+fn an_installation_without_its_record_is_repaired_not_removed() {
+    let dir = PathBuf::from("D:\\Program Files\\Caecilia");
+    // As the uninstaller: it cannot tell its files, and says so.
+    let mut r = rig_with(
+        "unreadable-remove",
+        None,
+        Some((Scope::Machine, dir.clone())),
+        true,
+        Lang::En,
+    );
+    assert_eq!(r.page_title(), "Caecilia can't be removed safely");
+    r.shot("10-unreadable");
+    r.press(Role::Button, "Close");
+    assert!(r.quit.get());
+    assert!(r.asked.borrow().starts.is_empty());
+
+    // As the installer: over it, where it is and for whom.
+    let mut r = rig_with(
+        "unreadable-repair",
+        None,
+        Some((Scope::User, dir.clone())),
+        false,
+        Lang::En,
+    );
+    r.press(Role::Button, "Next");
+    r.press(
+        Role::Switch,
+        "I have read and accept the terms of the licence",
+    );
+    r.press(Role::Button, "Install");
+    let asked = r.asked.borrow();
+    let (args, elevate) = &asked.starts[0];
+    assert!(!elevate);
+    let at = |k: &str| args[args.iter().position(|a| a == k).unwrap() + 1].clone();
+    assert_eq!(at("--scope"), "user");
+    assert_eq!(PathBuf::from(at("--dir")), dir);
+    assert!(args.iter().any(|a| a == "--force"));
 }
 
 #[test]

@@ -709,16 +709,18 @@ impl Engine<'_> {
                 }
             }
         }
+        self.log.line("step", "register");
+        if let Err(e) = self.sys.unregister(record.scope, &record.product) {
+            // The record stays, and the entry: running the installer again
+            // finds both and its Remove tries again.
+            let e = io_err("remove the entry in Apps & features", &record.program_dir)(e);
+            self.log.error(&e);
+            return Err(e);
+        }
+        self.log.line("unregistered", record.scope.name());
         for name in [RECORD, LOG_COPY] {
             let _ = fs::remove_file(record.program_dir.join(name));
         }
-        self.log.line("step", "register");
-        if let Err(e) = self.sys.unregister(record.scope, &record.product) {
-            self.log.error(format_args!(
-                "could not remove the entry in Apps & features: {e}"
-            ));
-        }
-        self.log.line("unregistered", record.scope.name());
         // No process can remove the folder it works in: one started inside
         // a folder going now (a prompt opened there) steps out first.
         let going = |cwd: &Path| {

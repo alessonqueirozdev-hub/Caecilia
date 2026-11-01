@@ -510,6 +510,38 @@ fn a_removal_started_inside_the_program_folder_still_removes_it() {
 }
 
 #[test]
+fn a_removal_whose_entry_stays_keeps_its_record_to_try_again() {
+    let scratch = Scratch::new("unregister");
+    let places = places(&scratch.0);
+    let files = payload("2.0.0", false);
+    let plan = Plan::new(
+        &files.manifest,
+        &Choices::defaults(Scope::User),
+        &places,
+        14,
+    );
+    let mut sys = MemorySystem::default();
+    let record = install(&mut sys, &plan, &files, None).unwrap().record;
+    sys.fail_unregister = true;
+    let mut log = Log::in_memory();
+    let err = Engine {
+        sys: &mut sys,
+        log: &mut log,
+        cancelled: &|| false,
+    }
+    .uninstall(&record, None)
+    .unwrap_err();
+    assert!(matches!(err, Error::Io { .. }), "{err}");
+    assert!(sys.installed(Scope::User, "Caecilia").is_some());
+    let again = Record::load(&plan.program_dir).expect("the record stays");
+
+    sys.fail_unregister = false;
+    uninstall(&mut sys, &again, None);
+    assert!(sys.installed(Scope::User, "Caecilia").is_none());
+    assert!(!plan.program_dir.exists());
+}
+
+#[test]
 fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     let scratch = Scratch::new("inuse");
     let places = places(&scratch.0);

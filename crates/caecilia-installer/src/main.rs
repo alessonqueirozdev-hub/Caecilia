@@ -167,6 +167,11 @@ mod windows_main {
             }),
             _ => run::find_installed(&WinSystem, &product),
         };
+        let unreadable = found
+            .is_none()
+            .then(|| run::find_unreadable(&WinSystem, &product))
+            .flatten()
+            .map(|(scope, installed)| (scope, installed.location));
         let version = manifest
             .as_ref()
             .map_or(String::new(), |m| m.version.clone());
@@ -174,6 +179,7 @@ mod windows_main {
             manifest,
             places,
             found,
+            unreadable,
             uninstall,
             version_1: win::has_version_1(),
             elevated: win::is_elevated(),

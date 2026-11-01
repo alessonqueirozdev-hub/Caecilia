@@ -47,6 +47,8 @@ pub struct MemorySystem {
     pub can_delete_at_restart: bool,
     /// Fails [`register`](System::register), to test the way back.
     pub fail_register: bool,
+    /// Fails [`unregister`](System::unregister).
+    pub fail_unregister: bool,
     /// Another run holds the lock.
     pub locked_elsewhere: bool,
 }
@@ -71,6 +73,9 @@ impl System for MemorySystem {
     }
 
     fn unregister(&mut self, scope: Scope, product: &str) -> std::io::Result<()> {
+        if self.fail_unregister {
+            return Err(std::io::Error::other("refused"));
+        }
         self.entries.remove(&(scope, product.to_owned()));
         Ok(())
     }

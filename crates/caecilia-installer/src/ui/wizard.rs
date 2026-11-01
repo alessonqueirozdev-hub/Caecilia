@@ -32,6 +32,9 @@ pub struct Facts {
     pub places: Places,
     /// The installation already here.
     pub found: Option<Found>,
+    /// An installation in *Apps & features* whose record is missing or
+    /// damaged: who it is for and its folder.
+    pub unreadable: Option<(Scope, PathBuf)>,
     /// Started as the uninstaller.
     pub uninstall: bool,
     /// Caecilia 1.x is installed too.
@@ -85,6 +88,8 @@ pub enum Page {
     Remove,
     /// Removed.
     Removed,
+    /// Installed, but its record is missing or damaged: not removable.
+    Unreadable,
     /// The installer is damaged.
     Damaged,
 }
@@ -182,6 +187,8 @@ impl Wizard {
         } else if facts.uninstall {
             if facts.found.is_some() {
                 Page::Remove
+            } else if facts.unreadable.is_some() {
+                Page::Unreadable
             } else {
                 Page::Removed
             }
@@ -190,9 +197,14 @@ impl Wizard {
         } else {
             Page::Welcome
         };
+        let scope_locked = facts.unreadable.is_some();
         let mut choices = Choices::defaults(Scope::Machine);
         if let Some(found) = &facts.found {
             choices = choices_of(found);
+        } else if let Some((scope, dir)) = &facts.unreadable {
+            // Installed over, where it is and for whom.
+            choices.scope = *scope;
+            choices.program_dir = Some(dir.clone());
         }
         Wizard {
             lang: facts.lang,
@@ -202,7 +214,7 @@ impl Wizard {
             page,
             options_from: Page::Welcome,
             choices,
-            scope_locked: false,
+            scope_locked,
             accepted: false,
             scroll: 0.0,
             job: None,
@@ -490,6 +502,14 @@ impl Wizard {
         }
     }
 
+    /// The data folder of the person who installed `r`: what a purge
+    /// removes.
+    fn data_dir(&self, r: &crate::record::Record) -> PathBuf {
+        r.data_dir
+            .clone()
+            .unwrap_or_else(|| self.facts.places.user_data_dir(&r.product))
+    }
+
     fn start_install(&mut self) {
         let exe = self.program_dir().join(APP_EXE);
         if (self.env.in_use)(&exe) {
@@ -502,7 +522,11 @@ impl Wizard {
         // The person's own organs folder, whoever the work runs as.
         choices.organs_dir = Some(self.component_path(3));
         let log = self.new_log("Setup");
-        let args = Args::for_engine_install(&choices, &log, self.lang);
+        let mut args = Args::for_engine_install(&choices, &log, self.lang);
+        if self.facts.found.is_none() && self.facts.unreadable.is_some() {
+            // Over the installation whose record is lost: a repair.
+            args.push("--force".into());
+        }
         let elevate = self.needs_admin(choices.scope);
         self.removing = false;
         self.start(args, elevate, log);
@@ -512,9 +536,7 @@ impl Wizard {
         let Some(found) = &self.facts.found else {
             return;
         };
-        let purge = self
-            .purge
-            .then(|| self.facts.places.user_data_dir(&found.record.product));
+        let purge = self.purge.then(|| self.data_dir(&found.record));
         let log = self.new_log("Uninstall");
         let args = Args::for_engine_uninstall(&found.record.program_dir, purge.as_deref(), &log);
         let elevate = self.needs_admin(found.scope);
@@ -613,6 +635,17 @@ impl Wizard {
             Page::Maintain => self.maintain(&mut p),
             Page::Remove => self.remove(&mut p),
             Page::Removed => self.removed(&mut p),
+            Page::Unreadable => {
+                let dir = self
+                    .facts
+                    .unreadable
+                    .as_ref()
+                    .map(|(_, d)| d.display().to_string())
+                    .unwrap_or_default();
+                p.title(t.unreadable_title);
+                p.lead(&fill(t.unreadable_lead, &[&dir]));
+                p.actions(&[], &[(t.close, Act::Close, Button::Primary, false)]);
+            }
             Page::Damaged => {
                 p.title(t.damaged_title);
                 p.lead(t.damaged_lead);
@@ -647,32 +680,33 @@ impl Wizard {
             &self.product().to_uppercase(),
             self.version(),
         );
-        let steps: Vec<(&str, StepState)> = if matches!(self.page, Page::Remove | Page::Removed)
-            || (self.removing && matches!(self.page, Page::Progress | Page::Failed))
-        {
-            vec![(t.step_remove, StepState::Now)]
-        } else {
-            let now = match self.page {
-                Page::Welcome | Page::Maintain | Page::Damaged => 0,
-                Page::Licence => 1,
-                Page::Options => 2,
-                Page::Progress | Page::Failed => 3,
-                Page::Done => 4,
-                _ => 0,
+        let steps: Vec<(&str, StepState)> =
+            if matches!(self.page, Page::Remove | Page::Removed | Page::Unreadable)
+                || (self.removing && matches!(self.page, Page::Progress | Page::Failed))
+            {
+                vec![(t.step_remove, StepState::Now)]
+            } else {
+                let now = match self.page {
+                    Page::Welcome | Page::Maintain | Page::Damaged => 0,
+                    Page::Licence => 1,
+                    Page::Options => 2,
+                    Page::Progress | Page::Failed => 3,
+                    Page::Done => 4,
+                    _ => 0,
+                };
+                t.steps
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| {
+                        let state = match i.cmp(&now) {
+                            std::cmp::Ordering::Less => StepState::Done,
+                            std::cmp::Ordering::Equal => StepState::Now,
+                            std::cmp::Ordering::Greater => StepState::Later,
+                        };
+                        (*s, state)
+                    })
+                    .collect()
             };
-            t.steps
-                .iter()
-                .enumerate()
-                .map(|(i, s)| {
-                    let state = match i.cmp(&now) {
-                        std::cmp::Ordering::Less => StepState::Done,
-                        std::cmp::Ordering::Equal => StepState::Now,
-                        std::cmp::Ordering::Greater => StepState::Later,
-                    };
-                    (*s, state)
-                })
-                .collect()
-        };
         for (i, (label, state)) in steps.iter().enumerate() {
             let r = Rect::new(
                 rect.x + 16.0,
@@ -1319,12 +1353,7 @@ impl Wizard {
         self.placed_rows(p, &rows, false, p.look.set_red);
         p.y += 4.0;
         p.check_row(t.purge.0, self.purge, Act::Purge);
-        let data = self
-            .facts
-            .places
-            .user_data_dir(&r.product)
-            .display()
-            .to_string();
+        let data = self.data_dir(r).display().to_string();
         p.note_indented(&format!("{data} — {}", t.purge.1));
         let shield = self.needs_admin(found.scope);
         let keep = if self.facts.uninstall {
@@ -1727,6 +1756,7 @@ impl Widget for Wizard {
             Page::Maintain => t.installed_title,
             Page::Remove => t.remove_title,
             Page::Removed => t.removed_title,
+            Page::Unreadable => t.unreadable_title,
             Page::Damaged => t.damaged_title,
         };
         AccessNode::new(Role::Dialog, fill(t.title, &[self.version()]))
