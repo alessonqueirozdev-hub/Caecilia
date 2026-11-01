@@ -31,6 +31,7 @@
 mod console;
 mod controller;
 mod demo;
+mod devices;
 mod params;
 mod sound;
 mod switch;
@@ -54,6 +55,7 @@ use manguebyte_plugin::{AudioLayout, Plugin, PluginInfo, PluginKind, apply_param
 
 pub use console::{Action, Binding, ConsoleMemory, GENERALS, LEARN_SLOTS, Source};
 pub use controller::{Origin, Played, RegistrationController};
+pub use devices::{DeviceEntry, DeviceRequest, DevicesView, serve_devices, stop_serving_devices};
 pub use params::{
     CaeciliaParams, KEY_NAMES, MAX_COUPLERS, TEMPERAMENT_NAMES, coupler_param_id, stop_param_id,
 };

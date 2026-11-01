@@ -407,6 +407,12 @@ pub(crate) struct Source {
     waiting: Cell<Option<crate::console::Action>>,
     /// What learning bound last, or why it could not.
     learned: RefCell<Option<String>>,
+    /// The devices, as the application last said, and when it was asked;
+    /// what the player asked of them since; whether the outputs are listed.
+    devices: RefCell<Option<crate::devices::DevicesView>>,
+    devices_asked: Cell<Option<(Duration, bool)>>,
+    device_requests: RefCell<Vec<crate::devices::DeviceRequest>>,
+    picking: Cell<bool>,
     /// The tour of the stops, while it plays.
     tour: RefCell<Option<Tour>>,
     /// The registrations demonstrations drew, and what the history calls
@@ -436,6 +442,10 @@ impl Source {
             learning: Cell::new(false),
             waiting: Cell::new(None),
             learned: RefCell::new(None),
+            devices: RefCell::new(crate::devices::ask(&[], false)),
+            devices_asked: Cell::new(None),
+            device_requests: RefCell::default(),
+            picking: Cell::new(false),
             tour: RefCell::new(None),
             named: Rc::default(),
         })
@@ -493,9 +503,60 @@ impl Source {
             .filter(|n| *n < TOUR_ROW)
     }
 
+    /// Ask the devices for something; the next frame carries it out.
+    pub(crate) fn ask_devices(&self, request: crate::devices::DeviceRequest) {
+        self.device_requests.borrow_mut().push(request);
+        self.refresh();
+    }
+
+    /// List the outputs to choose one, or stop listing them.
+    pub(crate) fn pick_output(&self, on: bool) {
+        self.picking.set(on);
+        if on {
+            // Listed afresh: one may have been plugged in.
+            self.devices_asked.set(None);
+        }
+        self.refresh();
+    }
+
+    /// Ask the application about the devices, if it serves them: what the
+    /// player asked at once; besides, a look for devices plugged in or
+    /// pulled out each second, and the devices listed afresh every few
+    /// seconds while the Audio page shows them.
+    fn follow_devices(&self, now: Duration) {
+        if self.devices.borrow().is_none() {
+            return;
+        }
+        let showing = self.sound.get() && self.page.get() == sound_page::AUDIO;
+        let requests = std::mem::take(&mut *self.device_requests.borrow_mut());
+        let due = match self.devices_asked.get() {
+            None => Some(showing),
+            Some((at, described)) => {
+                let since = now.saturating_sub(at);
+                if showing && (!described || since >= Duration::from_secs(3)) {
+                    Some(true)
+                } else if since >= Duration::from_secs(1) {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+        };
+        let describe = match due {
+            Some(d) => d || !requests.is_empty(),
+            None if requests.is_empty() => return,
+            None => true,
+        };
+        if let Some(view) = crate::devices::ask(&requests, describe) {
+            *self.devices.borrow_mut() = Some(view);
+        }
+        self.devices_asked.set(Some((now, describe)));
+    }
+
     /// Turn the sound panel to page `n`; learning stops off the MIDI page.
     pub(crate) fn sound_page(&self, n: usize) {
         self.page.set(n);
+        self.picking.set(false);
         if n != sound_page::MIDI {
             self.set_learning(false);
         }
@@ -679,6 +740,7 @@ impl Source {
         if done {
             self.tour.borrow_mut().take();
         }
+        self.follow_devices(now);
         let snapshot = Rc::new(self.read());
         *self.current.borrow_mut() = Some((now, Rc::clone(&snapshot)));
         snapshot
@@ -807,10 +869,15 @@ impl Source {
             }),
         });
 
-        let sound = self
-            .sound
-            .get()
-            .then(|| SoundView::read(self, self.page.get(), self.learn_view(organ)));
+        let sound = self.sound.get().then(|| {
+            SoundView::read(
+                self,
+                self.page.get(),
+                self.learn_view(organ),
+                self.devices.borrow().clone(),
+                self.picking.get(),
+            )
+        });
 
         Snapshot {
             library,

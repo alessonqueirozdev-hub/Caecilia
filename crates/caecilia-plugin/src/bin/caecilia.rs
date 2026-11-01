@@ -9,16 +9,19 @@
 //! The session -- the organ, drawstops, pistons, learned controls, level --
 //! is kept in `%APPDATA%\Caecilia\session.txt`
 //! (`~/.config/caecilia/session.txt` elsewhere) and restored on the next
-//! start. Closing the window quits. With `--no-window`, or where there are
+//! start; the sound card and the MIDI ports, chosen on the console's
+//! Sound > Audio page, in `audio.txt` beside it. Closing the window quits. With `--no-window`, or where there are
 //! no application windows, it plays from the terminal: `organ <file>`
 //! changes the organ; an empty line quits.
 
+use std::cell::RefCell;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
-use caecilia_plugin::Caecilia;
+use caecilia_plugin::{Caecilia, DeviceEntry, DeviceRequest, DevicesView};
 use manguebyte_params::ParamSet;
-use manguebyte_standalone::{Standalone, StandaloneOptions};
+use manguebyte_standalone::{SettingsChoices, Standalone, StandaloneOptions};
 use manguebyte_window::App;
 
 fn session_path() -> Option<PathBuf> {
@@ -82,41 +85,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    let options = StandaloneOptions {
+    // The sound card and the MIDI ports as the player last chose them.
+    let session = session_path();
+    let audio = session.as_ref().map(|p| p.with_file_name("audio.txt"));
+    let mut options = StandaloneOptions {
         block_size: 256,
         ..StandaloneOptions::default()
     };
-    let player = Standalone::<Caecilia>::start(options)?;
+    if let Some(saved) = audio
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|text| text.parse().ok())
+    {
+        options.settings = saved;
+    }
+    let player = Rc::new(RefCell::new(Standalone::<Caecilia>::start(options)?));
 
-    let session = session_path();
     if let Some(text) = session
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok())
     {
-        match player.load_state(&text) {
+        match player.borrow().load_state(&text) {
             Ok(_) => println!("Restored the last session."),
             Err(e) => println!("The last session could not be restored: {e}"),
         }
     }
     // The organ asked for wins over the session's.
     if let Some(path) = &organ_arg {
-        if player.params().organ.path() != std::path::absolute(path).ok() {
-            change_organ(&player, path);
+        let p = player.borrow();
+        if p.params().organ.path() != std::path::absolute(path).ok() {
+            change_organ(&p, path);
         }
     }
-    println!("Organ: {}", player.params().organ.organ().name);
-
-    println!(
-        "Caecilia on {} at {} Hz.",
-        player.device_name(),
-        player.sample_rate()
-    );
-    match player.midi_input_names().as_slice() {
-        [] => println!("No MIDI keyboard is connected."),
-        names => println!("Playing from: {}", names.join(", ")),
-    }
-    for problem in player.midi_problems() {
-        println!("MIDI: {problem}");
+    {
+        let p = player.borrow();
+        println!("Organ: {}", p.params().organ.organ().name);
+        println!("{}", p.report());
+        match p.midi_input_names().as_slice() {
+            [] => println!("No MIDI keyboard is connected."),
+            names => println!("Playing from: {}", names.join(", ")),
+        }
     }
     println!(
         "MIDI channels play the divisions the organ file assigns; program changes 1-16 recall the generals."
@@ -124,27 +132,123 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match app.as_ref().map(open_console) {
         Some(Ok(console)) => {
             println!("The console is open; closing it quits.");
+            println!("Sound > Audio chooses the sound card and the MIDI ports.");
+            serve_devices(&player, audio.clone());
             if let Some(app) = &app {
                 app.run()?;
             }
             drop(console);
+            caecilia_plugin::stop_serving_devices();
         }
         failed => {
             if let Some(Err(e)) = failed {
                 println!("The console did not open ({e}); playing from the terminal.");
             }
-            terminal(&player)?;
+            terminal(&player.borrow())?;
         }
     }
 
+    let p = player.borrow();
+    if let Some(path) = &audio {
+        save_audio(&p, path);
+    }
     if let Some(path) = session {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(&path, player.save_state())?;
+        std::fs::write(&path, p.save_state())?;
         println!("Session saved to {}.", path.display());
     }
     Ok(())
+}
+
+/// Keep the player's choice of devices for the next start.
+fn save_audio(player: &Standalone<Caecilia>, path: &Path) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Err(e) = std::fs::write(path, player.settings().to_string()) {
+        println!("The audio settings could not be saved: {e}");
+    }
+}
+
+/// Serve the console's Audio page from `player`: carry out what the player
+/// asks, look for devices plugged in or pulled out, and say what there is.
+/// A change that took is saved to `audio` at once.
+fn serve_devices(player: &Rc<RefCell<Standalone<Caecilia>>>, audio: Option<PathBuf>) {
+    let player = Rc::clone(player);
+    let mut listed: Option<SettingsChoices> = None;
+    caecilia_plugin::serve_devices(move |requests, describe| {
+        let mut p = player.borrow_mut();
+        for request in requests {
+            let report = match request {
+                DeviceRequest::Output(id) => p.set_output_device(id),
+                DeviceRequest::SampleRate(rate) => p.set_sample_rate(*rate),
+                DeviceRequest::BufferSize(frames) => p.set_buffer_size(*frames),
+                DeviceRequest::MidiInput(id, open) => p.set_midi_input(id, *open),
+            };
+            println!("{report}");
+        }
+        if !requests.is_empty() {
+            if let Some(path) = &audio {
+                save_audio(&p, path);
+            }
+        }
+        if let Some(report) = p.poll_devices() {
+            println!("{report}");
+            listed = None;
+        }
+        if describe || listed.is_none() || !requests.is_empty() {
+            listed = p.choices().ok();
+        }
+        view_of(&p, listed.as_ref())
+    });
+}
+
+/// What the console's Audio page shows of `player`, its devices as `listed`.
+fn view_of(player: &Standalone<Caecilia>, listed: Option<&SettingsChoices>) -> DevicesView {
+    let report = player.report();
+    let settings = player.settings();
+    let playing = report.output.as_ref().map(|o| o.id.as_str());
+    let Some(listed) = listed else {
+        return DevicesView {
+            report: report.to_string(),
+            failed: report.error.is_some(),
+            ..DevicesView::default()
+        };
+    };
+    let output = listed
+        .outputs
+        .iter()
+        .find(|o| Some(o.device.id.as_str()) == playing);
+    DevicesView {
+        outputs: listed
+            .outputs
+            .iter()
+            .map(|o| DeviceEntry {
+                id: o.device.id.clone(),
+                name: o.device.name.clone(),
+                chosen: Some(o.device.id.as_str()) == playing,
+                is_default: o.is_default,
+            })
+            .collect(),
+        sample_rates: output.map(|o| o.sample_rates.clone()).unwrap_or_default(),
+        sample_rate: settings.sample_rate,
+        buffer_sizes: output.map(|o| o.buffer_sizes.clone()).unwrap_or_default(),
+        buffer_size: settings.buffer_size,
+        midi_inputs: listed
+            .midi_inputs
+            .iter()
+            .map(|m| DeviceEntry {
+                id: m.port.id.clone(),
+                name: m.port.name.clone(),
+                chosen: m.open,
+                is_default: false,
+            })
+            .collect(),
+        report: report.to_string(),
+        failed: report.error.is_some(),
+    }
 }
 
 /// The console of the instance playing, in a window of `app`.

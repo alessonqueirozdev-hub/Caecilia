@@ -14,16 +14,19 @@ use manguebyte_ui::access::Role;
 use manguebyte_ui::{Button, Event, EventCx, Handled};
 
 use super::live::Item;
-use super::paint::{style, text, vertical, width_of};
+use super::paint::{polygon, style, text, vertical, width_of};
 use super::snapshot::{Snapshot, Source, note_name};
 use crate::console::{Action, Source as Control};
+use crate::devices::{DeviceRequest, DevicesView};
 use crate::params::{KEY_NAMES, TEMPERAMENT_NAMES};
 use crate::{EQ_BANDS, ROOM_NAMES};
 
-/// The pages, in the order of their tabs.
-pub(crate) const PAGES: [&str; 3] = ["Sound", "Tuning", "MIDI"];
+/// The pages, in the order of their tabs; Audio only where an application
+/// serves the devices.
+pub(crate) const PAGES: [&str; 4] = ["Sound", "Tuning", "MIDI", "Audio"];
 pub(crate) const TUNING: usize = 1;
 pub(crate) const MIDI: usize = 2;
+pub(crate) const AUDIO: usize = 3;
 
 /// The temperaments as their chips name them.
 const TEMPERAMENT_CHIPS: [&str; 8] = [
@@ -70,6 +73,17 @@ pub(crate) struct SoundView {
     pub(crate) rate: f32,
     pub(crate) depth: f32,
     pub(crate) learn: LearnView,
+    /// The devices, where an application serves them.
+    pub(crate) devices: Option<DevicesView>,
+    /// Whether the outputs are listed to choose one.
+    pub(crate) picking: bool,
+}
+
+impl SoundView {
+    /// How many pages there are: the Audio page only with devices.
+    fn pages(&self) -> usize {
+        if self.devices.is_some() { 4 } else { 3 }
+    }
 }
 
 impl std::hash::Hash for SoundView {
@@ -83,11 +97,18 @@ impl std::hash::Hash for SoundView {
         }
         (self.room, self.eq, self.temperament, self.key).hash(h);
         self.learn.hash(h);
+        (&self.devices, self.picking).hash(h);
     }
 }
 
 impl SoundView {
-    pub(crate) fn read(source: &Source, page: usize, learn: LearnView) -> SoundView {
+    pub(crate) fn read(
+        source: &Source,
+        page: usize,
+        learn: LearnView,
+        devices: Option<DevicesView>,
+        picking: bool,
+    ) -> SoundView {
         let p = &source.shared().params;
         SoundView {
             page,
@@ -106,6 +127,8 @@ impl SoundView {
             rate: p.tremulant_rate.normalized() as f32,
             depth: p.tremulant_depth.value(),
             learn,
+            devices,
+            picking,
         }
     }
 }
@@ -155,10 +178,10 @@ fn track(size: Size, y: f32) -> Rect {
     Rect::new(x, y, (size.width - x - 80.0).max(40.0), ROW)
 }
 
-fn tabs(size: Size) -> Vec<Rect> {
+fn tabs(size: Size, pages: usize) -> Vec<Rect> {
     let mut x = size.width - 20.0;
     let s = style(11.5, 600.0, Color::hex(0));
-    let mut out: Vec<Rect> = PAGES
+    let mut out: Vec<Rect> = PAGES[..pages]
         .iter()
         .rev()
         .map(|p| {
@@ -260,6 +283,57 @@ fn midi_plan(size: Size, count: usize) -> MidiPlan {
                 (r, Rect::new(r.right() - 26.0, r.y, 26.0, r.height))
             })
             .collect(),
+    }
+}
+
+struct AudioPlan {
+    output: Rect,
+    /// The outputs listed, while one is being chosen.
+    outputs: Vec<Rect>,
+    rates: Vec<Rect>,
+    buffers: Vec<Rect>,
+    midi: Vec<Rect>,
+}
+
+fn rate_name(rate: Option<u32>) -> String {
+    match rate {
+        None => "Device".into(),
+        Some(r) if r % 1000 == 0 => format!("{}k", r / 1000),
+        Some(r) => format!("{:.1}k", f64::from(r) / 1000.0),
+    }
+}
+
+fn buffer_name(frames: Option<u32>) -> String {
+    frames.map_or_else(|| "Device".into(), |f| f.to_string())
+}
+
+fn audio_plan(size: Size, devices: &DevicesView, picking: bool) -> AudioPlan {
+    let x = 20.0 + LABEL;
+    let output = Rect::new(x, 50.0, size.width - x - 20.0, 26.0);
+    let outputs = if picking {
+        let room = ((size.height - 90.0) / 26.0).max(0.0) as usize;
+        (0..devices.outputs.len().min(room))
+            .map(|i| Rect::new(x, 82.0 + i as f32 * 26.0, output.width, 22.0))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let rates = chips(size, 86.0, devices.sample_rates.len() + 1);
+    let buffers = chips(size, 118.0, devices.buffer_sizes.len() + 1);
+    let per_row = 3;
+    let w = (size.width - x - 20.0) / per_row as f32;
+    let midi = (0..devices.midi_inputs.len().min(per_row * 2))
+        .map(|i| {
+            let (row, col) = (i / per_row, i % per_row);
+            Rect::new(x + col as f32 * w, 152.0 + row as f32 * 30.0, w - 5.0, ROW)
+        })
+        .collect();
+    AudioPlan {
+        output,
+        outputs,
+        rates,
+        buffers,
+        midi,
     }
 }
 
@@ -534,6 +608,128 @@ fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundVi
     }
 }
 
+fn draw_audio(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
+    let look = snapshot.look;
+    let Some(devices) = &sound.devices else {
+        return;
+    };
+    let plan = audio_plan(size, devices, sound.picking);
+    label(scene, snapshot, plan.output.y + 1.0, "Output");
+    let shape = RoundedRect::new(plan.output, 8.0);
+    scene.fill(shape, look.edge.with_alpha(0x60));
+    scene.stroke(shape, Stroke::new(1.0), look.edge);
+    let chosen = devices
+        .outputs
+        .iter()
+        .find(|d| d.chosen)
+        .map_or("No output", |d| d.name.as_str());
+    let s = style(12.0, 600.0, look.text);
+    let mut name = chosen.to_string();
+    while width_of(&name, s) > plan.output.width - 40.0 && name.chars().count() > 4 {
+        name = format!(
+            "{}\u{2026}",
+            name.chars()
+                .take(name.chars().count() - 2)
+                .collect::<String>()
+        );
+    }
+    text(
+        scene,
+        &name,
+        s,
+        Point::new(plan.output.x + 12.0, plan.output.y + 5.0),
+        0.0,
+    );
+    // A chevron: down to list the outputs, up while they are listed.
+    let c = Point::new(plan.output.right() - 16.0, plan.output.center().y);
+    let d = if sound.picking { -1.0 } else { 1.0 };
+    let chevron = polygon(&[
+        Point::new(c.x - 4.5, c.y - 2.0 * d),
+        Point::new(c.x + 4.5, c.y - 2.0 * d),
+        Point::new(c.x, c.y + 3.0 * d),
+    ]);
+    scene.fill(&chevron, look.text2);
+    if sound.picking {
+        for (r, d) in plan.outputs.iter().zip(&devices.outputs) {
+            let shape = RoundedRect::new(*r, 6.0);
+            if d.chosen {
+                scene.fill(shape, look.accent.with_alpha(0x2A));
+                scene.stroke(shape, Stroke::new(1.0), look.accent);
+            } else {
+                scene.fill(shape, look.panel_bottom);
+                scene.stroke(shape, Stroke::new(1.0), look.edge);
+            }
+            let tag = if d.is_default {
+                "  (system default)"
+            } else {
+                ""
+            };
+            text(
+                scene,
+                &format!("{}{tag}", d.name),
+                style(11.5, if d.chosen { 650.0 } else { 500.0 }, look.text),
+                Point::new(r.x + 12.0, r.y + 4.0),
+                0.0,
+            );
+        }
+        return;
+    }
+    label(scene, snapshot, plan.rates[0].y, "Rate");
+    let rates = std::iter::once(None).chain(devices.sample_rates.iter().map(|r| Some(*r)));
+    for (r, rate) in plan.rates.iter().zip(rates) {
+        chip(
+            scene,
+            snapshot,
+            *r,
+            &rate_name(rate),
+            rate == devices.sample_rate,
+        );
+    }
+    label(scene, snapshot, plan.buffers[0].y, "Buffer");
+    let sizes = std::iter::once(None).chain(devices.buffer_sizes.iter().map(|b| Some(*b)));
+    for (r, frames) in plan.buffers.iter().zip(sizes) {
+        chip(
+            scene,
+            snapshot,
+            *r,
+            &buffer_name(frames),
+            frames == devices.buffer_size,
+        );
+    }
+    label(scene, snapshot, 152.0, "MIDI in");
+    if devices.midi_inputs.is_empty() {
+        text(
+            scene,
+            "No MIDI input port is connected",
+            style(11.5, 500.0, look.text2),
+            Point::new(20.0 + LABEL, 156.0),
+            0.0,
+        );
+    }
+    for (r, port) in plan.midi.iter().zip(&devices.midi_inputs) {
+        chip(scene, snapshot, *r, &port.name, port.chosen);
+    }
+    let lines: Vec<&str> = devices.report.lines().take(3).collect();
+    let bottom = size.height - 22.0;
+    for (i, line) in lines.iter().enumerate() {
+        let failed = devices.failed && i + 1 == lines.len();
+        let ink = if failed {
+            look.set_red
+        } else if i == 0 {
+            look.text2
+        } else {
+            look.accent
+        };
+        text(
+            scene,
+            line,
+            style(10.5, if i == 0 { 500.0 } else { 450.0 }, ink),
+            Point::new(20.0, bottom - (lines.len() - i) as f32 * 15.0),
+            0.0,
+        );
+    }
+}
+
 /// The sound panel, on its page.
 pub(crate) fn draw(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
     let look = snapshot.look;
@@ -544,10 +740,11 @@ pub(crate) fn draw(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &S
         Point::new(20.0, 16.0),
         0.0,
     );
-    for (i, r) in tabs(size).iter().enumerate() {
+    for (i, r) in tabs(size, sound.pages()).iter().enumerate() {
         chip(scene, snapshot, *r, PAGES[i], i == sound.page);
     }
     match sound.page {
+        AUDIO => draw_audio(size, scene, snapshot, sound),
         TUNING => draw_tuning(size, scene, snapshot, sound),
         MIDI => draw_midi(size, scene, snapshot, sound),
         _ => draw_sound(size, scene, snapshot, sound),
@@ -557,6 +754,31 @@ pub(crate) fn draw(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &S
 /// What the screen reader says of the panel.
 pub(crate) fn describe(sound: &SoundView) -> String {
     match sound.page {
+        AUDIO => {
+            let Some(devices) = &sound.devices else {
+                return "Audio".into();
+            };
+            let ports: Vec<String> = devices
+                .midi_inputs
+                .iter()
+                .map(|p| format!("{} {}", p.name, if p.chosen { "open" } else { "closed" }))
+                .collect();
+            let mut said = format!(
+                "Audio: {}; rate {}, buffer {}; MIDI in: {}",
+                devices.report.lines().next().unwrap_or(""),
+                rate_name(devices.sample_rate),
+                buffer_name(devices.buffer_size),
+                if ports.is_empty() {
+                    "none".to_string()
+                } else {
+                    ports.join(", ")
+                }
+            );
+            for line in devices.report.lines().skip(1) {
+                said.push_str(&format!("; {line}"));
+            }
+            said
+        }
         TUNING => format!(
             "Tuning: {} on {}, A {:.1} Hz; tremulant {:.2} Hz, depth {:.0} %",
             TEMPERAMENT_NAMES[sound.temperament],
@@ -625,12 +847,39 @@ fn slider_item(name: &str, rect: Rect) -> Item {
 
 /// The panel's controls, for the screen reader and for tests.
 pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
-    let mut items: Vec<Item> = tabs(size)
+    let mut items: Vec<Item> = tabs(size, sound.pages())
         .into_iter()
         .enumerate()
         .map(|(i, r)| button(format!("Page {}", PAGES[i]), Some(i == sound.page), r))
         .collect();
     match sound.page {
+        AUDIO => {
+            let Some(devices) = &sound.devices else {
+                return items;
+            };
+            let plan = audio_plan(size, devices, sound.picking);
+            items.push(button("Output".into(), Some(sound.picking), plan.output));
+            for (r, d) in plan.outputs.iter().zip(&devices.outputs) {
+                items.push(button(format!("Output {}", d.name), Some(d.chosen), *r));
+            }
+            if !sound.picking {
+                let rates =
+                    std::iter::once(None).chain(devices.sample_rates.iter().map(|r| Some(*r)));
+                for (r, rate) in plan.rates.iter().zip(rates) {
+                    let on = Some(rate == devices.sample_rate);
+                    items.push(button(format!("Rate {}", rate_name(rate)), on, *r));
+                }
+                let sizes =
+                    std::iter::once(None).chain(devices.buffer_sizes.iter().map(|b| Some(*b)));
+                for (r, frames) in plan.buffers.iter().zip(sizes) {
+                    let on = Some(frames == devices.buffer_size);
+                    items.push(button(format!("Buffer {}", buffer_name(frames)), on, *r));
+                }
+                for (r, port) in plan.midi.iter().zip(&devices.midi_inputs) {
+                    items.push(button(format!("MIDI {}", port.name), Some(port.chosen), *r));
+                }
+            }
+        }
         TUNING => {
             let plan = tuning_plan(size);
             for (i, r) in plan.temperaments.iter().enumerate() {
@@ -734,11 +983,15 @@ pub(crate) fn input(
     ) = (event, sound)
     {
         let context = cx.context().clone();
-        if let Some(i) = tabs(size).iter().position(|r| r.contains(at)) {
+        if let Some(i) = tabs(size, sound.pages())
+            .iter()
+            .position(|r| r.contains(at))
+        {
             source.sound_page(i);
             return Handled::Yes;
         }
         let pressed = match sound.page {
+            AUDIO => press_audio(source, sound, size, at),
             TUNING => press_tuning(&context, source, size, at),
             MIDI => press_midi(source, sound, size, at),
             _ => press_sound(&context, source, size, at),
@@ -840,4 +1093,35 @@ fn press_midi(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pres
     } else {
         Pressed::Nothing
     }
+}
+
+fn press_audio(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pressed {
+    let Some(devices) = &sound.devices else {
+        return Pressed::Nothing;
+    };
+    let plan = audio_plan(size, devices, sound.picking);
+    if plan.output.contains(at) {
+        source.pick_output(!sound.picking);
+        return Pressed::Done;
+    }
+    if sound.picking {
+        if let Some(i) = plan.outputs.iter().position(|r| r.contains(at)) {
+            source.ask_devices(DeviceRequest::Output(devices.outputs[i].id.clone()));
+        }
+        source.pick_output(false);
+        return Pressed::Done;
+    }
+    if let Some(i) = plan.rates.iter().position(|r| r.contains(at)) {
+        let rate = i.checked_sub(1).map(|i| devices.sample_rates[i]);
+        source.ask_devices(DeviceRequest::SampleRate(rate));
+    } else if let Some(i) = plan.buffers.iter().position(|r| r.contains(at)) {
+        let frames = i.checked_sub(1).map(|i| devices.buffer_sizes[i]);
+        source.ask_devices(DeviceRequest::BufferSize(frames));
+    } else if let Some(i) = plan.midi.iter().position(|r| r.contains(at)) {
+        let port = &devices.midi_inputs[i];
+        source.ask_devices(DeviceRequest::MidiInput(port.id.clone(), !port.chosen));
+    } else {
+        return Pressed::Nothing;
+    }
+    Pressed::Done
 }
