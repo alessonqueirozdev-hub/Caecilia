@@ -572,6 +572,93 @@ fn an_update_to_another_folder_leaves_nothing_in_the_old_one() {
 }
 
 #[test]
+fn files_in_use_the_record_cannot_note_are_said_kept() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let scratch = Scratch::new("unnoted");
+    let places = places(&scratch.0);
+    let old_files = payload("2.0.0", false);
+    let old_plan = Plan::new(
+        &old_files.manifest,
+        &Choices::defaults(Scope::User),
+        &places,
+        14,
+    );
+    let mut sys = MemorySystem::default();
+    let old = install(&mut sys, &old_plan, &old_files, None)
+        .unwrap()
+        .record;
+    let clap = old_plan
+        .files
+        .iter()
+        .find(|f| f.entry.root == Root::Clap)
+        .unwrap()
+        .dest
+        .clone();
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&clap)
+        .unwrap();
+    // The record cannot be written again: a folder where its new copy goes.
+    fs::create_dir(old_plan.program_dir.join("install.json.caecilia-tmp")).unwrap();
+
+    let new_files = payload("2.0.1", false);
+    let mut choices = Choices::defaults(Scope::User);
+    choices.components = Components::parse("app,vst3,organ").unwrap();
+    let new_plan = Plan::new(&new_files.manifest, &choices, &places, 14);
+    let outcome = install(&mut sys, &new_plan, &new_files, Some(&old)).unwrap();
+    drop(held);
+    assert_eq!(outcome.kept, std::slice::from_ref(&clap));
+    assert!(outcome.record.leftovers.is_empty());
+    assert_eq!(
+        Record::load(&new_plan.program_dir).unwrap(),
+        outcome.record,
+        "the record in place is whole"
+    );
+}
+
+#[test]
+fn a_purge_that_fails_keeps_the_record_to_try_again() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let scratch = Scratch::new("purge-fails");
+    let places = places(&scratch.0);
+    let files = payload("2.0.0", false);
+    let plan = Plan::new(
+        &files.manifest,
+        &Choices::defaults(Scope::User),
+        &places,
+        14,
+    );
+    let mut sys = MemorySystem::default();
+    let record = install(&mut sys, &plan, &files, None).unwrap().record;
+    let data = places.user_data_dir("Caecilia");
+    let session = data.join("session.txt");
+    fs::write(&session, b"session").unwrap();
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&session)
+        .unwrap();
+    let mut log = Log::in_memory();
+    let err = Engine {
+        sys: &mut sys,
+        log: &mut log,
+        cancelled: &|| false,
+    }
+    .uninstall(&record, Some(&data))
+    .unwrap_err();
+    drop(held);
+    assert!(matches!(err, Error::Io { .. }), "{err}");
+    assert!(sys.installed(Scope::User, "Caecilia").is_some());
+    let again = Record::load(&plan.program_dir).expect("the record stays");
+
+    uninstall(&mut sys, &again, Some(&data));
+    assert!(!data.exists());
+    assert!(!plan.program_dir.exists());
+    assert!(sys.installed(Scope::User, "Caecilia").is_none());
+}
+
+#[test]
 fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     let scratch = Scratch::new("inuse");
     let places = places(&scratch.0);

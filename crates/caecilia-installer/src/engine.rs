@@ -86,6 +86,21 @@ fn beside(path: &Path, suffix: &str) -> PathBuf {
     path.with_file_name(name)
 }
 
+/// Writes `bytes` to `path` whole or not at all: beside it first, then
+/// renamed over it.
+fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let new = beside(path, ".caecilia-tmp");
+    let written = File::create(&new).and_then(|mut f| {
+        f.write_all(bytes)?;
+        f.sync_all()
+    });
+    let done = written.and_then(|()| fs::rename(&new, path));
+    if done.is_err() {
+        let _ = fs::remove_file(&new);
+    }
+    done
+}
+
 /// The SHA-256 of the file at `path`, or `None` when it is not there.
 fn hash_of(path: &Path) -> io::Result<Option<Digest>> {
     match File::open(path) {
@@ -415,10 +430,24 @@ impl Engine<'_> {
                     restart |= dropped.restart;
                 }
                 if !leftovers.is_empty() {
+                    let known = record.leftovers.len();
                     record.leftovers.extend(leftovers);
-                    // The record already in place gains them: a failure here
-                    // only means the next run does not know of them.
-                    let _ = fs::write(plan.program_dir.join(RECORD), record.to_json());
+                    // The record in place gains them, written beside it and
+                    // renamed over it, so it stays whole if this fails.
+                    let path = plan.program_dir.join(RECORD);
+                    if let Err(e) = write_whole(&path, record.to_json().as_bytes()) {
+                        // Installed all the same; the files nobody will
+                        // clear are said kept, so the person knows of them.
+                        self.log.error(format_args!(
+                            "could not note the files still in use in {}: {e}",
+                            path.display()
+                        ));
+                        for l in record.leftovers.drain(known..) {
+                            self.log
+                                .line("kept", format_args!("{} (in use)", l.path.display()));
+                            kept.push(l.path);
+                        }
+                    }
                 }
                 self.log.note(format_args!(
                     "{} {} is installed",
@@ -720,18 +749,6 @@ impl Engine<'_> {
                 }
             }
         }
-        self.log.line("step", "register");
-        if let Err(e) = self.sys.unregister(record.scope, &record.product) {
-            // The record stays, and the entry: running the installer again
-            // finds both and its Remove tries again.
-            let e = io_err("remove the entry in Apps & features", &record.program_dir)(e);
-            self.log.error(&e);
-            return Err(e);
-        }
-        self.log.line("unregistered", record.scope.name());
-        for name in [RECORD, LOG_COPY] {
-            let _ = fs::remove_file(record.program_dir.join(name));
-        }
         // No process can remove the folder it works in: one started inside
         // a folder going now (a prompt opened there) steps out first.
         let going = |cwd: &Path| {
@@ -765,10 +782,26 @@ impl Engine<'_> {
             match fs::remove_dir_all(dir) {
                 Ok(()) => self.log.line("removed", dir.display()),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                Err(e) => self
-                    .log
-                    .error(format_args!("could not remove {}: {e}", dir.display())),
+                // Before the entry and the record go, so the installer
+                // finds them again and its Remove tries again.
+                Err(e) => {
+                    let e = io_err("remove the person's organs and settings", dir)(e);
+                    self.log.error(&e);
+                    return Err(e);
+                }
             }
+        }
+        self.log.line("step", "register");
+        if let Err(e) = self.sys.unregister(record.scope, &record.product) {
+            // The record stays, and the entry: running the installer again
+            // finds both and its Remove tries again.
+            let e = io_err("remove the entry in Apps & features", &record.program_dir)(e);
+            self.log.error(&e);
+            return Err(e);
+        }
+        self.log.line("unregistered", record.scope.name());
+        for name in [RECORD, LOG_COPY] {
+            let _ = fs::remove_file(record.program_dir.join(name));
         }
         for dir in record.dirs.iter().rev() {
             if fs::remove_dir(dir).is_ok() {
