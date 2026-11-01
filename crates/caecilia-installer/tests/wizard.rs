@@ -79,7 +79,14 @@ struct Rig {
     quit: Rc<Cell<bool>>,
     opened: Rc<RefCell<Vec<PathBuf>>>,
     in_use: Rc<Cell<bool>>,
-    _dir: PathBuf,
+    /// Where the logs go; removed with the rig.
+    dir: PathBuf,
+}
+
+impl Drop for Rig {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
 }
 
 fn rig(name: &str, found: Option<Found>, uninstall: bool, lang: Lang) -> Rig {
@@ -118,7 +125,7 @@ fn rig(name: &str, found: Option<Found>, uninstall: bool, lang: Lang) -> Rig {
         quit,
         opened,
         in_use,
-        _dir: dir,
+        dir,
     }
 }
 
