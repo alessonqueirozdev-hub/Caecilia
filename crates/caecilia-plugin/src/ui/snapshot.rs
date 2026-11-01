@@ -181,6 +181,15 @@ pub(crate) struct ChestReading {
     pub(crate) note: String,
 }
 
+/// A step of the history: how it reads, and how far it is from where the
+/// registration is (0 here, below 0 behind, above 0 ahead on the branch
+/// redo follows).
+#[derive(Clone, PartialEq, Hash)]
+pub(crate) struct Step {
+    pub(crate) label: String,
+    pub(crate) distance: i32,
+}
+
 /// Why a stop is, or is not, drawn: the stop, and the rest of the sentence.
 #[derive(Clone, PartialEq, Hash)]
 pub(crate) struct Why {
@@ -191,7 +200,7 @@ pub(crate) struct Why {
 
 /// The registration panel's text: its summary, the last steps (true where
 /// the registration is), and why.
-type RegistrationText = (String, Vec<(String, bool)>, Vec<Why>);
+type RegistrationText = (String, Vec<Step>, Vec<Why>);
 
 /// One frame's reading.
 pub(crate) struct Snapshot {
@@ -214,7 +223,7 @@ pub(crate) struct Snapshot {
     pub(crate) summary: String,
     /// The way from the opening to here, the last few steps; true marks
     /// where the registration is.
-    pub(crate) history: Vec<(String, bool)>,
+    pub(crate) history: Vec<Step>,
     pub(crate) why: Vec<Why>,
     pub(crate) tuning: String,
     pub(crate) wind_steady: bool,
@@ -348,6 +357,8 @@ pub(crate) struct Source {
     /// The registration's text when the controller was last free.
     last_registration: RefCell<RegistrationText>,
     set_armed: Cell<bool>,
+    /// The stop under the pointer, whose "why" the panel shows.
+    focus: Cell<Option<usize>>,
 }
 
 impl Source {
@@ -363,6 +374,7 @@ impl Source {
             traces: RefCell::default(),
             last_registration: RefCell::default(),
             set_armed: Cell::new(false),
+            focus: Cell::new(None),
         })
     }
 
@@ -373,6 +385,14 @@ impl Source {
     /// Whether Set is pressed.
     pub(crate) fn set_armed(&self) -> bool {
         self.set_armed.get()
+    }
+
+    /// The stop under the pointer, if any.
+    pub(crate) fn point_at(&self, stop: Option<usize>) {
+        if self.focus.get() != stop {
+            self.focus.set(stop);
+            *self.current.borrow_mut() = None;
+        }
     }
 
     /// Press or release Set.
@@ -478,7 +498,8 @@ impl Source {
         // The registration, when the controller is free; else as it was.
         if let Ok(mut controller) = self.shared.controller.try_lock() {
             let engine = controller.engine();
-            let text = registration_text(engine, organ, console, general, stops);
+            let focus = self.focus.get();
+            let text = registration_text(engine, organ, console, general, stops, focus);
             *self.last_registration.borrow_mut() = text;
         }
         let (summary, history, why) = self.last_registration.borrow().clone();
@@ -595,14 +616,64 @@ fn step_label(
     }
 }
 
-/// The registration panel's text: the summary, the last steps, and why the
-/// last step's stops are drawn.
+/// Why `stop` is drawn, or what would draw it.
+fn why_for(
+    engine: &RegistrationEngine,
+    organ: &Organ,
+    console: &crate::console::ConsoleMemory,
+    label_of: &dyn Fn(usize) -> String,
+    stop: StopId,
+) -> Why {
+    let lead = organ
+        .stops()
+        .get(stop.index())
+        .map_or_else(String::new, |s| s.name.clone());
+    if !engine.state().stops.contains(stop) {
+        let bit = 1u64.checked_shl(u32::from(stop.0)).unwrap_or(0);
+        let rest = match (0..8).find(|&n| console.general(n).is_some_and(|g| g.0 & bit != 0)) {
+            Some(n) => match FACTORY_GENERALS.get(n) {
+                Some(g) => format!(" not drawn; General {} ({}) would draw it", n + 1, g.tag),
+                None => format!(" not drawn; General {} would draw it", n + 1),
+            },
+            None => " not drawn; no factory general draws it".into(),
+        };
+        return Why {
+            drawn: false,
+            lead,
+            rest,
+        };
+    }
+    let explained = engine.explain(stop);
+    let by = match explained.reason {
+        Reason::NotEngaged | Reason::Direct => "drawn by hand".to_string(),
+        Reason::SelectorMatch => "drawn by a selector".to_string(),
+        Reason::PlenumPrincipal | Reason::PlenumMixture | Reason::PlenumReed => {
+            "drawn for the plenum".to_string()
+        }
+        Reason::IntentPort => "drawn from another organ's registration".to_string(),
+        Reason::SnapshotRecall => match label_of(explained.node).as_str() {
+            l if l.starts_with("General") => format!("drawn by {l}"),
+            "Opening" => "drawn as the organ opened".to_string(),
+            _ => "drawn from the host".to_string(),
+        },
+    };
+    Why {
+        drawn: true,
+        lead,
+        rest: format!(" {by}"),
+    }
+}
+
+/// The registration panel's text: the summary, the way here and the way
+/// on that redo would take, and why: the stop under the pointer if there
+/// is one, else the last step's stops.
 fn registration_text(
     engine: &RegistrationEngine,
     organ: &Organ,
     console: &crate::console::ConsoleMemory,
     general: Option<usize>,
     stops: u64,
+    focus: Option<usize>,
 ) -> RegistrationText {
     let drawn = stops.count_ones();
     let summary = match general {
@@ -616,7 +687,8 @@ fn registration_text(
         None => format!("{drawn} stops drawn"),
     };
     let nodes = engine.history();
-    let mut path = vec![engine.current_node()];
+    let here = engine.current_node();
+    let mut path = vec![here];
     while let Some(parent) = path
         .last()
         .and_then(|&n| nodes.get(n))
@@ -630,15 +702,39 @@ fn registration_text(
         let before = node.parent.map(|p| &nodes[p].state);
         step_label(organ, console, &node.state, before)
     };
-    let last = path.len().saturating_sub(5);
-    let history = path[last..]
+    // Four steps back at most, two forward along the branch redo follows.
+    let back = path.len().saturating_sub(5);
+    let mut history: Vec<Step> = path[back..]
         .iter()
-        .map(|&i| (label_of(i), i == engine.current_node()))
+        .rev()
+        .enumerate()
+        .map(|(d, &i)| Step {
+            label: label_of(i),
+            distance: -(d as i32),
+        })
         .collect();
+    history.reverse();
+    let mut next = nodes.get(here).and_then(|n| n.last_child);
+    for d in 1..=2 {
+        let Some(i) = next else { break };
+        history.push(Step {
+            label: label_of(i),
+            distance: d,
+        });
+        next = nodes.get(i).and_then(|n| n.last_child);
+    }
 
-    let current = &nodes[engine.current_node()];
     let mut why = Vec::new();
-    if let Some(parent) = current.parent {
+    let current = &nodes[here];
+    if let Some(stop) = focus {
+        why.push(why_for(
+            engine,
+            organ,
+            console,
+            &label_of,
+            StopId(stop as u16),
+        ));
+    } else if let Some(parent) = current.parent {
         let before = &nodes[parent].state;
         for stop in current
             .state
@@ -649,28 +745,7 @@ fn registration_text(
             .filter(|s| !before.stops.contains(*s))
             .take(2)
         {
-            let explained = engine.explain(stop);
-            let by = match explained.reason {
-                Reason::NotEngaged => continue,
-                Reason::Direct => "drawn by hand".to_string(),
-                Reason::SelectorMatch => "drawn by a selector".to_string(),
-                Reason::PlenumPrincipal | Reason::PlenumMixture | Reason::PlenumReed => {
-                    "drawn for the plenum".to_string()
-                }
-                Reason::IntentPort => "drawn from another organ's registration".to_string(),
-                Reason::SnapshotRecall => match label_of(explained.node).as_str() {
-                    l if l.starts_with("General") => format!("drawn by {l}"),
-                    _ => "drawn from the host".to_string(),
-                },
-            };
-            why.push(Why {
-                drawn: true,
-                lead: organ
-                    .stops()
-                    .get(stop.index())
-                    .map_or_else(String::new, |s| s.name.clone()),
-                rest: format!(" {by}"),
-            });
+            why.push(why_for(engine, organ, console, &label_of, stop));
         }
         for stop in before
             .stops
@@ -693,7 +768,7 @@ fn registration_text(
         why.push(Why {
             drawn: false,
             lead: "The opening registration.".into(),
-            rest: " Every change can be undone, and every stop says why it is drawn.".into(),
+            rest: " Point at a stop to see why it is drawn, or what would draw it.".into(),
         });
     }
     (summary, history, why)

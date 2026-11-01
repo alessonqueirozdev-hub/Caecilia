@@ -10,7 +10,7 @@ use manguebyte_params::Param;
 use manguebyte_plugin::editor::{EditorContext, Gesture};
 
 use caecilia_model::{CouplerId, StopId};
-use caecilia_registration::{Command, RegistrationState};
+use caecilia_registration::{Command, RegistrationState, Selector};
 
 use super::Shared;
 use crate::UiNote;
@@ -114,6 +114,43 @@ pub(crate) fn redo(context: &EditorContext, shared: &Shared) {
     let before = masks(shared);
     if let Ok(mut controller) = shared.controller.lock() {
         controller.redo();
+    }
+    announce(context, shared, before);
+}
+
+/// Draw every stop `selector` takes, or retire them; returns how many
+/// stops changed.
+pub(crate) fn selector(
+    context: &EditorContext,
+    shared: &Shared,
+    selector: Selector,
+    draw: bool,
+) -> u32 {
+    let before = masks(shared);
+    let c = if draw {
+        Command::EngageSelector(selector)
+    } else {
+        Command::DisengageSelector(selector)
+    };
+    command(context, shared, c);
+    (before.0 ^ masks(shared).0).count_ones()
+}
+
+/// Go `distance` steps through the history: back below 0, forward along
+/// redo's branch above.
+pub(crate) fn travel(context: &EditorContext, shared: &Shared, distance: i32) {
+    if distance == 0 {
+        return;
+    }
+    let before = masks(shared);
+    if let Ok(mut controller) = shared.controller.lock() {
+        for _ in 0..distance.unsigned_abs() {
+            if distance < 0 {
+                controller.undo();
+            } else {
+                controller.redo();
+            }
+        }
     }
     announce(context, shared, before);
 }

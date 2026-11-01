@@ -32,6 +32,10 @@ pub(crate) struct Item {
 
 type Items = fn(&Snapshot, Size) -> Vec<Item>;
 
+/// What a part does with the pointer over it: where, in its coordinates,
+/// or `None` when it has gone.
+type Hover = dyn FnMut(Option<Point>, Size, &Snapshot);
+
 /// A part: its name, its natural size, what of the reading it shows, and
 /// how it draws it in its own coordinates, its top left at the origin.
 pub(crate) struct Live {
@@ -44,6 +48,7 @@ pub(crate) struct Live {
     describe: Option<fn(&Snapshot) -> String>,
     items: Option<Items>,
     input: Option<Box<Input>>,
+    hover: Option<Box<Hover>>,
     seen: Option<u64>,
     shown: Option<Rc<Snapshot>>,
 }
@@ -65,6 +70,7 @@ pub(crate) fn live(
         describe: None,
         items: None,
         input: None,
+        hover: None,
         seen: None,
         shown: None,
     }
@@ -89,6 +95,15 @@ impl Live {
         input: impl FnMut(&mut EventCx<'_>, &Event, Point, Size, &Snapshot) -> Handled + 'static,
     ) -> Self {
         self.input = Some(Box::new(input));
+        self
+    }
+
+    /// The same part, following the pointer over it.
+    pub(crate) fn hover(
+        mut self,
+        hover: impl FnMut(Option<Point>, Size, &Snapshot) + 'static,
+    ) -> Self {
+        self.hover = Some(Box::new(hover));
         self
     }
 
@@ -186,6 +201,26 @@ impl Widget for Live {
         scene.transformed(Transform::translate(rect.x, rect.y), |scene| {
             (self.draw)(size, scene, snapshot);
         });
+    }
+
+    fn hover_moved(&mut self, cx: &mut EventCx<'_>, at: Point) {
+        let snapshot = self.reading(cx);
+        let rect = cx.rect();
+        if let Some(hover) = self.hover.as_mut() {
+            let local = Point::new(at.x - rect.x, at.y - rect.y);
+            hover(Some(local), Size::new(rect.width, rect.height), &snapshot);
+        }
+    }
+
+    fn hover_changed(&mut self, cx: &mut EventCx<'_>, hovered: bool) {
+        if hovered {
+            return;
+        }
+        let snapshot = self.reading(cx);
+        let rect = cx.rect();
+        if let Some(hover) = self.hover.as_mut() {
+            hover(None, Size::new(rect.width, rect.height), &snapshot);
+        }
     }
 
     fn event(&mut self, cx: &mut EventCx<'_>, event: &Event) -> Handled {

@@ -18,6 +18,7 @@ mod live;
 mod look;
 mod paint;
 mod parts;
+mod registration;
 mod snapshot;
 
 use std::sync::{Arc, Mutex};

@@ -255,6 +255,7 @@ fn jamb_items(snapshot: &Snapshot, size: Size, right: bool) -> Vec<Item> {
 pub(crate) fn jamb_view(source: &Rc<Source>, right: bool) -> View {
     let name = if right { "Right jamb" } else { "Left jamb" };
     let shared = source.shared().clone();
+    let pointing = Rc::clone(source);
     live(
         name,
         Size::new(JAMB, 400.0),
@@ -301,6 +302,13 @@ pub(crate) fn jamb_view(source: &Rc<Source>, right: bool) -> View {
         |s, size| jamb_items(s, size, true)
     } else {
         |s, size| jamb_items(s, size, false)
+    })
+    .hover(move |at, size, snapshot| {
+        let stop = at.and_then(|at| match jamb_hit(&jamb_plan(size, snapshot, right), at) {
+            Some(JambControl::Stop(n)) => Some(n),
+            _ => None,
+        });
+        pointing.point_at(stop);
     })
     .input(move |cx, event, at, size, snapshot| {
         if !pressed(event) {
