@@ -77,6 +77,8 @@ pub struct Text {
     pub free: &'static str,
     /// The credits on the jamb and the last page.
     pub built_with: &'static str,
+    /// The copyright.
+    pub copyright: &'static str,
     /// The steps on the jamb.
     pub steps: [&'static str; 5],
     /// The step of a removal.
@@ -250,6 +252,7 @@ pub const EN: Text = Text {
     title_remove: "Remove Caecilia",
     free: "Free software · Apache License 2.0",
     built_with: "Built in Rust with the Manguebyte Audio Framework",
+    copyright: "© 2026 Alesson Queiroz and the Caecilia contributors",
     steps: ["Welcome", "Licence", "Options", "Installing", "Done"],
     step_remove: "Remove",
     welcome_title: "Caecilia, the pipe organ",
@@ -267,8 +270,14 @@ pub const EN: Text = Text {
     licence_needed: "Tick the box to accept the licence first.",
     options_title: "Options",
     who: "Who is it for?",
-    everyone: ("Everyone on this PC", "Plugins go where every DAW looks. Asks for an administrator once."),
-    just_me: ("Just me", "No administrator needed. Some older DAWs don't look in your own plugin folders."),
+    everyone: (
+        "Everyone on this PC",
+        "Plugins go where every DAW looks. Asks for an administrator once.",
+    ),
+    just_me: (
+        "Just me",
+        "No administrator needed. Some older DAWs don't look in your own plugin folders.",
+    ),
     scope_fixed: "As the installation already here: to change it, remove Caecilia first.",
     what: "What to install",
     folder: "Program folder",
@@ -313,7 +322,7 @@ pub const EN: Text = Text {
     done_title: "Caecilia is installed",
     done_lead: "Everything is in place, and every file checked.",
     open_now: "Open Caecilia now",
-    rescan: "In your DAW, rescan plugins: Caecilia appears among the instruments, as VST3 and as CLAP.",
+    rescan: "In your DAW, rescan plugins: Caecilia appears among the instruments.",
     restart_note: "An old file in use is deleted when Windows next restarts.",
     failed_title: "Caecilia was not installed",
     failed_lead: "Nothing was changed: every step was undone.",
@@ -335,7 +344,10 @@ pub const EN: Text = Text {
     busy_lead: "Close Caecilia so its files can be updated, then choose Retry. Your session is saved when it closes.",
     remove_title: "Remove Caecilia?",
     remove_lead: "This removes what the installer put on this PC:",
-    purge: ("Also remove my organs and settings", "Organs you added and your last session. Unticked, they stay for next time."),
+    purge: (
+        "Also remove my organs and settings",
+        "Organs you added and your last session. Unticked, they stay for next time.",
+    ),
     removed_title: "Caecilia was removed",
     removed_lead: "Everything the installer placed is gone.",
     kept: "Kept, because it was changed after it was installed:",
@@ -347,6 +359,7 @@ pub const PT: Text = Text {
     title_remove: "Remover o Caecilia",
     free: "Software livre · Licença Apache 2.0",
     built_with: "Feito em Rust com o Manguebyte Audio Framework",
+    copyright: "© 2026 Alesson Queiroz e os colaboradores do Caecilia",
     steps: ["Boas-vindas", "Licença", "Opções", "Instalando", "Pronto"],
     step_remove: "Remover",
     welcome_title: "Caecilia, o órgão de tubos",
@@ -364,8 +377,14 @@ pub const PT: Text = Text {
     licence_needed: "Marque a caixa para aceitar a licença primeiro.",
     options_title: "Opções",
     who: "Para quem?",
-    everyone: ("Todos neste PC", "Os plugins vão para onde toda DAW procura. Pede administrador uma vez."),
-    just_me: ("Só para mim", "Sem administrador. Algumas DAWs antigas não procuram nas pastas de plugins do usuário."),
+    everyone: (
+        "Todos neste PC",
+        "Os plugins vão para onde toda DAW procura. Pede administrador uma vez.",
+    ),
+    just_me: (
+        "Só para mim",
+        "Sem administrador. Algumas DAWs antigas não procuram nas pastas de plugins do usuário.",
+    ),
     scope_fixed: "Como a instalação que já existe: para mudar, remova o Caecilia antes.",
     what: "O que instalar",
     folder: "Pasta do programa",
@@ -410,7 +429,7 @@ pub const PT: Text = Text {
     done_title: "O Caecilia está instalado",
     done_lead: "Tudo no lugar, e cada arquivo conferido.",
     open_now: "Abrir o Caecilia agora",
-    rescan: "Na sua DAW, reescaneie os plugins: o Caecilia aparece entre os instrumentos, como VST3 e como CLAP.",
+    rescan: "Na sua DAW, reescaneie os plugins: o Caecilia aparece entre os instrumentos.",
     restart_note: "Um arquivo antigo em uso será apagado quando o Windows reiniciar.",
     failed_title: "O Caecilia não foi instalado",
     failed_lead: "Nada foi alterado: cada passo foi desfeito.",
@@ -421,8 +440,14 @@ pub const PT: Text = Text {
     damaged_lead: "Os arquivos dele não batem com os hashes. Baixe-o de novo.",
     installed_title: "O Caecilia já está instalado",
     installed_lead: "A versão {0} está aqui, para {1}. Este instalador traz a {2}.",
-    update: ("Atualizar para {0}", "Mantém sua pasta, componentes e órgãos."),
-    repair: ("Reparar", "Repõe qualquer arquivo que falte ou tenha mudado."),
+    update: (
+        "Atualizar para {0}",
+        "Mantém sua pasta, componentes e órgãos.",
+    ),
+    repair: (
+        "Reparar",
+        "Repõe qualquer arquivo que falte ou tenha mudado.",
+    ),
     modify: ("Alterar", "Inclui ou deixa de fora componentes e atalhos."),
     uninstall: ("Remover", "Desinstala o Caecilia deste PC."),
     newer_lead: "Uma versão mais nova, {0}, está instalada. Remova-a antes para instalar esta.",
@@ -432,7 +457,10 @@ pub const PT: Text = Text {
     busy_lead: "Feche o Caecilia para que os arquivos dele possam ser atualizados e escolha Tentar de novo. Sua sessão é salva ao fechar.",
     remove_title: "Remover o Caecilia?",
     remove_lead: "Isto remove o que o instalador colocou neste PC:",
-    purge: ("Remover também meus órgãos e configurações", "Órgãos que você adicionou e sua última sessão. Desmarcado, ficam para a próxima vez."),
+    purge: (
+        "Remover também meus órgãos e configurações",
+        "Órgãos que você adicionou e sua última sessão. Desmarcado, ficam para a próxima vez.",
+    ),
     removed_title: "O Caecilia foi removido",
     removed_lead: "Tudo o que o instalador colocou foi retirado.",
     kept: "Mantido, porque foi alterado depois de instalado:",
@@ -444,6 +472,7 @@ pub const ES: Text = Text {
     title_remove: "Quitar Caecilia",
     free: "Software libre · Licencia Apache 2.0",
     built_with: "Hecho en Rust con el Manguebyte Audio Framework",
+    copyright: "© 2026 Alesson Queiroz y los colaboradores de Caecilia",
     steps: ["Bienvenida", "Licencia", "Opciones", "Instalando", "Listo"],
     step_remove: "Quitar",
     welcome_title: "Caecilia, el órgano de tubos",
@@ -461,8 +490,14 @@ pub const ES: Text = Text {
     licence_needed: "Marca la casilla para aceptar la licencia primero.",
     options_title: "Opciones",
     who: "¿Para quién?",
-    everyone: ("Todos en este PC", "Los plugins van donde toda DAW busca. Pide administrador una vez."),
-    just_me: ("Solo para mí", "Sin administrador. Algunas DAW antiguas no buscan en las carpetas de plugins del usuario."),
+    everyone: (
+        "Todos en este PC",
+        "Los plugins van donde toda DAW busca. Pide administrador una vez.",
+    ),
+    just_me: (
+        "Solo para mí",
+        "Sin administrador. Algunas DAW antiguas no buscan en las carpetas de plugins del usuario.",
+    ),
     scope_fixed: "Como la instalación que ya existe: para cambiarlo, quita Caecilia antes.",
     what: "Qué instalar",
     folder: "Carpeta del programa",
@@ -507,7 +542,7 @@ pub const ES: Text = Text {
     done_title: "Caecilia está instalado",
     done_lead: "Todo en su lugar, y cada archivo comprobado.",
     open_now: "Abrir Caecilia ahora",
-    rescan: "En tu DAW, vuelve a escanear los plugins: Caecilia aparece entre los instrumentos, como VST3 y como CLAP.",
+    rescan: "En tu DAW, vuelve a escanear los plugins: Caecilia aparece entre los instrumentos.",
     restart_note: "Un archivo antiguo en uso se borrará cuando Windows se reinicie.",
     failed_title: "Caecilia no se instaló",
     failed_lead: "No se cambió nada: cada paso se deshizo.",
@@ -518,9 +553,18 @@ pub const ES: Text = Text {
     damaged_lead: "Sus archivos no coinciden con sus hashes. Descárgalo de nuevo.",
     installed_title: "Caecilia ya está instalado",
     installed_lead: "La versión {0} está aquí, para {1}. Este instalador trae la {2}.",
-    update: ("Actualizar a {0}", "Mantiene tu carpeta, componentes y órganos."),
-    repair: ("Reparar", "Repone cualquier archivo que falte o haya cambiado."),
-    modify: ("Cambiar", "Incluye o deja fuera componentes y accesos directos."),
+    update: (
+        "Actualizar a {0}",
+        "Mantiene tu carpeta, componentes y órganos.",
+    ),
+    repair: (
+        "Reparar",
+        "Repone cualquier archivo que falte o haya cambiado.",
+    ),
+    modify: (
+        "Cambiar",
+        "Incluye o deja fuera componentes y accesos directos.",
+    ),
     uninstall: ("Quitar", "Desinstala Caecilia de este PC."),
     newer_lead: "Hay una versión más nueva, {0}, instalada. Quítala antes para instalar esta.",
     scope_words: ("todos en este PC", "solo tú"),
@@ -529,7 +573,10 @@ pub const ES: Text = Text {
     busy_lead: "Cierra Caecilia para que sus archivos se puedan actualizar y elige Reintentar. Tu sesión se guarda al cerrar.",
     remove_title: "¿Quitar Caecilia?",
     remove_lead: "Esto quita lo que el instalador puso en este PC:",
-    purge: ("Quitar también mis órganos y ajustes", "Órganos que añadiste y tu última sesión. Sin marcar, se quedan para la próxima vez."),
+    purge: (
+        "Quitar también mis órganos y ajustes",
+        "Órganos que añadiste y tu última sesión. Sin marcar, se quedan para la próxima vez.",
+    ),
     removed_title: "Caecilia se quitó",
     removed_lead: "Todo lo que el instalador colocó ya no está.",
     kept: "Se mantuvo, porque se cambió después de instalarlo:",
@@ -564,7 +611,10 @@ mod tests {
     #[test]
     fn templates_fill_in() {
         assert_eq!(fill(EN.title, &["2.0.0"]), "Caecilia 2.0.0 Setup");
-        assert_eq!(fill(PT.installed_lead, &["1", "você", "2"]), "A versão 1 está aqui, para você. Este instalador traz a 2.");
+        assert_eq!(
+            fill(PT.installed_lead, &["1", "você", "2"]),
+            "A versão 1 está aqui, para você. Este instalador traz a 2."
+        );
         assert_eq!(size(14 << 20), "14 MB");
         assert_eq!(size(1000), "1 KB");
     }
@@ -573,7 +623,10 @@ mod tests {
     fn every_language_names_every_step() {
         for lang in Lang::ALL {
             let names: Vec<_> = lang.text().step_names.iter().map(|(k, _)| *k).collect();
-            assert_eq!(names, EN.step_names.iter().map(|(k, _)| *k).collect::<Vec<_>>());
+            assert_eq!(
+                names,
+                EN.step_names.iter().map(|(k, _)| *k).collect::<Vec<_>>()
+            );
         }
     }
 }

@@ -1,0 +1,262 @@
+//! The work without a window: `/S` from a person or a deployment tool, and
+//! the engine the window starts, elevated or not. Each returns an exit
+//! code ([`crate::exit`]) and says what it did in the log.
+
+use std::cmp::Ordering;
+use std::path::{Path, PathBuf};
+
+use crate::args::Args;
+use crate::engine::{Engine, Error};
+use crate::exit;
+use crate::log::Log;
+use crate::payload::Payload;
+use crate::plan::{Places, Plan, Scope};
+use crate::record::{LOG_COPY, Record};
+use crate::system::System;
+use crate::version;
+
+/// What the work runs on.
+pub struct Host<'a> {
+    /// The system.
+    pub sys: &'a mut dyn System,
+    /// Its folders.
+    pub places: Places,
+    /// Whether the process has an administrator's rights.
+    pub elevated: bool,
+    /// The uninstaller to place: the installer's own executable.
+    pub uninstaller: Vec<u8>,
+    /// Asked between steps: true stops and undoes everything.
+    pub cancelled: &'a dyn Fn() -> bool,
+}
+
+/// An installation found, and its record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Found {
+    /// Who it is for.
+    pub scope: Scope,
+    /// What it made.
+    pub record: Record,
+}
+
+/// The installation of `product` already here, everyone's first.
+pub fn find_installed(sys: &dyn System, product: &str) -> Option<Found> {
+    [Scope::Machine, Scope::User].into_iter().find_map(|scope| {
+        let installed = sys.installed(scope, product)?;
+        let record = Record::load(&installed.location)?;
+        Some(Found { scope, record })
+    })
+}
+
+/// Installs as `args` say from `payload`.
+pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) -> i32 {
+    let files = match Payload::parse(payload).and_then(|p| p.unpack()) {
+        Ok(files) => files,
+        Err(e) => {
+            log.error(&e);
+            return exit::DAMAGED;
+        }
+    };
+    let product = files.manifest.product.clone();
+    let found = find_installed(host.sys, &product);
+    let scope = args
+        .scope
+        .or(found.as_ref().map(|f| f.scope))
+        .unwrap_or(Scope::Machine);
+    if let Some(f) = &found {
+        if f.scope != scope {
+            log.error(format_args!(
+                "{product} is installed for {} in {}: remove it first",
+                if f.scope == Scope::Machine {
+                    "everyone"
+                } else {
+                    "one person"
+                },
+                f.record.program_dir.display()
+            ));
+            return exit::FAILED;
+        }
+        if version::compare(&f.record.version, &files.manifest.version) == Ordering::Greater
+            && !args.force
+        {
+            log.error(format_args!(
+                "{product} {} is installed, newer than {}; /FORCE installs over it",
+                f.record.version, files.manifest.version
+            ));
+            return exit::NEWER_INSTALLED;
+        }
+    }
+    if scope == Scope::Machine && !host.elevated {
+        log.error("an installation for everyone needs an administrator");
+        return exit::NEEDS_ADMIN;
+    }
+    let mut choices = args.choices(scope);
+    let previous = found.map(|f| f.record);
+    if let Some(old) = &previous {
+        // An update stays where it was, and keeps where the organs went.
+        if choices.program_dir.is_none() {
+            choices.program_dir = Some(old.program_dir.clone());
+        }
+        if choices.organs_dir.is_none() {
+            choices.organs_dir = old.organs_dir.clone();
+        }
+    }
+    if choices.components.is_empty() {
+        log.error("nothing to install");
+        return exit::USAGE;
+    }
+    let plan = Plan::new(
+        &files.manifest,
+        &choices,
+        &host.places,
+        host.uninstaller.len() as u64,
+    );
+    let mut engine = Engine {
+        sys: host.sys,
+        log,
+        cancelled: host.cancelled,
+    };
+    match engine.install(&plan, &files, &host.uninstaller, previous.as_ref()) {
+        Ok(outcome) => {
+            copy_log(log, &plan.program_dir);
+            if outcome.restart {
+                exit::RESTART
+            } else {
+                exit::OK
+            }
+        }
+        Err(Error::Cancelled) => exit::CANCELLED,
+        Err(Error::Payload(_)) => exit::DAMAGED,
+        Err(_) => exit::FAILED,
+    }
+}
+
+/// Removes the installation of `product` in `args.dir`, or the one found.
+pub fn uninstall(args: &Args, product: &str, host: &mut Host<'_>, log: &mut Log) -> i32 {
+    let record = match &args.dir {
+        Some(dir) => Record::load(dir),
+        None => find_installed(host.sys, product).map(|f| f.record),
+    };
+    let Some(record) = record else {
+        log.error(format_args!("no installation of {product} was found"));
+        return exit::FAILED;
+    };
+    if record.scope == Scope::Machine && !host.elevated {
+        log.error("removing an installation for everyone needs an administrator");
+        return exit::NEEDS_ADMIN;
+    }
+    let purge: Option<PathBuf> = args.purge_dir.clone().or_else(|| {
+        args.purge
+            .then(|| host.places.user_data_dir(&record.product))
+    });
+    let mut engine = Engine {
+        sys: host.sys,
+        log,
+        cancelled: host.cancelled,
+    };
+    match engine.uninstall(&record, purge.as_deref()) {
+        Ok(outcome) if outcome.restart => exit::RESTART,
+        Ok(_) => exit::OK,
+        Err(_) => exit::FAILED,
+    }
+}
+
+/// Copies the log into the program folder, for later.
+fn copy_log(log: &Log, dir: &Path) {
+    if let Some(path) = log.path() {
+        let _ = std::fs::copy(path, dir.join(LOG_COPY));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::payload::{PayloadBuilder, Root};
+    use crate::system::MemorySystem;
+
+    fn payload(version: &str) -> Vec<u8> {
+        let mut b = PayloadBuilder::new("Caecilia", version, "Alesson Queiroz");
+        b.add("core", Root::Program, "caecilia.ico", b"icon");
+        b.add("app", Root::Program, "caecilia.exe", version.as_bytes());
+        b.add("clap", Root::Clap, "Caecilia.clap", b"clap");
+        b.build().unwrap()
+    }
+
+    fn parse(s: &[&str]) -> Args {
+        Args::parse(s.iter().map(|s| s.to_string())).unwrap()
+    }
+
+    #[test]
+    fn silent_runs_say_what_happened_by_their_exit_code() {
+        let base =
+            std::env::temp_dir().join(format!("caecilia-installer-run-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let mut sys = MemorySystem::default();
+        let no = || false;
+        let mut host = Host {
+            sys: &mut sys,
+            places: Places::under(&base),
+            elevated: false,
+            uninstaller: b"MZ".to_vec(),
+            cancelled: &no,
+        };
+        let mut log = Log::in_memory();
+        let v1 = payload("2.0.0");
+
+        assert_eq!(
+            install(&parse(&["/S"]), &v1, &mut host, &mut log),
+            exit::NEEDS_ADMIN
+        );
+        assert_eq!(
+            install(&parse(&["/S"]), &v1[..v1.len() - 1], &mut host, &mut log),
+            exit::DAMAGED
+        );
+        assert_eq!(
+            install(&parse(&["/S", "/CURRENTUSER"]), &v1, &mut host, &mut log),
+            exit::OK
+        );
+        let dir = host.places.program_dir(Scope::User, "Caecilia");
+        assert_eq!(std::fs::read(dir.join("caecilia.exe")).unwrap(), b"2.0.0");
+        // Not for everyone while it is installed for one person.
+        host.elevated = true;
+        assert_eq!(
+            install(&parse(&["/S", "/ALLUSERS"]), &v1, &mut host, &mut log),
+            exit::FAILED
+        );
+        // An update needs no scope: it follows the installation.
+        assert_eq!(
+            install(&parse(&["/S"]), &payload("2.0.1"), &mut host, &mut log),
+            exit::OK
+        );
+        assert_eq!(std::fs::read(dir.join("caecilia.exe")).unwrap(), b"2.0.1");
+        // Going back needs /FORCE.
+        assert_eq!(
+            install(&parse(&["/S"]), &v1, &mut host, &mut log),
+            exit::NEWER_INSTALLED
+        );
+        assert_eq!(
+            install(&parse(&["/S", "/FORCE"]), &v1, &mut host, &mut log),
+            exit::OK
+        );
+
+        assert_eq!(
+            uninstall(
+                &parse(&["--uninstall", "/S"]),
+                "Caecilia",
+                &mut host,
+                &mut log
+            ),
+            exit::OK
+        );
+        assert!(!dir.exists());
+        assert_eq!(
+            uninstall(
+                &parse(&["--uninstall", "/S"]),
+                "Caecilia",
+                &mut host,
+                &mut log
+            ),
+            exit::FAILED
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}

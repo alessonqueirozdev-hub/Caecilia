@@ -12,13 +12,19 @@ pub fn compare(a: &str, b: &str) -> Ordering {
             Some((c, p)) => (c, Some(p.to_owned())),
             None => (v, None),
         };
-        (core.split('.').map(|n| n.parse().unwrap_or(0)).collect(), pre)
+        (
+            core.split('.').map(|n| n.parse().unwrap_or(0)).collect(),
+            pre,
+        )
     };
     let (ca, pa) = split(a);
     let (cb, pb) = split(b);
     let len = ca.len().max(cb.len());
     for i in 0..len {
-        let (x, y) = (ca.get(i).copied().unwrap_or(0), cb.get(i).copied().unwrap_or(0));
+        let (x, y) = (
+            ca.get(i).copied().unwrap_or(0),
+            cb.get(i).copied().unwrap_or(0),
+        );
         if x != y {
             return x.cmp(&y);
         }

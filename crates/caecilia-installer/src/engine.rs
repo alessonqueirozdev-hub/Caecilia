@@ -46,7 +46,11 @@ impl fmt::Display for Error {
         match self {
             Error::Cancelled => f.write_str("cancelled"),
             Error::Payload(e) => e.fmt(f),
-            Error::Io { doing, path, source } => {
+            Error::Io {
+                doing,
+                path,
+                source,
+            } => {
                 write!(f, "could not {doing} {}: {source}", path.display())
             }
             Error::Verify(path) => write!(f, "{} does not read back as written", path.display()),
@@ -246,11 +250,17 @@ fn delete_or_defer(path: &Path, sys: &mut dyn System, log: &mut Log) -> (Option<
         Ok(()) => (None, false),
         Err(e) if e.kind() == io::ErrorKind::NotFound => (None, false),
         Err(_) if sys.delete_at_restart(path) => {
-            log.note(format_args!("{} is in use: deleted when Windows restarts", path.display()));
+            log.note(format_args!(
+                "{} is in use: deleted when Windows restarts",
+                path.display()
+            ));
             (None, true)
         }
         Err(e) => {
-            log.note(format_args!("{} is in use ({e}): deleted by the next run", path.display()));
+            log.note(format_args!(
+                "{} is in use ({e}): deleted by the next run",
+                path.display()
+            ));
             (Some(path.to_owned()), false)
         }
     }
@@ -291,12 +301,18 @@ impl Engine<'_> {
             "installing {} {} for {} in {}",
             plan.product,
             plan.version,
-            if plan.scope == Scope::Machine { "everyone" } else { "this person" },
+            if plan.scope == Scope::Machine {
+                "everyone"
+            } else {
+                "this person"
+            },
             plan.program_dir.display()
         ));
-        self.log.note(format_args!("components {}", plan.components.list()));
+        self.log
+            .note(format_args!("components {}", plan.components.list()));
         if let Some(old) = previous {
-            self.log.note(format_args!("replacing version {}", old.version));
+            self.log
+                .note(format_args!("replacing version {}", old.version));
             self.clear_leftovers(&old.leftovers);
         }
         // Files, the uninstaller, shortcuts, the record and the entry.
@@ -316,8 +332,15 @@ impl Engine<'_> {
                     // only means the next run does not know of them.
                     let _ = fs::write(plan.program_dir.join(RECORD), record.to_json());
                 }
-                self.log.note(format_args!("{} {} is installed", plan.product, plan.version));
-                Ok(Outcome { record, kept, restart })
+                self.log.note(format_args!(
+                    "{} {} is installed",
+                    plan.product, plan.version
+                ));
+                Ok(Outcome {
+                    record,
+                    kept,
+                    restart,
+                })
             }
             Err(e) => {
                 self.log.error(&e);
@@ -351,7 +374,15 @@ impl Engine<'_> {
                 self.log.line("step", step);
             }
             tx.place(&f.dest, payload.bytes(&f.entry), f.entry.sha256)?;
-            self.log.line("file", format_args!("{} {} {}", f.dest.display(), f.entry.size, f.entry.sha256.hex()));
+            self.log.line(
+                "file",
+                format_args!(
+                    "{} {} {}",
+                    f.dest.display(),
+                    f.entry.size,
+                    f.entry.sha256.hex()
+                ),
+            );
             files.push(RecordedFile {
                 path: f.dest.clone(),
                 size: f.entry.size,
@@ -362,7 +393,15 @@ impl Engine<'_> {
         self.log.line("step", "uninstaller");
         let sha256 = Digest::of(uninstaller);
         tx.place(&plan.uninstaller, uninstaller, sha256)?;
-        self.log.line("file", format_args!("{} {} {}", plan.uninstaller.display(), uninstaller.len(), sha256.hex()));
+        self.log.line(
+            "file",
+            format_args!(
+                "{} {} {}",
+                plan.uninstaller.display(),
+                uninstaller.len(),
+                sha256.hex()
+            ),
+        );
         files.push(RecordedFile {
             path: plan.uninstaller.clone(),
             size: uninstaller.len() as u64,
@@ -419,10 +458,15 @@ impl Engine<'_> {
             start_menu: plan.start_menu,
         };
         let json = record.to_json();
-        tx.place(&plan.program_dir.join(RECORD), json.as_bytes(), Digest::of(json.as_bytes()))?;
-        self.sys
-            .register(plan.scope, &plan.entry)
-            .map_err(io_err("register in Apps & features", &plan.entry.uninstaller))?;
+        tx.place(
+            &plan.program_dir.join(RECORD),
+            json.as_bytes(),
+            Digest::of(json.as_bytes()),
+        )?;
+        self.sys.register(plan.scope, &plan.entry).map_err(io_err(
+            "register in Apps & features",
+            &plan.entry.uninstaller,
+        ))?;
         self.log.line("registered", plan.scope.name());
         Ok(record)
     }
@@ -463,7 +507,10 @@ impl Engine<'_> {
     fn clear_leftovers(&mut self, leftovers: &[PathBuf]) {
         for path in leftovers {
             if fs::remove_file(path).is_ok() {
-                self.log.note(format_args!("deleted {}, left by the last run", path.display()));
+                self.log.note(format_args!(
+                    "deleted {}, left by the last run",
+                    path.display()
+                ));
             }
         }
     }
@@ -479,13 +526,17 @@ impl Engine<'_> {
             record.program_dir.display()
         ));
         self.clear_leftovers(&record.leftovers);
-        self.log.line("units", record.files.len() + record.shortcuts.len() + 1);
+        self.log
+            .line("units", record.files.len() + record.shortcuts.len() + 1);
         let mut kept = Vec::new();
         let mut restart = false;
         self.log.line("step", "files");
         for f in record.files.iter().rev() {
             match hash_of(&f.path) {
-                Ok(None) => self.log.line("removed", format_args!("{} (already gone)", f.path.display())),
+                Ok(None) => self.log.line(
+                    "removed",
+                    format_args!("{} (already gone)", f.path.display()),
+                ),
                 Ok(Some(h)) if h == f.sha256 => {
                     let (left, at_restart) = match fs::remove_file(&f.path) {
                         Ok(()) => (None, false),
@@ -503,13 +554,17 @@ impl Engine<'_> {
                     match left {
                         None => self.log.line("removed", f.path.display()),
                         Some(p) => {
-                            self.log.line("kept", format_args!("{} (in use)", p.display()));
+                            self.log
+                                .line("kept", format_args!("{} (in use)", p.display()));
                             kept.push(p);
                         }
                     }
                 }
                 _ => {
-                    self.log.line("kept", format_args!("{} (changed since it was installed)", f.path.display()));
+                    self.log.line(
+                        "kept",
+                        format_args!("{} (changed since it was installed)", f.path.display()),
+                    );
                     kept.push(f.path.clone());
                 }
             }
@@ -518,9 +573,12 @@ impl Engine<'_> {
         for link in &record.shortcuts {
             match fs::remove_file(link) {
                 Ok(()) => self.log.line("removed", link.display()),
-                Err(e) if e.kind() == io::ErrorKind::NotFound => self.log.line("removed", link.display()),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    self.log.line("removed", link.display())
+                }
                 Err(e) => {
-                    self.log.error(format_args!("could not remove {}: {e}", link.display()));
+                    self.log
+                        .error(format_args!("could not remove {}: {e}", link.display()));
                     kept.push(link.clone());
                 }
             }
@@ -530,7 +588,9 @@ impl Engine<'_> {
         }
         self.log.line("step", "register");
         if let Err(e) = self.sys.unregister(record.scope, &record.product) {
-            self.log.error(format_args!("could not remove the entry in Apps & features: {e}"));
+            self.log.error(format_args!(
+                "could not remove the entry in Apps & features: {e}"
+            ));
         }
         self.log.line("unregistered", record.scope.name());
         if let Some(dir) = purge {
@@ -538,12 +598,15 @@ impl Engine<'_> {
             match fs::remove_dir_all(dir) {
                 Ok(()) => self.log.line("removed", dir.display()),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                Err(e) => self.log.error(format_args!("could not remove {}: {e}", dir.display())),
+                Err(e) => self
+                    .log
+                    .error(format_args!("could not remove {}: {e}", dir.display())),
             }
         }
         for dir in record.dirs.iter().rev() {
             if fs::remove_dir(dir).is_ok() {
-                self.log.note(format_args!("removed the folder {}", dir.display()));
+                self.log
+                    .note(format_args!("removed the folder {}", dir.display()));
             }
         }
         self.log.note(format_args!("{} is removed", record.product));

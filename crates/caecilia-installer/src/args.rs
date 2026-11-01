@@ -193,14 +193,18 @@ impl Args {
         v
     }
 
-    /// The command line that has an engine remove the installation for
-    /// `scope`, purging `purge` if given.
-    pub fn for_engine_uninstall(scope: Scope, purge: Option<&std::path::Path>, log: &std::path::Path) -> Vec<String> {
+    /// The command line that has an engine remove the installation in the
+    /// program folder `dir`, purging `purge` if given.
+    pub fn for_engine_uninstall(
+        dir: &std::path::Path,
+        purge: Option<&std::path::Path>,
+        log: &std::path::Path,
+    ) -> Vec<String> {
         let mut v = vec![
             "--engine".into(),
             "uninstall".into(),
-            "--scope".into(),
-            scope.name().into(),
+            "--dir".into(),
+            dir.to_string_lossy().into_owned(),
             "--log".into(),
             log.to_string_lossy().into_owned(),
         ];
@@ -238,7 +242,10 @@ mod tests {
         assert!(!a.desktop && a.start_menu);
         assert_eq!(a.log, Some(PathBuf::from("C:\\x.log")));
         assert_eq!(a.lang, Some(Lang::Pt));
-        assert_eq!(parse(&["/currentuser", "/noshortcuts"]).unwrap().scope, Some(Scope::User));
+        assert_eq!(
+            parse(&["/currentuser", "/noshortcuts"]).unwrap().scope,
+            Some(Scope::User)
+        );
         let u = parse(&["--uninstall", "/S", "/PURGE"]).unwrap();
         assert_eq!((u.mode, u.silent, u.purge), (Mode::Uninstall, true, true));
     }
@@ -256,7 +263,9 @@ mod tests {
         let mut choices = Choices::defaults(Scope::Machine);
         choices.components = Components::parse("app,organ").unwrap();
         choices.program_dir = Some(PathBuf::from("D:\\Caecilia"));
-        choices.organs_dir = Some(PathBuf::from("C:\\Users\\a\\AppData\\Roaming\\Caecilia\\Organs"));
+        choices.organs_dir = Some(PathBuf::from(
+            "C:\\Users\\a\\AppData\\Roaming\\Caecilia\\Organs",
+        ));
         choices.desktop = false;
         let line = Args::for_engine_install(&choices, std::path::Path::new("C:\\t.log"), Lang::Es);
         let a = Args::parse(line).unwrap();
@@ -265,9 +274,14 @@ mod tests {
         assert_eq!(a.choices(a.scope.unwrap()), choices);
         assert_eq!(a.lang, Some(Lang::Es));
 
-        let line = Args::for_engine_uninstall(Scope::User, Some(std::path::Path::new("C:\\data")), std::path::Path::new("C:\\u.log"));
+        let line = Args::for_engine_uninstall(
+            std::path::Path::new("C:\\Program Files\\Caecilia"),
+            Some(std::path::Path::new("C:\\data")),
+            std::path::Path::new("C:\\u.log"),
+        );
         let a = Args::parse(line).unwrap();
-        assert_eq!((a.mode, a.scope, a.purge), (Mode::Uninstall, Some(Scope::User), true));
+        assert_eq!((a.mode, a.purge), (Mode::Uninstall, true));
+        assert_eq!(a.dir, Some(PathBuf::from("C:\\Program Files\\Caecilia")));
         assert_eq!(a.purge_dir, Some(PathBuf::from("C:\\data")));
     }
 }

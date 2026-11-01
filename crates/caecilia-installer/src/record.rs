@@ -60,7 +60,11 @@ pub struct Record {
 impl Record {
     /// The record as JSON.
     pub fn to_json(&self) -> String {
-        let paths = |v: &[PathBuf]| v.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        let paths = |v: &[PathBuf]| {
+            v.iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
         let files: Vec<Value> = self
             .files
             .iter()

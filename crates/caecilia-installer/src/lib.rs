@@ -18,10 +18,12 @@
 
 pub mod args;
 pub mod engine;
+pub mod job;
 pub mod log;
 pub mod payload;
 pub mod plan;
 pub mod record;
+pub mod run;
 pub mod system;
 pub mod text;
 pub mod ui;

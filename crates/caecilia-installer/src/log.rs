@@ -199,7 +199,10 @@ mod tests {
         let p = Progress::read(&log.lines().join("\n"));
         assert_eq!((p.units, p.done), (4, 2));
         assert_eq!(p.step.as_deref(), Some("app"));
-        assert_eq!(p.path.as_deref(), Some("C:\\Users\\Public\\Desktop\\Caecilia.lnk"));
+        assert_eq!(
+            p.path.as_deref(),
+            Some("C:\\Users\\Public\\Desktop\\Caecilia.lnk")
+        );
         assert_eq!(p.fraction(), 0.5);
         assert_eq!(p.end, None);
         log.line("registered", "machine");
@@ -207,6 +210,9 @@ mod tests {
         let p = Progress::read(&log.lines().join("\n"));
         assert_eq!((p.done, p.end, p.fraction()), (3, Some(0), 1.0));
         let p = Progress::read(&log.lines()[..3].join("\n"));
-        assert_eq!(p.path.as_deref(), Some("C:\\Program Files\\Caecilia\\caecilia.exe"));
+        assert_eq!(
+            p.path.as_deref(),
+            Some("C:\\Program Files\\Caecilia\\caecilia.exe")
+        );
     }
 }

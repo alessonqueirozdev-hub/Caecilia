@@ -132,6 +132,7 @@ dependencies = [
  "lzma-rust2",
  "manguebyte-gfx",
  "manguebyte-gui",
+ "manguebyte-plugin",
  "manguebyte-ui",
  "manguebyte-window",
  "serde_json",

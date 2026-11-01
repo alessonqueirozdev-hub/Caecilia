@@ -47,17 +47,20 @@ pub struct MemorySystem {
 
 impl System for MemorySystem {
     fn installed(&self, scope: Scope, product: &str) -> Option<Installed> {
-        self.entries.get(&(scope, product.to_owned())).map(|e| Installed {
-            version: e.version.clone(),
-            location: e.location.clone(),
-        })
+        self.entries
+            .get(&(scope, product.to_owned()))
+            .map(|e| Installed {
+                version: e.version.clone(),
+                location: e.location.clone(),
+            })
     }
 
     fn register(&mut self, scope: Scope, entry: &UninstallEntry) -> std::io::Result<()> {
         if self.fail_register {
             return Err(std::io::Error::other("the registry said no"));
         }
-        self.entries.insert((scope, entry.name.clone()), entry.clone());
+        self.entries
+            .insert((scope, entry.name.clone()), entry.clone());
         Ok(())
     }
 

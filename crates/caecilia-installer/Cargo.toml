@@ -27,6 +27,7 @@ manguebyte-gfx.workspace = true
 manguebyte-ui.workspace = true
 manguebyte-gui.workspace = true
 manguebyte-window.workspace = true
+manguebyte-plugin.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = [

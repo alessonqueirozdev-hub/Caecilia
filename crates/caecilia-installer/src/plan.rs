@@ -298,7 +298,12 @@ pub const ICON: &str = "caecilia.ico";
 impl Plan {
     /// The plan for `choices` on a system with `places`, of the files in
     /// `manifest`; the uninstaller is `uninstaller_size` bytes.
-    pub fn new(manifest: &Manifest, choices: &Choices, places: &Places, uninstaller_size: u64) -> Plan {
+    pub fn new(
+        manifest: &Manifest,
+        choices: &Choices,
+        places: &Places,
+        uninstaller_size: u64,
+    ) -> Plan {
         let product = manifest.product.as_str();
         let scope = choices.scope;
         let program_dir = choices
@@ -320,7 +325,10 @@ impl Plan {
             .iter()
             .filter(|e| choices.components.includes(&e.component))
             .map(|e| PlannedFile {
-                dest: e.path.split('/').fold(root_dir(e.root), |p, part| p.join(part)),
+                dest: e
+                    .path
+                    .split('/')
+                    .fold(root_dir(e.root), |p, part| p.join(part)),
                 entry: e.clone(),
             })
             .collect();
@@ -385,7 +393,12 @@ mod tests {
         let mut b = PayloadBuilder::new("Caecilia", "2.0.0", "Alesson Queiroz");
         b.add("app", Root::Program, "caecilia.exe", b"app");
         b.add("core", Root::Program, "caecilia.ico", b"ico");
-        b.add("vst3", Root::Vst3, "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3", b"dll");
+        b.add(
+            "vst3",
+            Root::Vst3,
+            "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3",
+            b"dll",
+        );
         b.add("clap", Root::Clap, "Caecilia.clap", b"dll");
         b.add("organ", Root::Organs, "caecilia-demo.organ.json", b"{}");
         let bytes = b.build().unwrap();
@@ -407,12 +420,18 @@ mod tests {
         let plan = Plan::new(&manifest(), &Choices::defaults(Scope::Machine), &places, 10);
         let pf = base.join("Program Files");
         assert_eq!(plan.program_dir, pf.join("Caecilia"));
-        assert_eq!(dest(&plan, "caecilia.exe"), pf.join("Caecilia").join("caecilia.exe"));
+        assert_eq!(
+            dest(&plan, "caecilia.exe"),
+            pf.join("Caecilia").join("caecilia.exe")
+        );
         assert_eq!(
             dest(&plan, "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3"),
             pf.join("Common Files\\VST3\\Caecilia.vst3\\Contents\\x86_64-win\\Caecilia.vst3")
         );
-        assert_eq!(dest(&plan, "Caecilia.clap"), pf.join("Common Files\\CLAP\\Caecilia.clap"));
+        assert_eq!(
+            dest(&plan, "Caecilia.clap"),
+            pf.join("Common Files\\CLAP\\Caecilia.clap")
+        );
         assert_eq!(
             dest(&plan, "caecilia-demo.organ.json"),
             base.join("AppData\\Caecilia\\Organs\\caecilia-demo.organ.json")
@@ -436,11 +455,19 @@ mod tests {
         let plan = Plan::new(&manifest(), &Choices::defaults(Scope::User), &places, 10);
         let programs = base.join("LocalAppData\\Programs");
         assert_eq!(plan.program_dir, programs.join("Caecilia"));
-        assert_eq!(dest(&plan, "Caecilia.clap"), programs.join("Common\\CLAP\\Caecilia.clap"));
-        assert!(dest(&plan, "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3")
-            .starts_with(programs.join("Common\\VST3\\Caecilia.vst3")));
+        assert_eq!(
+            dest(&plan, "Caecilia.clap"),
+            programs.join("Common\\CLAP\\Caecilia.clap")
+        );
+        assert!(
+            dest(&plan, "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3")
+                .starts_with(programs.join("Common\\VST3\\Caecilia.vst3"))
+        );
         assert_eq!(plan.shortcuts[0].link, base.join("Desktop\\Caecilia.lnk"));
-        assert_eq!(plan.shortcuts[1].link, base.join("Start Menu\\Programs\\Caecilia.lnk"));
+        assert_eq!(
+            plan.shortcuts[1].link,
+            base.join("Start Menu\\Programs\\Caecilia.lnk")
+        );
     }
 
     #[test]
@@ -452,20 +479,35 @@ mod tests {
         choices.organs_dir = Some(PathBuf::from("U:\\Organs"));
         let plan = Plan::new(&manifest(), &choices, &places, 10);
         let paths: Vec<_> = plan.files.iter().map(|f| f.entry.path.as_str()).collect();
-        assert_eq!(paths, ["caecilia.ico", "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3"]);
-        assert_eq!(dest(&plan, "caecilia.ico"), PathBuf::from("D:\\Apps\\Caecilia\\caecilia.ico"));
+        assert_eq!(
+            paths,
+            [
+                "caecilia.ico",
+                "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3"
+            ]
+        );
+        assert_eq!(
+            dest(&plan, "caecilia.ico"),
+            PathBuf::from("D:\\Apps\\Caecilia\\caecilia.ico")
+        );
         assert!(plan.shortcuts.is_empty(), "no app, no shortcut to it");
 
         choices.components = Components::ALL;
         choices.desktop = false;
         let plan = Plan::new(&manifest(), &choices, &places, 10);
-        assert_eq!(dest(&plan, "caecilia-demo.organ.json"), PathBuf::from("U:\\Organs\\caecilia-demo.organ.json"));
+        assert_eq!(
+            dest(&plan, "caecilia-demo.organ.json"),
+            PathBuf::from("U:\\Organs\\caecilia-demo.organ.json")
+        );
         assert_eq!(plan.shortcuts.len(), 1);
     }
 
     #[test]
     fn component_lists_read_and_write() {
-        assert_eq!(Components::parse("app,VST3, clap,organ"), Some(Components::ALL));
+        assert_eq!(
+            Components::parse("app,VST3, clap,organ"),
+            Some(Components::ALL)
+        );
         assert_eq!(Components::ALL.list(), "app,vst3,clap,organ");
         assert_eq!(Components::parse("vst2"), None);
         assert!(Components::parse("").unwrap().is_empty());

@@ -168,7 +168,9 @@ impl fmt::Display for PayloadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PayloadError::Missing => f.write_str("this installer carries no files"),
-            PayloadError::Malformed(what) => write!(f, "the installer's files are malformed: {what}"),
+            PayloadError::Malformed(what) => {
+                write!(f, "the installer's files are malformed: {what}")
+            }
             PayloadError::Damaged(what) => write!(f, "the installer is damaged: {what}"),
         }
     }
@@ -204,7 +206,9 @@ impl<'a> Payload<'a> {
         let (text, rest) = rest.split_at(len);
         let (hash, packed) = rest.split_at(32);
         if Digest::of(text).0 != hash {
-            return Err(PayloadError::Damaged("the manifest's hash does not match".into()));
+            return Err(PayloadError::Damaged(
+                "the manifest's hash does not match".into(),
+            ));
         }
         let manifest = manifest_from_json(text)?;
         if packed.len() as u64 != manifest.packed_size {
@@ -215,7 +219,9 @@ impl<'a> Payload<'a> {
             )));
         }
         if Digest::of(packed) != manifest.packed_sha256 {
-            return Err(PayloadError::Damaged("the files' hash does not match".into()));
+            return Err(PayloadError::Damaged(
+                "the files' hash does not match".into(),
+            ));
         }
         Ok(Payload { manifest, packed })
     }
@@ -227,7 +233,9 @@ impl<'a> Payload<'a> {
             .read_to_end(&mut data)
             .map_err(|e| PayloadError::Damaged(format!("the files do not unpack: {e}")))?;
         if data.len() as u64 != self.manifest.unpacked_size {
-            return Err(PayloadError::Damaged("the files unpack to the wrong length".into()));
+            return Err(PayloadError::Damaged(
+                "the files unpack to the wrong length".into(),
+            ));
         }
         let mut checked = HashMap::new();
         for entry in &self.manifest.entries {
@@ -236,7 +244,10 @@ impl<'a> Payload<'a> {
                 .entry(entry.offset)
                 .or_insert_with(|| Digest::of(&data[range]) == entry.sha256);
             if !ok {
-                return Err(PayloadError::Damaged(format!("{} does not match its hash", entry.path)));
+                return Err(PayloadError::Damaged(format!(
+                    "{} does not match its hash",
+                    entry.path
+                )));
             }
         }
         Ok(Unpacked {
@@ -280,19 +291,28 @@ fn manifest_from_json(text: &[u8]) -> Result<Manifest, PayloadError> {
         return Err(PayloadError::Malformed("an unknown manifest format"));
     }
     let mut entries = Vec::new();
-    for e in v.get("files").and_then(Value::as_array).ok_or(bad.clone())? {
+    for e in v
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or(bad.clone())?
+    {
         let path = s(e, "path").ok_or(bad.clone())?;
         // A path only ever goes down from its root.
         if path.is_empty()
             || path.contains('\\')
             || path.contains(':')
-            || path.split('/').any(|p| p.is_empty() || p == "." || p == "..")
+            || path
+                .split('/')
+                .any(|p| p.is_empty() || p == "." || p == "..")
         {
             return Err(PayloadError::Malformed("a file's path leaves its folder"));
         }
         entries.push(Entry {
             component: s(e, "component").ok_or(bad.clone())?,
-            root: s(e, "root").as_deref().and_then(Root::from_name).ok_or(bad.clone())?,
+            root: s(e, "root")
+                .as_deref()
+                .and_then(Root::from_name)
+                .ok_or(bad.clone())?,
             path,
             size: n(e, "size").ok_or(bad.clone())?,
             sha256: digest(e, "sha256").ok_or(bad.clone())?,
@@ -304,7 +324,9 @@ fn manifest_from_json(text: &[u8]) -> Result<Manifest, PayloadError> {
         version: s(&v, "version").ok_or(bad.clone())?,
         publisher: s(&v, "publisher").ok_or(bad.clone())?,
         entries,
-        dict_size: n(&v, "dict_size").and_then(|d| u32::try_from(d).ok()).ok_or(bad.clone())?,
+        dict_size: n(&v, "dict_size")
+            .and_then(|d| u32::try_from(d).ok())
+            .ok_or(bad.clone())?,
         packed_size: n(&v, "packed_size").ok_or(bad.clone())?,
         packed_sha256: digest(&v, "packed_sha256").ok_or(bad.clone())?,
         unpacked_size: n(&v, "unpacked_size").ok_or(bad)?,
@@ -414,7 +436,12 @@ mod tests {
         let plugin: Vec<u8> = (0..50_000u32).map(|i| (i * 7 % 251) as u8).collect();
         let mut b = PayloadBuilder::new("Caecilia", "2.0.0", "Alesson Queiroz");
         b.add("app", Root::Program, "caecilia.exe", b"MZ the app");
-        b.add("vst3", Root::Vst3, "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3", &plugin);
+        b.add(
+            "vst3",
+            Root::Vst3,
+            "Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3",
+            &plugin,
+        );
         b.add("clap", Root::Clap, "Caecilia.clap", &plugin);
         b.add("core", Root::Program, "LICENSE.txt", b"Apache-2.0");
         b.add("organ", Root::Organs, "caecilia-demo.organ.json", b"{}");
@@ -427,7 +454,10 @@ mod tests {
         let bytes = sample();
         let payload = Payload::parse(&bytes).unwrap();
         let m = &payload.manifest;
-        assert_eq!((m.product.as_str(), m.version.as_str()), ("Caecilia", "2.0.0"));
+        assert_eq!(
+            (m.product.as_str(), m.version.as_str()),
+            ("Caecilia", "2.0.0")
+        );
         let files = payload.unpack().unwrap();
         let get = |path: &str| {
             let e = m.entries.iter().find(|e| e.path == path).unwrap();
@@ -437,7 +467,10 @@ mod tests {
         assert_eq!(get("LICENSE.txt"), b"Apache-2.0");
         assert_eq!(get("empty.txt"), b"");
         assert_eq!(get("Caecilia.clap").len(), 50_000);
-        assert_eq!(get("Caecilia.clap"), get("Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3"));
+        assert_eq!(
+            get("Caecilia.clap"),
+            get("Caecilia.vst3/Contents/x86_64-win/Caecilia.vst3")
+        );
     }
 
     #[test]
@@ -476,7 +509,14 @@ mod tests {
 
     #[test]
     fn a_path_that_climbs_out_of_its_folder_is_refused() {
-        for path in ["../evil.exe", "a/../../b", "C:/Windows/x", "a\\b", "/abs", "a//b"] {
+        for path in [
+            "../evil.exe",
+            "a/../../b",
+            "C:/Windows/x",
+            "a\\b",
+            "/abs",
+            "a//b",
+        ] {
             let mut b = PayloadBuilder::new("Caecilia", "2.0.0", "x");
             b.add("core", Root::Program, path, b"x");
             let bytes = b.build().unwrap();
