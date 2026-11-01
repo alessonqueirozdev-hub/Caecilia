@@ -46,6 +46,9 @@ pub mod exit {
     /// An installation for everyone needs an administrator
     /// (`ERROR_ELEVATION_REQUIRED`).
     pub const NEEDS_ADMIN: i32 = 740;
+    /// Another run of the installer is at work
+    /// (`ERROR_INSTALL_ALREADY_RUNNING`).
+    pub const BUSY: i32 = 1618;
     /// A newer version is installed (`ERROR_PRODUCT_VERSION`).
     pub const NEWER_INSTALLED: i32 = 1638;
     /// Done; a file in use goes when Windows restarts

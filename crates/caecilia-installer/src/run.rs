@@ -57,6 +57,9 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
         }
     };
     let product = files.manifest.product.clone();
+    if !lock(host, &product, log) {
+        return exit::BUSY;
+    }
     let found = find_installed(host.sys, &product);
     let scope = args
         .scope
@@ -90,6 +93,16 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
         return exit::NEEDS_ADMIN;
     }
     let mut choices = args.choices(scope);
+    // One form for each folder (`\`, no `.` or `..`), as the record keeps
+    // it and as an update compares it.
+    for dir in [&mut choices.program_dir, &mut choices.organs_dir]
+        .into_iter()
+        .flatten()
+    {
+        if let Ok(whole) = std::path::absolute(&*dir) {
+            *dir = whole;
+        }
+    }
     let previous = found.map(|f| f.record);
     if let Some(old) = &previous {
         // An update stays where it was, keeps where the organs went, and
@@ -144,6 +157,9 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
 
 /// Removes the installation of `product` in `args.dir`, or the one found.
 pub fn uninstall(args: &Args, product: &str, host: &mut Host<'_>, log: &mut Log) -> i32 {
+    if !lock(host, product, log) {
+        return exit::BUSY;
+    }
     let record = match &args.dir {
         Some(dir) => Record::load(dir),
         None => find_installed(host.sys, product).map(|f| f.record),
@@ -172,6 +188,17 @@ pub fn uninstall(args: &Args, product: &str, host: &mut Host<'_>, log: &mut Log)
     }
 }
 
+/// Takes the lock of `product`'s installers, or says another run has it.
+fn lock(host: &mut Host<'_>, product: &str, log: &mut Log) -> bool {
+    let got = host.sys.lock(product);
+    if !got {
+        log.error(format_args!(
+            "another run of the {product} installer is at work: try again when it ends"
+        ));
+    }
+    got
+}
+
 /// Copies the log into the program folder, for later.
 fn copy_log(log: &Log, dir: &Path) {
     if let Some(path) = log.path() {
@@ -196,6 +223,39 @@ mod tests {
 
     fn parse(s: &[&str]) -> Args {
         Args::parse(s.iter().map(|s| s.to_string())).unwrap()
+    }
+
+    #[test]
+    fn a_second_run_waits_its_turn() {
+        let mut sys = MemorySystem {
+            locked_elsewhere: true,
+            ..MemorySystem::default()
+        };
+        let no = || false;
+        let base = std::env::temp_dir().join("caecilia-installer-run-busy");
+        let mut host = Host {
+            sys: &mut sys,
+            places: Places::under(&base),
+            elevated: true,
+            uninstaller: b"MZ".to_vec(),
+            cancelled: &no,
+        };
+        let mut log = Log::in_memory();
+        let v1 = payload("2.0.0");
+        assert_eq!(
+            install(&parse(&["/S", "/CURRENTUSER"]), &v1, &mut host, &mut log),
+            exit::BUSY
+        );
+        assert_eq!(
+            uninstall(
+                &parse(&["--uninstall", "/S"]),
+                "Caecilia",
+                &mut host,
+                &mut log
+            ),
+            exit::BUSY
+        );
+        assert!(!base.exists(), "nothing was touched");
     }
 
     #[test]
@@ -278,6 +338,22 @@ mod tests {
         let r = Record::load(&dir).unwrap();
         assert!(r.components.clap);
         assert_eq!((r.desktop, r.start_menu), (false, false));
+        // A repair naming the same folder another way loses nothing.
+        let other_form = format!("/DIR={}/./", dir.display()).replace('\\', "/");
+        assert_eq!(
+            install(
+                &parse(&["/S", &other_form]),
+                &payload("2.0.1"),
+                &mut host,
+                &mut log
+            ),
+            exit::OK
+        );
+        let r = Record::load(&dir).unwrap();
+        assert_eq!(r.program_dir, dir);
+        for f in &r.files {
+            assert!(f.path.is_file(), "{}", f.path.display());
+        }
         // Going back needs /FORCE.
         assert_eq!(
             install(&parse(&["/S"]), &v1, &mut host, &mut log),

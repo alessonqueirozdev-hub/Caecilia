@@ -173,7 +173,8 @@ uninstall.exe --uninstall /S [/PURGE]
   for a program of their own. Elsewhere it exits `87`; the GUI's folder
   picker refuses such a folder with a hint. A just-me install goes anywhere.
 - Exit codes: `0` done, `1` failed, `2` cancelled/declined, `3` damaged
-  payload, `87` bad arguments, `740` needs admin, `1638` a newer version is installed,
+  payload, `87` bad arguments, `740` needs admin, `1618` another run of the
+  installer is at work (one at a time, by a named mutex), `1638` a newer version is installed,
   `3010` done, reboot needed to finish removing a file in use.
 
 ## 7. Logging

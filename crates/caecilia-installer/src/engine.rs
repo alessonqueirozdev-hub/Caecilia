@@ -95,9 +95,16 @@ fn hash_of(path: &Path) -> io::Result<Option<Digest>> {
     }
 }
 
-/// Paths compared as Windows does: without regard to case.
+/// Paths compared as Windows does: made whole (`/` as `\`, `.` and `..`
+/// resolved) and without regard to case.
 fn same_path(a: &Path, b: &Path) -> bool {
-    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    let key = |p: &Path| {
+        std::path::absolute(p)
+            .unwrap_or_else(|_| p.to_owned())
+            .to_string_lossy()
+            .to_lowercase()
+    };
+    key(a) == key(b)
 }
 
 /// Whether the file at `path` is held open by a running program, as the

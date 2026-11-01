@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::ptr;
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_CANCELLED, ERROR_SUCCESS, HANDLE, WAIT_OBJECT_0,
+    CloseHandle, ERROR_CANCELLED, ERROR_SUCCESS, HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
 use windows_sys::Win32::Security::{
@@ -25,7 +25,7 @@ use windows_sys::Win32::System::Registry::{
     RegCreateKeyExW, RegDeleteTreeW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 };
 use windows_sys::Win32::System::Threading::{
-    GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, WaitForSingleObject,
+    CreateMutexW, GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, WaitForSingleObject,
 };
 use windows_sys::Win32::UI::Shell::{
     FOLDERID_CommonPrograms, FOLDERID_Desktop, FOLDERID_ProgramFiles, FOLDERID_ProgramFilesCommon,
@@ -321,6 +321,28 @@ impl System for WinSystem {
             ) != 0
         }
     }
+
+    fn lock(&mut self, product: &str) -> bool {
+        // One mutex for every session, so a person's run and an
+        // administrator's never overlap either.
+        let name = wide(format!(r"Global\{product}-Setup"));
+        // SAFETY: a NUL-terminated name and no attributes.
+        let mutex = unsafe { CreateMutexW(ptr::null(), 0, name.as_ptr()) };
+        if mutex.is_null() {
+            return false;
+        }
+        // SAFETY: a mutex just opened. Abandoned means its last holder
+        // ended without letting go: it is ours now all the same.
+        let got = unsafe { WaitForSingleObject(mutex, 0) };
+        if got == WAIT_OBJECT_0 || got == WAIT_ABANDONED {
+            // Held until the process ends, which lets go of it.
+            true
+        } else {
+            // SAFETY: the handle opened above, not kept.
+            unsafe { CloseHandle(mutex) };
+            false
+        }
+    }
 }
 
 fn shortcut(s: &Shortcut) -> windows::core::Result<()> {
@@ -501,6 +523,16 @@ mod tests {
         // The header of every .lnk: its size, 0x4C, then the link CLSID.
         assert_eq!(bytes[..4], [0x4C, 0, 0, 0]);
         assert_eq!(bytes[4..8], [0x01, 0x14, 0x02, 0x00]);
+    }
+
+    #[test]
+    fn only_one_run_holds_the_lock() {
+        let product = format!("CaeciliaLockTest{}", std::process::id());
+        assert!(WinSystem.lock(&product));
+        // Another thread stands for another run: a mutex lets its own
+        // holder in again, nobody else.
+        let other = std::thread::spawn(move || WinSystem.lock(&product));
+        assert!(!other.join().unwrap());
     }
 
     #[test]

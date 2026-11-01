@@ -29,6 +29,10 @@ pub trait System {
     fn make_shortcut(&mut self, shortcut: &Shortcut) -> std::io::Result<()>;
     /// Has the system delete `path` when it next starts; whether it will.
     fn delete_at_restart(&mut self, path: &Path) -> bool;
+    /// Takes the one lock of `product`'s installers, held until the process
+    /// ends, so two runs never work on the same files; false if another
+    /// run holds it.
+    fn lock(&mut self, product: &str) -> bool;
 }
 
 /// A system in memory, for tests: shortcuts are small files that say what
@@ -43,6 +47,8 @@ pub struct MemorySystem {
     pub can_delete_at_restart: bool,
     /// Fails [`register`](System::register), to test the way back.
     pub fail_register: bool,
+    /// Another run holds the lock.
+    pub locked_elsewhere: bool,
 }
 
 impl System for MemorySystem {
@@ -78,5 +84,9 @@ impl System for MemorySystem {
             self.at_restart.push(path.to_owned());
         }
         self.can_delete_at_restart
+    }
+
+    fn lock(&mut self, _product: &str) -> bool {
+        !self.locked_elsewhere
     }
 }
