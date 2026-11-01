@@ -8,6 +8,7 @@ use caecilia_model::{Diagnostic, Organ, demo_organ};
 use caecilia_registration::{MASK_CAPACITY, Piston, factory_generals};
 
 use crate::console::{ConsoleMemory, GENERALS};
+use crate::sound::{DEFAULT_ROOM, EQ_BANDS, ROOM_NAMES};
 use crate::switch::{OrganLoadError, OrganSlot, SwitchAudio};
 use manguebyte_params::{BoolParam, ChoiceParam, FloatParam, FloatRange, Param, ParamSet};
 
@@ -54,6 +55,12 @@ pub struct CaeciliaParams {
     pub temperament_key: ChoiceParam,
     /// The pitch of A4, Hz: 440 modern, 415 baroque, 392 French chamber.
     pub pitch: FloatParam,
+    /// The room the organ stands in, from [`ROOM_NAMES`](crate::ROOM_NAMES).
+    pub room: ChoiceParam,
+    /// The master EQ, on or off.
+    pub eq: BoolParam,
+    /// Its five bands' gains, dB, low to high (see [`EQ_BANDS`](crate::EQ_BANDS)).
+    pub eq_bands: [FloatParam; 5],
     /// Drawstops, by stop id.
     pub stops: Vec<BoolParam>,
     /// Couplers, by coupler id.
@@ -151,6 +158,19 @@ impl CaeciliaParams {
             )
             .with_unit("Hz")
             .with_precision(1),
+            room: ChoiceParam::new("room", "Room", &ROOM_NAMES, DEFAULT_ROOM),
+            eq: BoolParam::new("eq", "EQ", true),
+            eq_bands: std::array::from_fn(|i| {
+                let band = &EQ_BANDS[i];
+                FloatParam::new(
+                    band.id,
+                    &format!("EQ {}", band.name),
+                    FloatRange::linear(-18.0, 18.0),
+                    band.voicing_db,
+                )
+                .with_unit("dB")
+                .with_precision(1)
+            }),
             stops,
             couplers,
             console,
@@ -296,6 +316,11 @@ impl ParamSet for CaeciliaParams {
         visitor(&self.temperament);
         visitor(&self.temperament_key);
         visitor(&self.pitch);
+        visitor(&self.room);
+        visitor(&self.eq);
+        for p in &self.eq_bands {
+            visitor(p);
+        }
         for p in &self.stops {
             visitor(p);
         }

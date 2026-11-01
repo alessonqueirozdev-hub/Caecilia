@@ -23,6 +23,7 @@ mod paint;
 mod parts;
 mod registration;
 mod snapshot;
+mod sound;
 
 use std::sync::{Arc, Mutex};
 

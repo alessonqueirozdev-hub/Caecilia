@@ -16,6 +16,7 @@ use super::Shared;
 use super::demos::{self, TOUR_ROW, Tour};
 use super::library::{Entry, organs_folder, scan};
 use super::look::{DAY, Look, NIGHT};
+use super::sound::SoundView;
 use crate::console::GENERALS;
 use crate::params::{KEY_NAMES, TEMPERAMENT_NAMES};
 use crate::telemetry::TELEMETRY_CHESTS;
@@ -262,6 +263,8 @@ pub(crate) struct Snapshot {
     pub(crate) library: Option<LibraryView>,
     /// The demonstrations, while they are open.
     pub(crate) demos: Option<DemosView>,
+    /// The sound panel, while it is open.
+    pub(crate) sound: Option<SoundView>,
 }
 
 pub(crate) fn hash_of(f: impl FnOnce(&mut DefaultHasher)) -> u64 {
@@ -299,6 +302,7 @@ impl Snapshot {
         hash_of(|h| {
             self.library.hash(h);
             self.demos.hash(h);
+            self.sound.hash(h);
             for c in &self.chests {
                 c.now_mm.to_bits().hash(h);
                 c.note.hash(h);
@@ -390,6 +394,8 @@ pub(crate) struct Source {
     library: RefCell<Option<(Vec<Entry>, Option<String>)>>,
     /// Whether the demonstrations are open.
     demos: Cell<bool>,
+    /// Whether the sound panel is open.
+    sound: Cell<bool>,
     /// The tour of the stops, while it plays.
     tour: RefCell<Option<Tour>>,
     /// The registrations demonstrations drew, and what the history calls
@@ -414,6 +420,7 @@ impl Source {
             focus: Cell::new(None),
             library: RefCell::new(None),
             demos: Cell::new(false),
+            sound: Cell::new(false),
             tour: RefCell::new(None),
             named: Rc::default(),
         })
@@ -436,6 +443,7 @@ impl Source {
     /// Open the demonstrations, or close them; the library closes.
     pub(crate) fn toggle_demos(&self) {
         self.demos.set(!self.demos.get());
+        self.sound.set(false);
         *self.library.borrow_mut() = None;
         self.refresh();
     }
@@ -469,9 +477,18 @@ impl Source {
             .filter(|n| *n < TOUR_ROW)
     }
 
+    /// Open the sound panel, or close it; the others close.
+    pub(crate) fn toggle_sound(&self) {
+        self.sound.set(!self.sound.get());
+        self.demos.set(false);
+        *self.library.borrow_mut() = None;
+        self.refresh();
+    }
+
     /// Open the organ library, looking for organs now, or close it.
     pub(crate) fn toggle_library(&self) {
         self.demos.set(false);
+        self.sound.set(false);
         let open = self.library_open();
         *self.library.borrow_mut() = if open {
             None
@@ -691,9 +708,12 @@ impl Source {
             }),
         });
 
+        let sound = self.sound.get().then(|| SoundView::read(&self.shared));
+
         Snapshot {
             library,
             demos,
+            sound,
             look: self.look(),
             organ: Arc::clone(organ),
             layout: Rc::clone(&self.layout.borrow()),

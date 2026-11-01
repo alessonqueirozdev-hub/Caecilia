@@ -21,6 +21,7 @@ use super::live::{Item, live};
 use super::paint::{arrow, gauge, heading, panel, style, text, vertical, width_of};
 use super::registration::registration;
 use super::snapshot::{DemosView, Snapshot, Source};
+use super::sound;
 
 /// A row of the organ library.
 const LIBRARY_ROW: f32 = 26.0;
@@ -45,6 +46,10 @@ fn draw_wind(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
     let look = snapshot.look;
     let rect = Rect::new(0.0, 0.0, size.width, size.height);
     panel(scene, &look, rect);
+    if let Some(sound) = &snapshot.sound {
+        sound::draw(size, scene, snapshot, sound);
+        return;
+    }
     if let Some(demos) = &snapshot.demos {
         draw_demos(size, scene, snapshot, demos);
         return;
@@ -190,6 +195,7 @@ fn draw_demos(size: Size, scene: &mut Scene, snapshot: &Snapshot, demos: &DemosV
 /// organs to choose from.
 fn wind(source: &Rc<Source>) -> View {
     let here = Rc::clone(source);
+    let mut drag: Option<sound::Drag> = None;
     live(
         "Wind",
         Size::new(540.0, 220.0),
@@ -198,6 +204,9 @@ fn wind(source: &Rc<Source>) -> View {
         draw_wind,
     )
     .describe(|s| {
+        if let Some(sound) = &s.sound {
+            return sound::describe(sound);
+        }
         if let Some(demos) = &s.demos {
             let rows: Vec<String> = demos::names()
                 .iter()
@@ -236,6 +245,9 @@ fn wind(source: &Rc<Source>) -> View {
         chests.join("; ")
     })
     .items(|s, size| {
+        if let Some(sound) = &s.sound {
+            return sound::items(sound, size);
+        }
         if let Some(demos) = &s.demos {
             let names = demos::names();
             return library_rows(size, names.len())
@@ -265,6 +277,9 @@ fn wind(source: &Rc<Source>) -> View {
             .collect()
     })
     .input(move |cx, event, at, size, snapshot| {
+        if snapshot.sound.is_some() || drag.is_some() {
+            return sound::input(cx, event, at, size, here.shared(), &mut drag);
+        }
         if !matches!(event, Event::PointerDown { .. }) {
             return Handled::No;
         }

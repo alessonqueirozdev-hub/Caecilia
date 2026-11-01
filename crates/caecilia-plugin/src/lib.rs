@@ -29,6 +29,7 @@ mod console;
 mod controller;
 mod demo;
 mod params;
+mod sound;
 mod switch;
 mod telemetry;
 mod ui;
@@ -53,6 +54,7 @@ pub use controller::{Origin, Played, RegistrationController};
 pub use params::{
     CaeciliaParams, KEY_NAMES, MAX_COUPLERS, TEMPERAMENT_NAMES, coupler_param_id, stop_param_id,
 };
+pub use sound::{EQ_BANDS, EqBand, ROOM_NAMES};
 pub use switch::{FADE_SECONDS, OrganLoadError, OrganSlot};
 pub use telemetry::{TELEMETRY_CHESTS, Telemetry};
 pub use ui::EDITOR_SIZE;
@@ -176,6 +178,9 @@ pub struct Caecilia {
     tremulant: Option<(bool, f32, f32)>,
     swell: Option<f32>,
     reverb: Reverb,
+    /// The room the reverb is in, once set.
+    room: Option<usize>,
+    eq: sound::MasterEq,
     limiter: Limiter,
     gain: f32,
     controller: Arc<Mutex<RegistrationController>>,
@@ -571,9 +576,7 @@ impl Plugin for Caecilia {
         )));
         let division_of_channel = channels_of(&organ);
         let mut reverb = Reverb::new();
-        reverb.set_decay_seconds(3.2);
-        reverb.set_size(0.85);
-        reverb.set_damping(0.35);
+        sound::set_room(&mut reverb, sound::DEFAULT_ROOM);
         let mut limiter = Limiter::new();
         limiter.set_ceiling_db(OUTPUT_CEILING_DB);
         limiter.set_lookahead_ms(0.0);
@@ -601,6 +604,8 @@ impl Plugin for Caecilia {
             tremulant: None,
             swell: None,
             reverb,
+            room: None,
+            eq: sound::MasterEq::new(),
             limiter,
             gain: 1.0,
             controller,
@@ -665,6 +670,8 @@ impl Plugin for Caecilia {
         self.swell = None;
         self.retune = true;
         self.reverb.prepare(spec);
+        self.eq.prepare(spec);
+        self.room = None;
         self.limiter.prepare(spec);
     }
 
@@ -883,8 +890,15 @@ impl Plugin for Caecilia {
         self.engine = Some(engine);
         self.fade_out(buffer);
 
+        let room = self.params.room.index();
+        if self.room != Some(room) {
+            self.room = Some(room);
+            sound::set_room(&mut self.reverb, room);
+        }
         self.reverb.set_mix(f64::from(self.params.reverb.value()));
         self.reverb.process(buffer);
+        let gains = std::array::from_fn(|i| self.params.eq_bands[i].value());
+        self.eq.process(buffer, self.params.eq.value(), gains);
         let target = 10.0f32.powf(self.params.level.value() / 20.0);
         buffer.apply_gain_ramp(self.gain, target);
         self.gain = target;
@@ -912,6 +926,7 @@ impl Plugin for Caecilia {
         self.tremulant = None;
         self.swell = None;
         self.reverb.reset();
+        self.eq.reset();
         self.limiter.reset();
     }
 

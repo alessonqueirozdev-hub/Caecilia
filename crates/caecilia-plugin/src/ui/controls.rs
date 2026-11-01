@@ -1031,14 +1031,16 @@ enum StatusButton {
     Undo,
     Redo,
     Light,
+    Sound,
     Demos,
     Organ,
 }
 
-const STATUS_BUTTONS: [StatusButton; 5] = [
+const STATUS_BUTTONS: [StatusButton; 6] = [
     StatusButton::Undo,
     StatusButton::Redo,
     StatusButton::Light,
+    StatusButton::Sound,
     StatusButton::Demos,
     StatusButton::Organ,
 ];
@@ -1050,6 +1052,7 @@ fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
         StatusButton::Redo => "Redo",
         StatusButton::Light if snapshot.look.night => "Day",
         StatusButton::Light => "Night",
+        StatusButton::Sound => "Sound",
         StatusButton::Demos => "Demos",
         StatusButton::Organ => "Organ\u{2026}",
     }
@@ -1188,6 +1191,7 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
                 params.set_console_day(!params.console_day());
                 here.refresh();
             }
+            Some(StatusButton::Sound) => here.toggle_sound(),
             Some(StatusButton::Demos) => here.toggle_demos(),
             Some(StatusButton::Organ) => here.toggle_library(),
             None => return Handled::No,
