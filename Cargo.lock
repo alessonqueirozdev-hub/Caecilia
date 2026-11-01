@@ -143,6 +143,7 @@ dependencies = [
  "manguebyte-standalone",
  "manguebyte-ui",
  "manguebyte-vst3",
+ "manguebyte-window",
 ]
 
 [[package]]

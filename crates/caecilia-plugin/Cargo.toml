@@ -27,12 +27,14 @@ manguebyte-vst3.workspace = true
 manguebyte-gfx.workspace = true
 manguebyte-gui.workspace = true
 manguebyte-ui.workspace = true
-# Only for the standalone application.
+# Only for the standalone application: the sound card, and the console in a
+# window of its own.
 manguebyte-standalone = { workspace = true, optional = true }
+manguebyte-window = { workspace = true, optional = true }
 
 [features]
 ## Builds the standalone application (src/bin/caecilia.rs).
-standalone = ["dep:manguebyte-standalone"]
+standalone = ["dep:manguebyte-standalone", "dep:manguebyte-window"]
 
 [[bin]]
 name = "caecilia"

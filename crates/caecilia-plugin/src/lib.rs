@@ -81,6 +81,27 @@ pub fn set_organ_file_for_new_instances(path: &Path) -> Result<Vec<Diagnostic>, 
     Ok(warnings)
 }
 
+/// Whether new instances leave their console for the application.
+static KEEP_CONSOLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The console of the last instance made while [`KEEP_CONSOLE`] was set.
+static KEPT_CONSOLE: Mutex<Option<ui::Shared>> = Mutex::new(None);
+
+/// Every instance made from now on leaves its console for
+/// [`console_of_last_instance`]: the standalone application, which never
+/// holds the plugin it plays, opens it in a window of its own.
+pub fn keep_console_of_new_instances() {
+    KEEP_CONSOLE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The console of the last instance made since
+/// [`keep_console_of_new_instances`], once, with the parameters its gestures
+/// set.
+pub fn console_of_last_instance() -> Option<(manguebyte_gui::Editor, Arc<CaeciliaParams>)> {
+    let shared = KEPT_CONSOLE.lock().ok()?.take()?;
+    let params = Arc::clone(&shared.params);
+    Some((ui::editor(shared), params))
+}
+
 /// The environment variable naming an organ file for instances in a host,
 /// which passes a plugin no arguments.
 pub const ORGAN_ENV: &str = "CAECILIA_ORGAN";
@@ -496,6 +517,18 @@ impl Plugin for Caecilia {
         limiter.set_ceiling_db(OUTPUT_CEILING_DB);
         limiter.set_lookahead_ms(0.0);
         limiter.set_release_ms(200.0);
+        let ui_notes_in = Arc::new(Mutex::new(ui_notes_in));
+        let telemetry: Arc<Telemetry> = Arc::default();
+        if KEEP_CONSOLE.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Ok(mut kept) = KEPT_CONSOLE.lock() {
+                *kept = Some(ui::Shared {
+                    params: Arc::clone(&params),
+                    controller: Arc::clone(&controller),
+                    telemetry: Arc::clone(&telemetry),
+                    notes: Arc::clone(&ui_notes_in),
+                });
+            }
+        }
         Self {
             organ,
             params,
@@ -528,9 +561,9 @@ impl Plugin for Caecilia {
             retired: None,
             held: [0; 16],
             generation: 0,
-            telemetry: Arc::default(),
+            telemetry,
             ui_notes,
-            ui_notes_in: Arc::new(Mutex::new(ui_notes_in)),
+            ui_notes_in,
             sample_rate: 48_000.0,
         }
     }

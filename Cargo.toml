@@ -36,6 +36,7 @@ manguebyte-standalone = { path = "C:/manguebyte/crates/manguebyte-standalone" }
 manguebyte-gfx = { path = "C:/manguebyte/crates/manguebyte-gfx" }
 manguebyte-ui = { path = "C:/manguebyte/crates/manguebyte-ui" }
 manguebyte-gui = { path = "C:/manguebyte/crates/manguebyte-gui" }
+manguebyte-window = { path = "C:/manguebyte/crates/manguebyte-window" }
 
 serde_json = "1"
 
