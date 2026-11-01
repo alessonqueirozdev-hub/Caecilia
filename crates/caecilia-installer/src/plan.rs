@@ -289,6 +289,9 @@ pub struct Plan {
     pub components: Components,
     /// The program folder.
     pub program_dir: PathBuf,
+    /// The data folder of the person the installation is made by: their
+    /// organs and settings, which a removal asked to purge removes.
+    pub data_dir: PathBuf,
     /// The files, from the payload.
     pub files: Vec<PlannedFile>,
     /// Where the uninstaller goes: a copy of the installer.
@@ -329,6 +332,17 @@ impl Plan {
             .organs_dir
             .clone()
             .unwrap_or_else(|| places.organs_dir(product));
+        // `<data>\Organs` when the organs folder is the usual one, which
+        // the window passes for the person even to an elevated engine.
+        let data_dir = organs_dir
+            .parent()
+            .filter(|d| {
+                organs_dir.ends_with("Organs")
+                    && d.file_name()
+                        .is_some_and(|n| n.eq_ignore_ascii_case(product))
+            })
+            .map(Path::to_owned)
+            .unwrap_or_else(|| places.user_data_dir(product));
         let root_dir = |root: Root| match root {
             Root::Program => program_dir.clone(),
             Root::Vst3 => places.plugin_dir(scope, "VST3"),
@@ -385,6 +399,7 @@ impl Plan {
                 size_kib: bytes.div_ceil(1024).min(u64::from(u32::MAX)) as u32,
             },
             program_dir,
+            data_dir,
             files,
             uninstaller,
             shortcuts,

@@ -53,6 +53,9 @@ pub struct Record {
     pub program_dir: PathBuf,
     /// The organs folder it used.
     pub organs_dir: Option<PathBuf>,
+    /// The data folder of the person who installed it, which `/PURGE`
+    /// removes whoever runs the removal.
+    pub data_dir: Option<PathBuf>,
     /// Every file placed, in order.
     pub files: Vec<RecordedFile>,
     /// Every folder made, parents first.
@@ -90,6 +93,7 @@ impl Record {
             "components": self.components.list(),
             "program_dir": self.program_dir.to_string_lossy(),
             "organs_dir": self.organs_dir.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            "data_dir": self.data_dir.as_ref().map(|p| p.to_string_lossy().into_owned()),
             "desktop": self.desktop,
             "start_menu": self.start_menu,
             "files": files,
@@ -147,6 +151,7 @@ impl Record {
             components: Components::parse(s("components")?)?,
             program_dir: PathBuf::from(s("program_dir")?),
             organs_dir: s("organs_dir").map(PathBuf::from),
+            data_dir: s("data_dir").map(PathBuf::from),
             desktop: v.get("desktop").and_then(Value::as_bool).unwrap_or(true),
             start_menu: v.get("start_menu").and_then(Value::as_bool).unwrap_or(true),
             files,
@@ -175,6 +180,7 @@ mod tests {
             components: Components::parse("app,clap").unwrap(),
             program_dir: "C:\\Program Files\\Caecilia".into(),
             organs_dir: Some("C:\\Users\\a\\AppData\\Roaming\\Caecilia\\Organs".into()),
+            data_dir: Some("C:\\Users\\a\\AppData\\Roaming\\Caecilia".into()),
             files: vec![RecordedFile {
                 path: "C:\\Program Files\\Caecilia\\caecilia.exe".into(),
                 size: 3,

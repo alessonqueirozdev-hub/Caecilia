@@ -11,8 +11,8 @@ use crate::exit;
 use crate::log::Log;
 use crate::payload::Payload;
 use crate::plan::{Places, Plan, Scope};
-use crate::record::{LOG_COPY, Record};
-use crate::system::System;
+use crate::record::{LOG_COPY, RECORD, Record};
+use crate::system::{Installed, System};
 use crate::version;
 
 /// What the work runs on.
@@ -47,6 +47,24 @@ pub fn find_installed(sys: &dyn System, product: &str) -> Option<Found> {
     })
 }
 
+/// An installation of `product` in *Apps & features* whose record is
+/// missing or damaged, so what it placed is not known.
+pub fn find_unreadable(sys: &dyn System, product: &str) -> Option<(Scope, Installed)> {
+    [Scope::Machine, Scope::User].into_iter().find_map(|scope| {
+        let installed = sys.installed(scope, product)?;
+        Record::load(&installed.location)
+            .is_none()
+            .then_some((scope, installed))
+    })
+}
+
+fn for_whom(scope: Scope) -> &'static str {
+    match scope {
+        Scope::Machine => "everyone",
+        Scope::User => "one person",
+    }
+}
+
 /// Installs as `args` say from `payload`.
 pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) -> i32 {
     let files = match Payload::parse(payload).and_then(|p| p.unpack()) {
@@ -61,19 +79,35 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
         return exit::BUSY;
     }
     let found = find_installed(host.sys, &product);
+    let unreadable = find_unreadable(host.sys, &product);
     let scope = args
         .scope
         .or(found.as_ref().map(|f| f.scope))
+        .or(unreadable.as_ref().map(|u| u.0))
         .unwrap_or(Scope::Machine);
+    if let Some((at, installed)) = &unreadable {
+        // Installing beside it would leave its files and its entry behind
+        // with nothing to remove them; over it, only when asked.
+        if !args.force || *at != scope {
+            log.error(format_args!(
+                "{product} is installed for {} in {}, but its record ({RECORD}) is missing or damaged; \
+                 /FORCE installs over it, for {} again",
+                for_whom(*at),
+                installed.location.display(),
+                for_whom(*at)
+            ));
+            return exit::FAILED;
+        }
+        log.note(format_args!(
+            "installing over the installation in {}, whose record is unreadable",
+            installed.location.display()
+        ));
+    }
     if let Some(f) = &found {
         if f.scope != scope {
             log.error(format_args!(
                 "{product} is installed for {} in {}: remove it first",
-                if f.scope == Scope::Machine {
-                    "everyone"
-                } else {
-                    "one person"
-                },
+                for_whom(f.scope),
                 f.record.program_dir.display()
             ));
             return exit::FAILED;
@@ -101,6 +135,11 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
     {
         if let Ok(whole) = std::path::absolute(&*dir) {
             *dir = whole;
+        }
+    }
+    if let Some((_, installed)) = &unreadable {
+        if choices.program_dir.is_none() {
+            choices.program_dir = Some(installed.location.clone());
         }
     }
     let previous = found.map(|f| f.record);
@@ -172,9 +211,15 @@ pub fn uninstall(args: &Args, product: &str, host: &mut Host<'_>, log: &mut Log)
         log.error("removing an installation for everyone needs an administrator");
         return exit::NEEDS_ADMIN;
     }
+    // The data of the person who installed it, whoever removes it: a
+    // deployment's removal runs as another account.
     let purge: Option<PathBuf> = args.purge_dir.clone().or_else(|| {
-        args.purge
-            .then(|| host.places.user_data_dir(&record.product))
+        args.purge.then(|| {
+            record
+                .data_dir
+                .clone()
+                .unwrap_or_else(|| host.places.user_data_dir(&record.product))
+        })
     });
     let mut engine = Engine {
         sys: host.sys,
@@ -256,6 +301,99 @@ mod tests {
             exit::BUSY
         );
         assert!(!base.exists(), "nothing was touched");
+    }
+
+    #[test]
+    fn an_installation_without_its_record_is_not_installed_beside() {
+        let base = std::env::temp_dir().join(format!(
+            "caecilia-installer-run-unreadable-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        let mut sys = MemorySystem::default();
+        let no = || false;
+        let mut host = Host {
+            sys: &mut sys,
+            places: Places::under(&base),
+            elevated: true,
+            uninstaller: b"MZ".to_vec(),
+            cancelled: &no,
+        };
+        let mut log = Log::in_memory();
+        let v1 = payload("2.0.0");
+        let user = ["/S", "/CURRENTUSER"];
+        assert_eq!(install(&parse(&user), &v1, &mut host, &mut log), exit::OK);
+        let dir = host.places.program_dir(Scope::User, "Caecilia");
+        std::fs::remove_file(dir.join(RECORD)).unwrap();
+
+        // Not beside it, for everyone or again for one person.
+        for args in [
+            &["/S", "/ALLUSERS"][..],
+            &["/S"],
+            &["/S", "/FORCE", "/ALLUSERS"],
+        ] {
+            assert_eq!(
+                install(&parse(args), &v1, &mut host, &mut log),
+                exit::FAILED,
+                "{args:?}"
+            );
+        }
+        // Over it, when asked.
+        assert_eq!(
+            install(&parse(&["/S", "/FORCE"]), &v1, &mut host, &mut log),
+            exit::OK
+        );
+        assert_eq!(Record::load(&dir).unwrap().program_dir, dir);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_purge_takes_the_data_of_whoever_installed() {
+        let base = std::env::temp_dir().join(format!(
+            "caecilia-installer-run-purge-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        let mut sys = MemorySystem::default();
+        let no = || false;
+        let mut host = Host {
+            sys: &mut sys,
+            places: Places::under(&base),
+            elevated: true,
+            uninstaller: b"MZ".to_vec(),
+            cancelled: &no,
+        };
+        let mut log = Log::in_memory();
+        // Installed by a person, whose organs folder the window passes.
+        let theirs = base.join("Person").join("Caecilia");
+        let organs = format!("--organs-dir={}", theirs.join("Organs").display());
+        assert_eq!(
+            install(
+                &parse(&["/S", "/CURRENTUSER", &organs]),
+                &payload("2.0.0"),
+                &mut host,
+                &mut log
+            ),
+            exit::OK
+        );
+        std::fs::create_dir_all(&theirs).unwrap();
+        std::fs::write(theirs.join("session.txt"), b"theirs").unwrap();
+        // Removed by another account, which has data of its own.
+        let mine = host.places.user_data_dir("Caecilia");
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::write(mine.join("session.txt"), b"mine").unwrap();
+        assert_eq!(
+            uninstall(
+                &parse(&["--uninstall", "/S", "/PURGE"]),
+                "Caecilia",
+                &mut host,
+                &mut log
+            ),
+            exit::OK
+        );
+        assert!(!theirs.exists());
+        assert!(mine.join("session.txt").is_file());
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

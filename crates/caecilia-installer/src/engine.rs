@@ -542,6 +542,7 @@ impl Engine<'_> {
             components: plan.components,
             program_dir: plan.program_dir.clone(),
             organs_dir,
+            data_dir: Some(plan.data_dir.clone()),
             files,
             dirs,
             shortcuts,
@@ -731,6 +732,21 @@ impl Engine<'_> {
         if std::env::current_dir().is_ok_and(|cwd| going(&cwd)) {
             let _ = std::env::set_current_dir(std::env::temp_dir());
         }
+        // Only a folder of the product's own name: a record could say
+        // anything, and this removes everything in it.
+        let purge = purge.filter(|dir| {
+            let own = dir
+                .file_name()
+                .is_some_and(|n| n.eq_ignore_ascii_case(&record.product));
+            if !own {
+                self.log.error(format_args!(
+                    "not purging {}: not a {} folder",
+                    dir.display(),
+                    record.product
+                ));
+            }
+            own
+        });
         if let Some(dir) = purge {
             self.log.line("step", "purge");
             match fs::remove_dir_all(dir) {

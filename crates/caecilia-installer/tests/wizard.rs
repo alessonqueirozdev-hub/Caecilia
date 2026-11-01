@@ -164,6 +164,7 @@ fn found_machine(version: &str) -> Found {
         components: Components::parse("app,vst3,organ").unwrap(),
         program_dir: "C:\\Program Files\\Caecilia".into(),
         organs_dir: Some("C:\\AppData\\Caecilia\\Organs".into()),
+        data_dir: Some("C:\\AppData\\Caecilia".into()),
         files: vec![],
         dirs: vec![],
         shortcuts: vec![],

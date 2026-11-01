@@ -134,6 +134,12 @@ from it alone — nothing is removed that it did not install.
 - **Same version**: the page offers *Repair* (lay every file again, by the
   same transaction), *Change* (components, shortcuts) and *Remove*.
 - **Older installer than installed**: refuses, unless `/FORCE`.
+- **Registered, but `install.json` missing or damaged**: what it placed is
+  unknown, so nothing is installed beside it; `/FORCE` installs over it, in
+  its folder and for the same people, and replaces its entry.
+- **`/PURGE`** removes the data folder of the person who installed, which
+  the record keeps, not that of whoever runs the removal (a deployment
+  runs as another account); only a folder named `Caecilia`.
 - **Caecilia 1.x** (Inno key `{7C1E9F2A-3B84-4C7D-9A1E-CAEC11A00001}_is1`):
   detected, and the first page says it is there and can be removed from
   *Apps & features*; the 2.0 installer does not run 1.x's uninstaller itself.
