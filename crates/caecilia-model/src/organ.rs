@@ -281,21 +281,29 @@ impl Organ {
         self.windchests.get(id.index())
     }
 
-    /// The division a single-keyboard controller should play: the manual with
-    /// the most stops (ties to the lowest id). Never the pedal -- a manual
-    /// keyboard routed to a thirty-note pedalboard is silently wrong.
+    /// The division a single-keyboard controller should play: the great --
+    /// the unenclosed manual with the most stops, as a swell box is never
+    /// on the great (ties to the lowest id); failing that, the manual with
+    /// the most stops. Never the pedal -- a manual keyboard routed to a
+    /// thirty-note pedalboard is silently wrong.
     pub fn primary_manual(&self) -> DivisionId {
-        let mut best: Option<&Division> = None;
-        for d in self
-            .divisions
-            .iter()
-            .filter(|d| d.kind == DivisionKind::Manual)
-        {
-            if best.is_none_or(|b| d.stops.len() > b.stops.len()) {
-                best = Some(d);
+        let largest = |enclosed: Option<bool>| {
+            let mut best: Option<&Division> = None;
+            for d in self
+                .divisions
+                .iter()
+                .filter(|d| d.kind == DivisionKind::Manual)
+                .filter(|d| enclosed.is_none_or(|e| d.enclosed == e))
+            {
+                if best.is_none_or(|b| d.stops.len() > b.stops.len()) {
+                    best = Some(d);
+                }
             }
-        }
-        best.or(self.divisions.first())
+            best
+        };
+        largest(Some(false))
+            .or_else(|| largest(None))
+            .or(self.divisions.first())
             .map(|d| d.id)
             .unwrap_or_default()
     }

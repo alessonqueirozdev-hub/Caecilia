@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
-//! The sound panel on the music desk, in three pages: the sound (the level,
-//! the reverb and its room, the master EQ), the tuning (temperament, its
-//! key, the pitch of A, the tremulant), and MIDI learn. Each control moves
-//! its parameter as a gesture, so a host records it as it would its own
-//! knob.
+//! The settings panel on the music desk, in pages of three rows at most, so
+//! each fits the desk of a short window: the sound (the level, the reverb
+//! and its room), the master EQ, the tuning (temperament, its key, the
+//! pitch of A), the tremulant, MIDI (learn, and the input ports where an
+//! application serves them), and the audio devices. Each control moves its
+//! parameter as a gesture, so a host records it as it would its own knob.
 
 use manguebyte_gfx::{Circle, Color, Point, Rect, RoundedRect, Scene, Shadow, Size, Stop, Stroke};
 use manguebyte_params::Param;
@@ -23,20 +24,22 @@ use crate::{EQ_BANDS, ROOM_NAMES};
 
 /// The pages, in the order of their tabs; Audio only where an application
 /// serves the devices.
-pub(crate) const PAGES: [&str; 4] = ["Sound", "Tuning", "MIDI", "Audio"];
-pub(crate) const TUNING: usize = 1;
-pub(crate) const MIDI: usize = 2;
-pub(crate) const AUDIO: usize = 3;
+pub(crate) const PAGES: [&str; 6] = ["Sound", "EQ", "Tuning", "Tremulant", "MIDI", "Audio"];
+pub(crate) const EQ: usize = 1;
+pub(crate) const TUNING: usize = 2;
+pub(crate) const TREMULANT: usize = 3;
+pub(crate) const MIDI: usize = 4;
+pub(crate) const AUDIO: usize = 5;
 
-/// The temperaments as their chips name them.
+/// The temperaments as their chips name them, short enough for one row.
 const TEMPERAMENT_CHIPS: [&str; 8] = [
     "Equal",
-    "Meantone \u{bc}",
-    "Werckmeister III",
-    "Kirnberger III",
+    "Mean \u{bc}",
+    "Werck. III",
+    "Kirnb. III",
     "Vallotti",
     "Young",
-    "Pythagorean",
+    "Pythag.",
     "Just",
 ];
 
@@ -82,7 +85,11 @@ pub(crate) struct SoundView {
 impl SoundView {
     /// How many pages there are: the Audio page only with devices.
     fn pages(&self) -> usize {
-        if self.devices.is_some() { 4 } else { 3 }
+        if self.devices.is_some() {
+            PAGES.len()
+        } else {
+            PAGES.len() - 1
+        }
     }
 }
 
@@ -162,12 +169,16 @@ pub(crate) fn action_name(organ: &caecilia_model::Organ, action: Action) -> Stri
 // ------------------------------------------------------------------ plan
 
 const LABEL: f32 = 92.0;
-const ROW: f32 = 24.0;
+const ROW: f32 = 22.0;
+
+/// The tops of a page's three rows, below the tabs: what the desk of a
+/// short window holds.
+const ROWS: [f32; 3] = [44.0, 70.0, 96.0];
 
 /// A row of chips from `x` to the panel's edge, `n` of them.
 fn chips(size: Size, y: f32, n: usize) -> Vec<Rect> {
     let x = 20.0 + LABEL;
-    let w = (size.width - x - 20.0) / n as f32;
+    let w = (size.width - x - 20.0) / n.max(1) as f32;
     (0..n)
         .map(|i| Rect::new(x + i as f32 * w, y, w - 5.0, ROW))
         .collect()
@@ -185,10 +196,10 @@ fn tabs(size: Size, pages: usize) -> Vec<Rect> {
         .iter()
         .rev()
         .map(|p| {
-            let w = width_of(p, s) + 24.0;
+            let w = width_of(p, s) + 20.0;
             x -= w;
-            let r = Rect::new(x, 12.0, w, 24.0);
-            x -= 6.0;
+            let r = Rect::new(x, 10.0, w, 22.0);
+            x -= 5.0;
             r
         })
         .collect();
@@ -200,23 +211,32 @@ struct SoundPlan {
     level: Rect,
     reverb: Rect,
     rooms: Vec<Rect>,
-    eq: Rect,
+}
+
+fn sound_plan(size: Size) -> SoundPlan {
+    SoundPlan {
+        level: track(size, ROWS[0]),
+        reverb: track(size, ROWS[1]),
+        rooms: chips(size, ROWS[2], ROOM_NAMES.len()),
+    }
+}
+
+struct EqPlan {
+    toggle: Rect,
     /// Each fader's track, and the column it stands in.
     faders: Vec<(Rect, Rect)>,
 }
 
-fn sound_plan(size: Size) -> SoundPlan {
-    let top = 192.0;
-    let bottom = (size.height - 40.0).max(top + 24.0);
+/// The faders stand in whatever height the desk has below the switch.
+fn eq_plan(size: Size) -> EqPlan {
+    let top = ROWS[1] + 10.0;
+    let bottom = (size.height - 24.0).max(top + 12.0);
     let col = (size.width - 40.0) / EQ_BANDS.len() as f32;
-    SoundPlan {
-        level: track(size, 52.0),
-        reverb: track(size, 84.0),
-        rooms: chips(size, 118.0, ROOM_NAMES.len()),
-        eq: Rect::new(20.0 + LABEL, 156.0, 58.0, ROW),
+    EqPlan {
+        toggle: Rect::new(20.0 + LABEL, ROWS[0], 58.0, ROW),
         faders: (0..EQ_BANDS.len())
             .map(|i| {
-                let column = Rect::new(20.0 + i as f32 * col, top - 8.0, col, bottom - top + 36.0);
+                let column = Rect::new(20.0 + i as f32 * col, top - 6.0, col, bottom - top + 12.0);
                 let track = Rect::new(column.center().x - 2.0, top, 4.0, bottom - top);
                 (track, column)
             })
@@ -229,18 +249,14 @@ struct TuningPlan {
     keys: Vec<Rect>,
     pitch: Rect,
     pitches: Vec<Rect>,
-    rate: Rect,
-    depth: Rect,
 }
 
 fn tuning_plan(size: Size) -> TuningPlan {
-    let mut temperaments = chips(size, 50.0, 4);
-    temperaments.extend(chips(size, 78.0, 4));
     let x = 20.0 + LABEL;
     let pw = 46.0;
     let pitch = Rect::new(
         x,
-        146.0,
+        ROWS[2],
         (size.width - x - 20.0 - 4.0 * (pw + 4.0)).max(40.0),
         ROW,
     );
@@ -248,35 +264,68 @@ fn tuning_plan(size: Size) -> TuningPlan {
         .map(|i| {
             Rect::new(
                 pitch.right() + 10.0 + i as f32 * (pw + 4.0),
-                146.0,
+                ROWS[2],
                 pw - 4.0,
                 ROW,
             )
         })
         .collect();
     TuningPlan {
-        temperaments,
-        keys: chips(size, 112.0, KEY_NAMES.len()),
+        temperaments: chips(size, ROWS[0], TEMPERAMENT_CHIPS.len()),
+        keys: chips(size, ROWS[1], KEY_NAMES.len()),
         pitch: Rect::new(pitch.x, pitch.y, pitch.width - 60.0, ROW),
         pitches,
-        rate: track(size, 190.0),
-        depth: track(size, 222.0),
+    }
+}
+
+struct TremulantPlan {
+    rate: Rect,
+    depth: Rect,
+}
+
+fn tremulant_plan(size: Size) -> TremulantPlan {
+    TremulantPlan {
+        rate: track(size, ROWS[0]),
+        depth: track(size, ROWS[1]),
     }
 }
 
 struct MidiPlan {
     learn: Rect,
     forget_all: Rect,
+    /// Whether there is a row of input ports: where an application serves
+    /// them.
+    ports_row: bool,
+    /// The input ports' chips.
+    ports: Vec<Rect>,
+    /// Where the line under the learn button goes.
+    note: f32,
     /// Each binding's row and its forget mark.
     rows: Vec<(Rect, Rect)>,
 }
 
-fn midi_plan(size: Size, count: usize) -> MidiPlan {
-    let top = 118.0;
-    let room = ((size.height - top - 16.0) / 26.0).max(0.0) as usize;
+/// The ports shown in a row, at most.
+const PORTS_SHOWN: usize = 4;
+
+fn midi_plan(size: Size, count: usize, ports: Option<usize>) -> MidiPlan {
+    let ports_row = ports.is_some();
+    let ports = match ports {
+        Some(n) if n > 0 => chips(size, ROWS[1], n.min(PORTS_SHOWN)),
+        _ => Vec::new(),
+    };
+    let note = if ports_row {
+        ROWS[2] + 3.0
+    } else {
+        ROWS[1] + 3.0
+    };
+    let top = note + 20.0;
+    let room = ((size.height - top - 10.0) / 26.0).max(0.0) as usize;
     MidiPlan {
-        learn: Rect::new(20.0, 52.0, 84.0, 26.0),
-        forget_all: Rect::new(size.width - 20.0 - 90.0, 52.0, 90.0, 26.0),
+        learn: Rect::new(20.0, ROWS[0], 84.0, ROW),
+        forget_all: Rect::new(size.width - 20.0 - 90.0, ROWS[0], 90.0, ROW),
+        ports_row,
+        ports,
+        note,
         rows: (0..count.min(room))
             .map(|i| {
                 let r = Rect::new(20.0, top + i as f32 * 26.0, size.width - 40.0, 22.0);
@@ -292,7 +341,8 @@ struct AudioPlan {
     outputs: Vec<Rect>,
     rates: Vec<Rect>,
     buffers: Vec<Rect>,
-    midi: Vec<Rect>,
+    /// How many lines of the report there is room for.
+    report_lines: usize,
 }
 
 fn rate_name(rate: Option<u32>) -> String {
@@ -309,31 +359,22 @@ fn buffer_name(frames: Option<u32>) -> String {
 
 fn audio_plan(size: Size, devices: &DevicesView, picking: bool) -> AudioPlan {
     let x = 20.0 + LABEL;
-    let output = Rect::new(x, 50.0, size.width - x - 20.0, 26.0);
+    let output = Rect::new(x, ROWS[0], size.width - x - 20.0, ROW);
     let outputs = if picking {
-        let room = ((size.height - 90.0) / 26.0).max(0.0) as usize;
+        let room = ((size.height - ROWS[1] - 8.0) / 26.0).max(0.0) as usize;
         (0..devices.outputs.len().min(room))
-            .map(|i| Rect::new(x, 82.0 + i as f32 * 26.0, output.width, 22.0))
+            .map(|i| Rect::new(x, ROWS[1] + i as f32 * 26.0, output.width, 22.0))
             .collect()
     } else {
         Vec::new()
     };
-    let rates = chips(size, 86.0, devices.sample_rates.len() + 1);
-    let buffers = chips(size, 118.0, devices.buffer_sizes.len() + 1);
-    let per_row = 3;
-    let w = (size.width - x - 20.0) / per_row as f32;
-    let midi = (0..devices.midi_inputs.len().min(per_row * 2))
-        .map(|i| {
-            let (row, col) = (i / per_row, i % per_row);
-            Rect::new(x + col as f32 * w, 152.0 + row as f32 * 30.0, w - 5.0, ROW)
-        })
-        .collect();
+    let below = ROWS[2] + ROW + 6.0;
     AudioPlan {
         output,
         outputs,
-        rates,
-        buffers,
-        midi,
+        rates: chips(size, ROWS[1], devices.sample_rates.len() + 1),
+        buffers: chips(size, ROWS[2], devices.buffer_sizes.len() + 1),
+        report_lines: (((size.height - 10.0 - below) / 15.0).max(0.0) as usize).min(3),
     }
 }
 
@@ -418,7 +459,6 @@ fn chip(scene: &mut Scene, snapshot: &Snapshot, r: Rect, name: &str, on: bool) {
 }
 
 fn draw_sound(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
-    let look = snapshot.look;
     let plan = sound_plan(size);
     slider(
         scene,
@@ -440,11 +480,16 @@ fn draw_sound(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
     for (i, r) in plan.rooms.iter().enumerate() {
         chip(scene, snapshot, *r, ROOM_NAMES[i], i == sound.room);
     }
-    label(scene, snapshot, plan.eq.y, "EQ");
+}
+
+fn draw_eq(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
+    let look = snapshot.look;
+    let plan = eq_plan(size);
+    label(scene, snapshot, plan.toggle.y, "Master EQ");
     chip(
         scene,
         snapshot,
-        plan.eq,
+        plan.toggle,
         if sound.eq { "On" } else { "Off" },
         sound.eq,
     );
@@ -452,7 +497,7 @@ fn draw_sound(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
         scene,
         "the organ's voicing, \u{b1}18 dB",
         style(10.5, 450.0, look.muted),
-        Point::new(plan.eq.right() + 12.0, plan.eq.y + 5.0),
+        Point::new(plan.toggle.right() + 12.0, plan.toggle.y + 5.0),
         0.0,
     );
     let ink = if sound.eq { look.text } else { look.muted };
@@ -479,14 +524,14 @@ fn draw_sound(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
             scene,
             EQ_BANDS[i].name,
             style(11.0, 600.0, ink),
-            Point::new(column.center().x, track.bottom() + 8.0),
+            Point::new(column.center().x, track.bottom() + 6.0),
             0.5,
         );
         text(
             scene,
             &format!("{:+.1}", sound.bands_db[i]),
             style(10.0, 500.0, look.text2),
-            Point::new(column.center().x + 26.0, track.y - 4.0),
+            Point::new(column.center().x + 30.0, track.center().y - 6.0),
             0.5,
         );
     }
@@ -525,11 +570,15 @@ fn draw_tuning(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &Sound
             (sound.pitch_hz - hz).abs() < 0.05,
         );
     }
+}
+
+fn draw_tremulant(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
+    let plan = tremulant_plan(size);
     slider(
         scene,
         snapshot,
         plan.rate,
-        "Tremulant",
+        "Rate",
         sound.rate,
         &format!("{:.2} Hz", sound.rate_hz),
     );
@@ -541,12 +590,20 @@ fn draw_tuning(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &Sound
         sound.depth,
         &format!("{:.0} %", sound.depth * 100.0),
     );
+    text(
+        scene,
+        "The tremulant stop on the console turns it on.",
+        style(10.5, 450.0, snapshot.look.muted),
+        Point::new(20.0, ROWS[2] + 4.0),
+        0.0,
+    );
 }
 
 fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
     let look = snapshot.look;
     let learn = &sound.learn;
-    let plan = midi_plan(size, learn.bindings.len());
+    let ports = sound.devices.as_ref().map(|d| d.midi_inputs.len());
+    let plan = midi_plan(size, learn.bindings.len(), ports);
     chip(scene, snapshot, plan.learn, "Learn", learn.on);
     if !learn.bindings.is_empty() {
         chip(scene, snapshot, plan.forget_all, "Forget all", false);
@@ -563,25 +620,41 @@ fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundVi
         Point::new(plan.learn.right() + 14.0, plan.learn.y + 5.0),
         0.0,
     );
+    if plan.ports_row {
+        label(scene, snapshot, ROWS[1] + 1.0, "Inputs");
+        match &sound.devices {
+            Some(d) if !d.midi_inputs.is_empty() => {
+                for (r, port) in plan.ports.iter().zip(&d.midi_inputs) {
+                    chip(scene, snapshot, *r, &port.name, port.chosen);
+                }
+            }
+            _ => {
+                text(
+                    scene,
+                    "No MIDI input port is connected",
+                    style(11.5, 500.0, look.text2),
+                    Point::new(20.0 + LABEL, ROWS[1] + 5.0),
+                    0.0,
+                );
+            }
+        }
+    }
     let below = learn.last.clone().unwrap_or_else(|| {
-        "Press Learn, then a stop, coupler or piston, then the control to bind to it.".into()
+        if learn.bindings.is_empty() {
+            "Press Learn, then a stop, coupler or piston, then the control to bind to it. \
+             No control learned yet."
+                .into()
+        } else {
+            "Press Learn, then a stop, coupler or piston, then the control to bind to it.".into()
+        }
     });
     text(
         scene,
         &below,
         style(10.5, 450.0, look.muted),
-        Point::new(20.0, 88.0),
+        Point::new(20.0, plan.note),
         0.0,
     );
-    if learn.bindings.is_empty() {
-        text(
-            scene,
-            "No control learned yet.",
-            style(11.5, 500.0, look.text2),
-            Point::new(20.0, 120.0),
-            0.0,
-        );
-    }
     for ((r, x), (control, action)) in plan.rows.iter().zip(&learn.bindings) {
         scene.fill(RoundedRect::new(*r, 6.0), look.edge.with_alpha(0x60));
         text(
@@ -696,21 +769,15 @@ fn draw_audio(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
             frames == devices.buffer_size,
         );
     }
-    label(scene, snapshot, 152.0, "MIDI in");
-    if devices.midi_inputs.is_empty() {
-        text(
-            scene,
-            "No MIDI input port is connected",
-            style(11.5, 500.0, look.text2),
-            Point::new(20.0 + LABEL, 156.0),
-            0.0,
-        );
-    }
-    for (r, port) in plan.midi.iter().zip(&devices.midi_inputs) {
-        chip(scene, snapshot, *r, &port.name, port.chosen);
-    }
-    let lines: Vec<&str> = devices.report.lines().take(3).collect();
-    let bottom = size.height - 22.0;
+    // What plays, as much of it as there is room for; a failure first.
+    let all: Vec<&str> = devices.report.lines().collect();
+    let n = plan.report_lines.min(all.len());
+    let lines = if devices.failed {
+        &all[all.len() - n..]
+    } else {
+        &all[..n]
+    };
+    let bottom = size.height - 10.0;
     for (i, line) in lines.iter().enumerate() {
         let failed = devices.failed && i + 1 == lines.len();
         let ink = if failed {
@@ -730,24 +797,48 @@ fn draw_audio(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
     }
 }
 
-/// The sound panel, on its page.
+/// The settings panel, on its page.
 pub(crate) fn draw(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
     let look = snapshot.look;
-    text(
-        scene,
-        PAGES[sound.page],
-        style(13.0, 650.0, look.text),
-        Point::new(20.0, 16.0),
-        0.0,
-    );
-    for (i, r) in tabs(size, sound.pages()).iter().enumerate() {
+    let tabs = tabs(size, sound.pages());
+    let heading = style(13.0, 650.0, look.text);
+    // The page's name, where the tabs leave room for it.
+    if tabs
+        .first()
+        .is_none_or(|t| t.x > 28.0 + width_of(PAGES[sound.page], heading))
+    {
+        text(
+            scene,
+            PAGES[sound.page],
+            heading,
+            Point::new(20.0, 13.0),
+            0.0,
+        );
+    }
+    for (i, r) in tabs.iter().enumerate() {
         chip(scene, snapshot, *r, PAGES[i], i == sound.page);
     }
     match sound.page {
-        AUDIO => draw_audio(size, scene, snapshot, sound),
+        EQ => draw_eq(size, scene, snapshot, sound),
         TUNING => draw_tuning(size, scene, snapshot, sound),
+        TREMULANT => draw_tremulant(size, scene, snapshot, sound),
         MIDI => draw_midi(size, scene, snapshot, sound),
+        AUDIO => draw_audio(size, scene, snapshot, sound),
         _ => draw_sound(size, scene, snapshot, sound),
+    }
+}
+
+/// The MIDI input ports, as the screen reader says them.
+fn ports_said(devices: &DevicesView) -> String {
+    let ports: Vec<String> = devices
+        .midi_inputs
+        .iter()
+        .map(|p| format!("{} {}", p.name, if p.chosen { "open" } else { "closed" }))
+        .collect();
+    if ports.is_empty() {
+        "none".to_string()
+    } else {
+        ports.join(", ")
     }
 }
 
@@ -758,21 +849,12 @@ pub(crate) fn describe(sound: &SoundView) -> String {
             let Some(devices) = &sound.devices else {
                 return "Audio".into();
             };
-            let ports: Vec<String> = devices
-                .midi_inputs
-                .iter()
-                .map(|p| format!("{} {}", p.name, if p.chosen { "open" } else { "closed" }))
-                .collect();
             let mut said = format!(
                 "Audio: {}; rate {}, buffer {}; MIDI in: {}",
                 devices.report.lines().next().unwrap_or(""),
                 rate_name(devices.sample_rate),
                 buffer_name(devices.buffer_size),
-                if ports.is_empty() {
-                    "none".to_string()
-                } else {
-                    ports.join(", ")
-                }
+                ports_said(devices)
             );
             for line in devices.report.lines().skip(1) {
                 said.push_str(&format!("; {line}"));
@@ -780,13 +862,26 @@ pub(crate) fn describe(sound: &SoundView) -> String {
             said
         }
         TUNING => format!(
-            "Tuning: {} on {}, A {:.1} Hz; tremulant {:.2} Hz, depth {:.0} %",
-            TEMPERAMENT_NAMES[sound.temperament],
-            KEY_NAMES[sound.key],
-            sound.pitch_hz,
+            "Tuning: {} on {}, A {:.1} Hz",
+            TEMPERAMENT_NAMES[sound.temperament], KEY_NAMES[sound.key], sound.pitch_hz,
+        ),
+        TREMULANT => format!(
+            "Tremulant: {:.2} Hz, depth {:.0} %",
             sound.rate_hz,
             sound.depth * 100.0
         ),
+        EQ => {
+            let bands: Vec<String> = EQ_BANDS
+                .iter()
+                .zip(sound.bands_db)
+                .map(|(b, db)| format!("{} {db:+.1} dB", b.name))
+                .collect();
+            format!(
+                "EQ {}: {}",
+                if sound.eq { "on" } else { "off" },
+                bands.join(", ")
+            )
+        }
         MIDI => {
             let learn = &sound.learn;
             let mut said = match (learn.on, &learn.waiting_for) {
@@ -794,6 +889,9 @@ pub(crate) fn describe(sound: &SoundView) -> String {
                 (true, None) => "MIDI: learning, choose a control on the console".into(),
                 (false, _) => "MIDI".into(),
             };
+            if let Some(devices) = &sound.devices {
+                said.push_str(&format!("; inputs: {}", ports_said(devices)));
+            }
             if let Some(last) = &learn.last {
                 said.push_str(&format!("; {last}"));
             }
@@ -809,21 +907,12 @@ pub(crate) fn describe(sound: &SoundView) -> String {
             }
             said
         }
-        _ => {
-            let bands: Vec<String> = EQ_BANDS
-                .iter()
-                .zip(sound.bands_db)
-                .map(|(b, db)| format!("{} {db:+.1} dB", b.name))
-                .collect();
-            format!(
-                "Sound: volume {:+.1} dB, reverb {:.0} % in the {}; EQ {}: {}",
-                sound.level_db,
-                sound.reverb * 100.0,
-                ROOM_NAMES[sound.room].to_lowercase(),
-                if sound.eq { "on" } else { "off" },
-                bands.join(", ")
-            )
-        }
+        _ => format!(
+            "Sound: volume {:+.1} dB, reverb {:.0} % in the {}",
+            sound.level_db,
+            sound.reverb * 100.0,
+            ROOM_NAMES[sound.room].to_lowercase(),
+        ),
     }
 }
 
@@ -875,9 +964,6 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
                     let on = Some(frames == devices.buffer_size);
                     items.push(button(format!("Buffer {}", buffer_name(frames)), on, *r));
                 }
-                for (r, port) in plan.midi.iter().zip(&devices.midi_inputs) {
-                    items.push(button(format!("MIDI {}", port.name), Some(port.chosen), *r));
-                }
             }
         }
         TUNING => {
@@ -898,14 +984,30 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
                 let on = Some((sound.pitch_hz - hz).abs() < 0.05);
                 items.push(button(format!("A {hz:.0}"), on, *r));
             }
+        }
+        TREMULANT => {
+            let plan = tremulant_plan(size);
             items.push(slider_item("Tremulant rate", plan.rate));
             items.push(slider_item("Tremulant depth", plan.depth));
         }
+        EQ => {
+            let plan = eq_plan(size);
+            items.push(button("EQ".into(), Some(sound.eq), plan.toggle));
+            for (i, (_, column)) in plan.faders.iter().enumerate() {
+                items.push(slider_item(&format!("EQ {}", EQ_BANDS[i].name), *column));
+            }
+        }
         MIDI => {
-            let plan = midi_plan(size, sound.learn.bindings.len());
+            let ports = sound.devices.as_ref().map(|d| d.midi_inputs.len());
+            let plan = midi_plan(size, sound.learn.bindings.len(), ports);
             items.push(button("Learn".into(), Some(sound.learn.on), plan.learn));
             if !sound.learn.bindings.is_empty() {
                 items.push(button("Forget all".into(), None, plan.forget_all));
+            }
+            if let Some(devices) = &sound.devices {
+                for (r, port) in plan.ports.iter().zip(&devices.midi_inputs) {
+                    items.push(button(format!("MIDI {}", port.name), Some(port.chosen), *r));
+                }
             }
             for ((_, x), (control, _)) in plan.rows.iter().zip(&sound.learn.bindings) {
                 items.push(button(format!("Forget {control}"), None, *x));
@@ -918,10 +1020,6 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
             for (i, r) in plan.rooms.iter().enumerate() {
                 let on = Some(i == sound.room);
                 items.push(button(format!("Room {}", ROOM_NAMES[i]), on, *r));
-            }
-            items.push(button("EQ".into(), Some(sound.eq), plan.eq));
-            for (i, (_, column)) in plan.faders.iter().enumerate() {
-                items.push(slider_item(&format!("EQ {}", EQ_BANDS[i].name), *column));
             }
         }
     }
@@ -993,6 +1091,8 @@ pub(crate) fn input(
         let pressed = match sound.page {
             AUDIO => press_audio(source, sound, size, at),
             TUNING => press_tuning(&context, source, size, at),
+            TREMULANT => press_tremulant(&context, source, size, at),
+            EQ => press_eq(&context, source, size, at),
             MIDI => press_midi(source, sound, size, at),
             _ => press_sound(&context, source, size, at),
         };
@@ -1041,7 +1141,15 @@ fn press_sound(context: &EditorContext, source: &Source, size: Size, at: Point) 
     } else if let Some(i) = plan.rooms.iter().position(|r| r.contains(at)) {
         Gesture::set_once(context, p.room.param_id(), choice(i, ROOM_NAMES.len()));
         Pressed::Done
-    } else if plan.eq.contains(at) {
+    } else {
+        Pressed::Nothing
+    }
+}
+
+fn press_eq(context: &EditorContext, source: &Source, size: Size, at: Point) -> Pressed {
+    let p = &source.shared().params;
+    let plan = eq_plan(size);
+    if plan.toggle.contains(at) {
         let next = if p.eq.value() { 0.0 } else { 1.0 };
         Gesture::set_once(context, p.eq.param_id(), next);
         Pressed::Done
@@ -1070,7 +1178,15 @@ fn press_tuning(context: &EditorContext, source: &Source, size: Size, at: Point)
         Pressed::Done
     } else if row(plan.pitch).contains(at) {
         Pressed::Drag(begin(context, &p.pitch, plan.pitch, false, at))
-    } else if row(plan.rate).contains(at) {
+    } else {
+        Pressed::Nothing
+    }
+}
+
+fn press_tremulant(context: &EditorContext, source: &Source, size: Size, at: Point) -> Pressed {
+    let p = &source.shared().params;
+    let plan = tremulant_plan(size);
+    if row(plan.rate).contains(at) {
         Pressed::Drag(begin(context, &p.tremulant_rate, plan.rate, false, at))
     } else if row(plan.depth).contains(at) {
         Pressed::Drag(begin(context, &p.tremulant_depth, plan.depth, false, at))
@@ -1080,12 +1196,20 @@ fn press_tuning(context: &EditorContext, source: &Source, size: Size, at: Point)
 }
 
 fn press_midi(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pressed {
-    let plan = midi_plan(size, sound.learn.bindings.len());
+    let ports = sound.devices.as_ref().map(|d| d.midi_inputs.len());
+    let plan = midi_plan(size, sound.learn.bindings.len(), ports);
     if plan.learn.contains(at) {
         source.set_learning(!sound.learn.on);
         Pressed::Done
     } else if !sound.learn.bindings.is_empty() && plan.forget_all.contains(at) {
         source.forget_controls(None);
+        Pressed::Done
+    } else if let (Some(i), Some(devices)) = (
+        plan.ports.iter().position(|r| r.contains(at)),
+        &sound.devices,
+    ) {
+        let port = &devices.midi_inputs[i];
+        source.ask_devices(DeviceRequest::MidiInput(port.id.clone(), !port.chosen));
         Pressed::Done
     } else if let Some(i) = plan.rows.iter().position(|(_, x)| x.contains(at)) {
         source.forget_controls(Some(i));
@@ -1117,9 +1241,6 @@ fn press_audio(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pre
     } else if let Some(i) = plan.buffers.iter().position(|r| r.contains(at)) {
         let frames = i.checked_sub(1).map(|i| devices.buffer_sizes[i]);
         source.ask_devices(DeviceRequest::BufferSize(frames));
-    } else if let Some(i) = plan.midi.iter().position(|r| r.contains(at)) {
-        let port = &devices.midi_inputs[i];
-        source.ask_devices(DeviceRequest::MidiInput(port.id.clone(), !port.chosen));
     } else {
         return Pressed::Nothing;
     }

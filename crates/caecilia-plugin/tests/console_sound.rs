@@ -92,11 +92,15 @@ impl Console {
 #[test]
 fn the_sound_panel_says_how_the_organ_sounds() {
     let mut c = Console::open();
-    c.click(Role::Button, "Sound");
+    c.click(Role::Button, "Settings");
     assert_eq!(
         c.says("Wind"),
-        "Sound: volume +0.0 dB, reverb 25 % in the hall; EQ on: Warmth +2.0 dB, \
-         Boxiness -2.5 dB, Body +0.0 dB, Presence +1.5 dB, Air +2.0 dB"
+        "Sound: volume +0.0 dB, reverb 25 % in the hall"
+    );
+    c.click(Role::Button, "Page EQ");
+    assert_eq!(
+        c.says("Wind"),
+        "EQ on: Warmth +2.0 dB, Boxiness -2.5 dB, Body +0.0 dB, Presence +1.5 dB, Air +2.0 dB"
     );
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
     std::fs::create_dir_all(&dir).unwrap();
@@ -107,7 +111,7 @@ fn the_sound_panel_says_how_the_organ_sounds() {
 #[test]
 fn every_control_moves_its_parameter() {
     let mut c = Console::open();
-    c.click(Role::Button, "Sound");
+    c.click(Role::Button, "Settings");
     let params = c.h.plugin_mut().params();
 
     c.click(Role::Button, "Room Cathedral");
@@ -129,6 +133,7 @@ fn every_control_moves_its_parameter() {
     c.drag("Reverb", 80.0, 0.0);
     assert!(params.reverb.value() > 0.3, "{}", params.reverb.value());
 
+    c.click(Role::Button, "Page EQ");
     c.drag("EQ Air", 0.0, -20.0);
     assert!(
         params.eq_bands[4].value() > 2.5,
@@ -144,12 +149,9 @@ fn every_control_moves_its_parameter() {
 #[test]
 fn the_tuning_page_tunes_the_organ_and_its_tremulant() {
     let mut c = Console::open();
-    c.click(Role::Button, "Sound");
+    c.click(Role::Button, "Settings");
     c.click(Role::Button, "Page Tuning");
-    assert_eq!(
-        c.says("Wind"),
-        "Tuning: Equal on C, A 440.0 Hz; tremulant 5.50 Hz, depth 50 %"
-    );
+    assert_eq!(c.says("Wind"), "Tuning: Equal on C, A 440.0 Hz");
     let params = c.h.plugin_mut().params();
     c.click(Role::Button, "Werckmeister III");
     c.click(Role::Button, "Key G");
@@ -161,16 +163,13 @@ fn the_tuning_page_tunes_the_organ_and_its_tremulant() {
         "{}",
         params.pitch.value()
     );
+    assert_eq!(c.says("Wind"), "Tuning: Werckmeister III on G, A 415.0 Hz");
+    c.click(Role::Button, "Page Tremulant");
+    assert_eq!(c.says("Wind"), "Tremulant: 5.50 Hz, depth 50 %");
     c.drag("Tremulant rate", 60.0, 0.0);
     c.drag("Tremulant depth", -60.0, 0.0);
     assert!(params.tremulant_rate.value() > 5.6);
     assert!(params.tremulant_depth.value() < 0.45);
-    assert!(
-        c.says("Wind")
-            .starts_with("Tuning: Werckmeister III on G, A 415.0 Hz"),
-        "{}",
-        c.says("Wind")
-    );
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
     std::fs::create_dir_all(&dir).unwrap();
     let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
@@ -180,7 +179,7 @@ fn the_tuning_page_tunes_the_organ_and_its_tremulant() {
 #[test]
 fn learn_binds_a_midi_control_to_a_stop_pressed_on_the_console() {
     let mut c = Console::open();
-    c.click(Role::Button, "Sound");
+    c.click(Role::Button, "Settings");
     c.click(Role::Button, "Page MIDI");
     assert!(
         c.says("Wind").ends_with("no control learned"),

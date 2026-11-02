@@ -524,10 +524,10 @@ impl Source {
     /// pulled out each second, and the devices listed afresh every few
     /// seconds while the Audio page shows them.
     fn follow_devices(&self, now: Duration) {
-        if self.devices.borrow().is_none() {
-            return;
-        }
-        let showing = self.sound.get() && self.page.get() == sound_page::AUDIO;
+        // Not served yet is asked again each second: the application may
+        // start serving after the console opened.
+        let showing =
+            self.sound.get() && matches!(self.page.get(), sound_page::AUDIO | sound_page::MIDI);
         let requests = std::mem::take(&mut *self.device_requests.borrow_mut());
         let due = match self.devices_asked.get() {
             None => Some(showing),

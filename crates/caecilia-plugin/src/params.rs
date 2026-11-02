@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use caecilia_model::{Diagnostic, Organ, demo_organ};
+use caecilia_model::{Diagnostic, Organ, caecilia_organ};
 use caecilia_registration::{MASK_CAPACITY, Piston, factory_generals};
 
 use crate::console::{ConsoleMemory, GENERALS};
@@ -259,7 +259,7 @@ impl CaeciliaParams {
             Some(p) => {
                 OrganSlot::read(p).and_then(|(organ, _)| self.take_organ(organ, Some(p), false))
             }
-            None => self.take_organ(demo_organ(), None, false),
+            None => self.take_organ(caecilia_organ(), None, false),
         };
         if let Err(e) = result {
             eprintln!("Caecilia: the session's organ {wanted} did not load: {e}");

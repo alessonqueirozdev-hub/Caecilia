@@ -37,7 +37,7 @@ fn program_change_recalls_the_factory_generals() {
     h.render(512);
     let pp = drawn(&h);
     // The 8' flutes of the manuals: Grand-Orgue and Récit Bourdons.
-    assert_eq!(pp, [9, 18]);
+    assert_eq!(pp, [9, 19]);
     midi(
         &mut h,
         512,
@@ -47,7 +47,7 @@ fn program_change_recalls_the_factory_generals() {
         },
     ); // T
     h.render(512);
-    assert_eq!(drawn(&h).len(), 26, "the tutti general draws everything");
+    assert_eq!(drawn(&h).len(), 32, "the tutti general draws everything");
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn a_learned_control_draws_a_stop_and_a_learned_key_fires_a_piston() {
         },
     );
     h.render(512);
-    assert_eq!(drawn(&h).len(), 26);
+    assert_eq!(drawn(&h).len(), 32);
     assert_eq!(
         h.plugin_mut().engine().unwrap().active_voices(),
         0,
@@ -174,7 +174,7 @@ fn undo_reaches_back_through_the_host_and_the_pistons() {
         },
     );
     h.render(256);
-    assert_eq!(drawn(&h), [9, 18]);
+    assert_eq!(drawn(&h), [9, 19]);
 
     ctl.lock().unwrap().undo();
     h.render(256);
@@ -205,10 +205,10 @@ fn the_controller_speaks_the_registration_grammar_and_explains() {
         }));
         assert!(c.engage("family:kazoo").is_err());
         assert_eq!(c.explain(StopId(15)).reason, Reason::PlenumMixture);
-        assert_eq!(c.explain(StopId(23)).reason, Reason::SelectorMatch);
+        assert_eq!(c.explain(StopId(28)).reason, Reason::SelectorMatch);
     }
     h.render(256);
-    assert_eq!(drawn(&h), [6, 7, 10, 13, 15, 23, 24, 25]);
+    assert_eq!(drawn(&h), [6, 7, 10, 13, 15, 28, 29, 30, 31]);
     assert_eq!(h.plugin_mut().engine().unwrap().active_voices(), 0);
 }
 

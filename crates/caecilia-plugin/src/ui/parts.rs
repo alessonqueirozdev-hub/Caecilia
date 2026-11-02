@@ -7,7 +7,8 @@
 use std::rc::Rc;
 
 use manguebyte_gfx::{
-    Circle, Extend, Point, RadialGradient, Rect, RoundedRect, Scene, Shadow, Size, Stop, Stroke,
+    Circle, Extend, Image, Point, RadialGradient, Rect, RoundedRect, Sampling, Scene, Shadow, Size,
+    Stop, Stroke,
 };
 use manguebyte_ui::access::{AccessNode, Role};
 use manguebyte_ui::layout::Align;
@@ -21,10 +22,16 @@ use super::bench::{BENCH, bench};
 use super::controls::{jamb_view, pedalboard, shoes, status};
 use super::demos::{self, TOUR_ROW};
 use super::live::{Item, live};
-use super::paint::{arrow, gauge, heading, panel, style, text, vertical, width_of};
+use super::paint::{arrow, gauge, heading, panel, style, text, width_of};
 use super::registration::registration;
 use super::snapshot::{DemosView, Snapshot, Source};
 use super::sound;
+
+thread_local! {
+    /// The Caecilia's mark, drawn beside its name.
+    static MARK: Option<Image> =
+        Image::decode_png(include_bytes!("../../../../assets/brand/caecilia-mark-96.png")).ok();
+}
 
 /// A row of the organ library.
 const LIBRARY_ROW: f32 = 26.0;
@@ -331,30 +338,22 @@ fn title(source: &Rc<Source>) -> View {
         |_| 0,
         |size, scene, snapshot| {
             let look = snapshot.look;
-            // Five pipes of a flat, in brass.
-            let bezel = [
-                Stop::new(0.0, look.brass_light),
-                Stop::new(1.0, look.brass_dark),
-            ];
             let top = (size.height - 34.0) / 2.0;
-            let heights = [18.0, 25.0, 32.0, 25.0, 18.0];
-            for (i, h) in heights.iter().enumerate() {
-                let x = 2.0 + i as f32 * 6.4;
-                let body = Rect::new(x, top + 33.0 - h, 5.0, *h);
-                scene.fill(
-                    RoundedRect::new(body, 2.5),
-                    vertical(Rect::new(0.0, top, 34.0, 34.0), &bezel),
-                );
-                scene.fill(
-                    Rect::new(x + 1.2, top + 33.0 - h * 0.28, 2.6, 1.6),
-                    look.ground.with_alpha(0xC0),
-                );
-            }
+            // The mark: the gold C and its pipes.
+            MARK.with(|mark| {
+                if let Some(mark) = mark {
+                    scene.image(
+                        mark,
+                        Rect::new(0.0, top - 4.0, 40.0, 40.0),
+                        Sampling::Bilinear,
+                    );
+                }
+            });
             text(
                 scene,
                 "Caecilia",
                 style(17.0, 650.0, look.text),
-                Point::new(46.0, top - 1.0),
+                Point::new(50.0, top - 1.0),
                 0.0,
             );
             let organ = &snapshot.organ;
@@ -367,7 +366,7 @@ fn title(source: &Rc<Source>) -> View {
                     organ.stops().len()
                 ),
                 style(11.5, 450.0, look.text2),
-                Point::new(46.0, top + 21.0),
+                Point::new(50.0, top + 21.0),
                 0.0,
             );
         },

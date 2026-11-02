@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
-//! The Caecilia demonstration organ: three divisions, 26 stops, one rank per
-//! stop, one chest per division, three couplers.
+//! The Caecilia's organs: the demonstration organ 1.x played (three
+//! divisions, 26 stops, one rank per stop, one chest per division, three
+//! couplers), which the references hold the sound to, and the Caecilia Pipe
+//! Organ 2.0 plays, the same with a full French Récit.
 
 use crate::builder::{OrganBuilder, StopSpec};
 use crate::footage::Footage;
@@ -19,6 +21,9 @@ fn reed_voice(name: &str) -> Option<RecipeOverride> {
         "Trompette 8" => (1.0, 1200.0, 0.0),
         "Clairon 4" => (1.15, 1450.0, -1.0),
         "Basson-Hautbois 8" => (0.6, 1750.0, -7.0),
+        // Short half-length resonators: nasal, the fundamental weak, a
+        // vowel-like formant.
+        "Voix Humaine 8" => (0.7, 1100.0, -5.0),
         _ => return None,
     };
     Some(RecipeOverride {
@@ -28,14 +33,26 @@ fn reed_voice(name: &str) -> Option<RecipeOverride> {
     })
 }
 
-/// Build the demonstration organ.
+/// The demonstration organ 1.x played, stop for stop: what the references
+/// hold the sound to.
 pub fn demo_organ() -> Organ {
+    build("Caecilia Demonstration Organ", false)
+}
+
+/// The organ the Caecilia plays when no other is chosen: the demonstration
+/// organ with a full French Récit -- a Diapason, a Prestant, the cornet's
+/// mutations, an Octavin and a Voix Humaine besides 1.x's eight.
+pub fn caecilia_organ() -> Organ {
+    build("Caecilia Pipe Organ", true)
+}
+
+fn build(name: &str, full_recit: bool) -> Organ {
     use ChorusRole as R;
     use Footage as F;
     use PitchClass as P;
     use TonalFamily as T;
 
-    let mut b = OrganBuilder::new("Caecilia Demonstration Organ", "Alesson Queiroz", 2026);
+    let mut b = OrganBuilder::new(name, "Alesson Queiroz", 2026);
 
     let chest_pedal = b.chest("Pédale chest", 980.0, false);
     let chest_go = b.chest("Grand-Orgue chest", 812.0, false);
@@ -336,7 +353,96 @@ pub fn demo_organ() -> Organ {
             true,
         ),
     ];
-    for (division, name, family, footage, class, role, mixture, stopped) in stops {
+    // The full Récit, in the order its stops stand on the jamb: foundations,
+    // the flutes and their mutations, the crown, the reeds.
+    let full: [(_, &str, _, _, _, _, &[F], bool); 6] = [
+        (
+            recit,
+            "Diapason 8",
+            T::Principal,
+            F::EIGHT,
+            P::Unison,
+            R::Foundation,
+            &[],
+            true,
+        ),
+        (
+            recit,
+            "Prestant 4",
+            T::Principal,
+            F::FOUR,
+            P::Octave,
+            R::Chorus,
+            &[],
+            true,
+        ),
+        (
+            recit,
+            "Nasard 2 2/3",
+            T::Flute,
+            F::TWO_AND_TWO_THIRDS,
+            P::Mutation,
+            R::Color,
+            &[],
+            false,
+        ),
+        (
+            recit,
+            "Octavin 2",
+            T::Flute,
+            F::TWO,
+            P::Super,
+            R::Chorus,
+            &[],
+            false,
+        ),
+        (
+            recit,
+            "Tierce 1 3/5",
+            T::Flute,
+            F::ONE_AND_THREE_FIFTHS,
+            P::Mutation,
+            R::Color,
+            &[],
+            false,
+        ),
+        (
+            recit,
+            "Voix Humaine 8",
+            T::Reed,
+            F::EIGHT,
+            P::Unison,
+            R::Solo,
+            &[],
+            true,
+        ),
+    ];
+    let order: &[&str] = &[
+        "Diapason 8",
+        "Bourdon 8",
+        "Gambe 8",
+        "Voix Céleste 8",
+        "Prestant 4",
+        "Flûte octaviante 4",
+        "Nasard 2 2/3",
+        "Octavin 2",
+        "Tierce 1 3/5",
+        "Plein Jeu III",
+        "Basson-Hautbois 8",
+        "Trompette 8",
+        "Voix Humaine 8",
+        "Clairon 4",
+    ];
+    let mut all: Vec<_> = stops.into_iter().collect();
+    if full_recit {
+        all.extend(full);
+        // The Récit's stops in jamb order, after every other division's.
+        let (mut recit_stops, rest): (Vec<_>, Vec<_>) = all.into_iter().partition(|s| s.0 == recit);
+        recit_stops.sort_by_key(|s| order.iter().position(|n| *n == s.1));
+        all = rest;
+        all.extend(recit_stops);
+    }
+    for (division, name, family, footage, class, role, mixture, stopped) in all {
         let mut spec = StopSpec::new(name, family, footage, class, role);
         spec.mixture = mixture;
         spec.stopped = stopped;

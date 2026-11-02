@@ -3,17 +3,17 @@
 
 //! Organ files from the command line.
 //!
-//!   caecilia-organ-file --export            the demonstration organ, as a file to start from
+//!   caecilia-organ-file --export            the Caecilia Pipe Organ, as a file to start from
 //!   caecilia-organ-file --check <file>...   every error and warning, as the plugin would see them
 //!
 //! `--check` exits 1 if any file does not load.
 
-use caecilia_model::{OrganFileError, demo_organ, read_organ_file, write_organ};
+use caecilia_model::{OrganFileError, caecilia_organ, read_organ_file, write_organ};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("--export") => print!("{}", write_organ(&demo_organ())),
+        Some("--export") => print!("{}", write_organ(&caecilia_organ())),
         Some("--check") if args.len() > 1 => {
             let mut failed = false;
             for path in &args[1..] {

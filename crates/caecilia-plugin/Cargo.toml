@@ -43,6 +43,8 @@ required-features = ["standalone"]
 [dev-dependencies]
 # The console's tests open it headless.
 manguebyte-gui = { workspace = true, features = ["headless"] }
+# Resizes the headless console to a short window.
+manguebyte-window.workspace = true
 caecilia-registration.workspace = true
 # Loads the built bundles the way a host does (examples/host_check.rs).
 manguebyte-host = { path = "C:/manguebyte/crates/manguebyte-host", default-features = false, features = ["clap", "vst3"] }

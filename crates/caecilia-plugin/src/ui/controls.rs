@@ -1064,9 +1064,19 @@ fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
         StatusButton::Redo => "Redo",
         StatusButton::Light if snapshot.look.night => "Day",
         StatusButton::Light => "Night",
-        StatusButton::Sound => "Sound",
+        StatusButton::Sound => "Settings",
         StatusButton::Demos => "Demos",
         StatusButton::Organ => "Organ\u{2026}",
+    }
+}
+
+/// Whether a status button's panel is open, which lights it.
+fn status_open(button: StatusButton, snapshot: &Snapshot) -> Option<bool> {
+    match button {
+        StatusButton::Sound => Some(snapshot.sound.is_some()),
+        StatusButton::Demos => Some(snapshot.demos.is_some()),
+        StatusButton::Organ => Some(snapshot.library.is_some()),
+        _ => None,
     }
 }
 
@@ -1122,6 +1132,7 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
                 ^ s.registration_key()
                 ^ u64::from(s.library.is_some())
                 ^ (u64::from(s.demos.is_some()) << 1)
+                ^ (u64::from(s.sound.is_some()) << 2)
         },
         |size, scene, snapshot| {
             let look = snapshot.look;
@@ -1151,7 +1162,7 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
             for (button, r) in &buttons {
                 let label = status_label(*button, snapshot);
                 let shape = RoundedRect::new(*r, 15.0);
-                let primary = matches!(button, StatusButton::Organ | StatusButton::Demos);
+                let primary = status_open(*button, snapshot) == Some(true);
                 if primary {
                     let stops = [
                         Stop::new(0.0, look.brass_light),
@@ -1181,7 +1192,7 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
             .map(|(button, rect)| Item {
                 role: Role::Button,
                 name: status_label(button, s).to_string(),
-                checked: None,
+                checked: status_open(button, s),
                 rect,
             })
             .collect()

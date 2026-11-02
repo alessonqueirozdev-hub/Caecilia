@@ -207,7 +207,7 @@ fn the_session_remembers_its_organ() {
     again.render(4800);
     assert_eq!(
         again.plugin_mut().organ().name,
-        caecilia_model::demo_organ().name
+        caecilia_model::caecilia_organ().name
     );
 }
 
@@ -224,7 +224,7 @@ fn a_file_that_does_not_load_leaves_the_organ_playing() {
     h.render(2048);
     assert_eq!(
         h.plugin_mut().organ().name,
-        caecilia_model::demo_organ().name
+        caecilia_model::caecilia_organ().name
     );
     assert_eq!(h.plugin_mut().engine().unwrap().active_voices(), voices);
     assert_eq!(h.plugin_mut().params().organ.generation(), 0);

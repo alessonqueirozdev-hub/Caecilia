@@ -137,7 +137,7 @@ fn serve() -> Rc<RefCell<Vec<DeviceRequest>>> {
 fn in_a_host_there_is_no_audio_page() {
     caecilia_plugin::stop_serving_devices();
     let mut c = Console::open();
-    c.click(Role::Button, "Sound");
+    c.click(Role::Button, "Settings");
     assert!(c.find(Role::Button, "Page MIDI").is_some());
     assert!(c.find(Role::Button, "Page Audio").is_none());
 }
@@ -146,7 +146,7 @@ fn in_a_host_there_is_no_audio_page() {
 fn the_audio_page_chooses_the_devices() {
     let asked = serve();
     let mut c = Console::open();
-    c.click(Role::Button, "Sound");
+    c.click(Role::Button, "Settings");
     c.click(Role::Button, "Page Audio");
     assert_eq!(
         c.says("Wind"),
@@ -159,7 +159,10 @@ fn the_audio_page_chooses_the_devices() {
     c.click(Role::Button, "Output UMC204HD");
     c.click(Role::Button, "Rate 96k");
     c.click(Role::Button, "Buffer 128");
+    // The input ports are on the MIDI page.
+    c.click(Role::Button, "Page MIDI");
     c.click(Role::Button, "MIDI Organ keyboard");
+    c.click(Role::Button, "Page Audio");
     assert_eq!(
         *asked.borrow(),
         vec![
@@ -178,5 +181,57 @@ fn the_audio_page_chooses_the_devices() {
     std::fs::create_dir_all(&dir).unwrap();
     let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
     std::fs::write(dir.join("console-audio@1x.png"), png).unwrap();
+    caecilia_plugin::stop_serving_devices();
+}
+
+#[test]
+fn the_audio_page_comes_when_the_devices_are_served_after_the_console_opens() {
+    caecilia_plugin::stop_serving_devices();
+    let mut c = Console::open();
+    c.click(Role::Button, "Settings");
+    assert!(c.find(Role::Button, "Page Audio").is_none());
+    let _asked = serve();
+    c.ui.advance(std::time::Duration::from_millis(1100));
+    c.settle();
+    assert!(c.find(Role::Button, "Page Audio").is_some());
+    caecilia_plugin::stop_serving_devices();
+}
+
+/// Every control of every page lies inside the desk, even in a short
+/// window.
+#[test]
+fn every_page_fits_the_desk_of_a_short_window() {
+    let _asked = serve();
+    let mut c = Console::open();
+    c.ui.window().resize(manguebyte_window::PhysicalSize {
+        width: 1600,
+        height: 800,
+    });
+    c.settle();
+    c.click(Role::Button, "Settings");
+    let wind = c.find(Role::Group, "Wind").expect("the desk");
+    let desk = wind.bounds;
+    assert!(desk.height < 130.0, "a short desk: {desk:?}");
+    for page in ["Sound", "EQ", "Tuning", "Tremulant", "MIDI", "Audio"] {
+        c.click(Role::Button, &format!("Page {page}"));
+        let controls: Vec<AccessEntry> =
+            c.ui.access_tree()
+                .into_iter()
+                .filter(|e| e.id == wind.id && e.item.is_some())
+                .collect();
+        assert!(controls.len() > 3, "{page}: {controls:?}");
+        for e in &controls {
+            assert!(
+                e.bounds.y >= desk.y && e.bounds.bottom() <= desk.bottom() + 0.5,
+                "{page}: {} at {:?} leaves the desk {desk:?}",
+                e.node.name,
+                e.bounds
+            );
+        }
+    }
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-short@1x.png"), png).unwrap();
     caecilia_plugin::stop_serving_devices();
 }

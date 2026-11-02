@@ -42,7 +42,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use caecilia_engine::{Command, EngagedTable, OrganEngine, Timed};
-use caecilia_model::{CouplerId, Diagnostic, DivisionId, Organ, StopId, demo_organ};
+use caecilia_model::{CouplerId, Diagnostic, DivisionId, Organ, StopId, caecilia_organ};
 use caecilia_registration::MASK_CAPACITY;
 use caecilia_wind::MAX_TREMULANT_DEPTH_FRACTION;
 use manguebyte_core::AudioBuffer;
@@ -129,7 +129,7 @@ fn organ_for_new_instance() -> ChosenOrgan {
             Err(e) => eprintln!("Caecilia: {} did not load: {e}", path.display()),
         }
     }
-    (Arc::new(demo_organ()), None)
+    (Arc::new(caecilia_organ()), None)
 }
 
 /// What the console sends the audio thread.

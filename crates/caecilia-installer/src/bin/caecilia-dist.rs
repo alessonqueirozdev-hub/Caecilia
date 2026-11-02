@@ -229,8 +229,8 @@ fn build(args: Vec<String>) -> Result<(), String> {
     line.extend(file(
         "organ",
         "organs",
-        "caecilia-demo.organ.json",
-        repo.join("examples/caecilia-demo.organ.json"),
+        "caecilia-pipe-organ.organ.json",
+        repo.join("examples/caecilia-pipe-organ.organ.json"),
     ));
     pack(line)?;
 

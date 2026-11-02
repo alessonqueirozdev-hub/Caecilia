@@ -129,11 +129,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "MIDI channels play the divisions the organ file assigns; program changes 1-16 recall the generals."
     );
+    // Served before the console opens, so its Audio page is there at once.
+    serve_devices(&player, audio.clone());
     match app.as_ref().map(open_console) {
         Some(Ok(console)) => {
             println!("The console is open; closing it quits.");
-            println!("Sound > Audio chooses the sound card and the MIDI ports.");
-            serve_devices(&player, audio.clone());
+            println!("Settings chooses the sound card and the MIDI ports.");
             if let Some(app) = &app {
                 app.run()?;
             }
@@ -141,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             caecilia_plugin::stop_serving_devices();
         }
         failed => {
+            caecilia_plugin::stop_serving_devices();
             if let Some(Err(e)) = failed {
                 println!("The console did not open ({e}); playing from the terminal.");
             }

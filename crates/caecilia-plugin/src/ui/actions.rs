@@ -172,7 +172,7 @@ pub(crate) fn load_organ(
 ) -> Result<(), String> {
     let loaded = match &entry.path {
         Some(path) => shared.params.load_organ_file(path).map(|_| ()),
-        None => shared.params.use_organ(caecilia_model::demo_organ()),
+        None => shared.params.use_organ(caecilia_model::caecilia_organ()),
     };
     loaded.map_err(|e| e.to_string())?;
     context.values_changed();

@@ -15,13 +15,15 @@ This is the reference for that file. Every default below is the one in
 
 ## Getting one to start from
 
-`examples/caecilia-demo.organ.json` is the instrument's own organ, written out
-through this format. It is a real three-manual specification — 26 ranks, 26 stops,
-3 windchests, 3 couplers — and it is the intended starting point: copy it, edit it,
-open it.
+`examples/caecilia-pipe-organ.organ.json` is the instrument's own organ, the
+Caecilia Pipe Organ, written out through this format. It is a real
+specification on two manuals and pedal — 32 ranks, 32 stops, 3 windchests, 3
+couplers — and it is the intended starting point: copy it, edit it, open it.
+`examples/caecilia-demo.organ.json` is 1.x's demonstration organ (26 stops),
+kept as the reference the sound is held to.
 
-The same file is what `caecilia-organ-file --export` prints, so you can always
-regenerate it:
+The Caecilia Pipe Organ is what `caecilia-organ-file --export` prints, so you can
+always regenerate it:
 
 ```bash
 caecilia-organ-file --export > my-organ.organ.json
