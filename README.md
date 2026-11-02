@@ -59,7 +59,7 @@ Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 ## Try it
 
 Download the installer from [Releases](https://github.com/alessonqueirozdev-hub/Caecilia/releases).
-Windows is available now; Linux and macOS are [on the way](https://github.com/alessonqueirozdev-hub/Caecilia/pull/2).
+Windows is available now. Linux and macOS will follow once the console runs there.
 The installer is not signed yet, so Windows SmartScreen may warn you: choose
 **More info**, then **Run anyway**.
 

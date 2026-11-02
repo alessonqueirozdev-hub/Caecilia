@@ -54,8 +54,8 @@ gigabytes of disk.
 
 If Caecilia stops compiling after a `git pull`, update your Manguebyte clone too.
 
-Windows is the platform `main` is built and tested on today. Linux and macOS work
-is in [pull request #2](https://github.com/alessonqueirozdev-hub/Caecilia/pull/2).
+Windows is the platform `main` is built and tested on today. Manguebyte only opens
+windows on Windows so far, so the console can't run on Linux or macOS yet.
 
 ## Everyday commands
 

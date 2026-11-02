@@ -32,8 +32,9 @@ people who know pipe acoustics.
 
 ## Next: everywhere
 
-- [ ] Linux and macOS installers and releases
-  ([pull request #2](https://github.com/alessonqueirozdev-hub/Caecilia/pull/2))
+- [ ] Linux and macOS releases, with the console. Manguebyte needs X11 and Cocoa
+  windows first, which come after the sound work; the installers are in
+  [pull request #2](https://github.com/alessonqueirozdev-hub/Caecilia/pull/2).
 - [ ] A signed Windows installer
 - [ ] Testing in real DAWs and on real hardware, with a table of what's been tried
 - [ ] Depend on Manguebyte by version or git revision, so one clone is enough to build
