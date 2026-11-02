@@ -2,8 +2,10 @@
 // Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 //! The demonstrations: whole pieces the instrument plays on itself, so an
-//! organ can be heard without a keyboard, each with registrations that
-//! change between its verses.
+//! organ can be heard without a keyboard, each with its registrations.
+//!
+//! MIDI files in the Demos folder are the pieces when there are any (see
+//! [`crate::demo_files`]); else the few written here.
 //!
 //! A piece is written for three parts -- the great, the swell and the pedal
 //! -- and the console gives each part the MIDI channel of the organ playing.
@@ -671,21 +673,39 @@ pub(crate) static PHRASE: Piece = Piece {
 /// The index that means [`PHRASE`].
 pub(crate) const PHRASE_INDEX: u8 = u8::MAX;
 
-/// Which piece: one of [`PIECES`], or the tour's [`PHRASE`].
-#[cfg(test)]
-fn piece(index: u8) -> &'static Piece {
-    PIECES.get(usize::from(index)).unwrap_or(&PHRASE)
+/// A piece as the console lists it and the audio thread plays it.
+pub(crate) struct Demo {
+    pub(crate) name: String,
+    /// What a narrow row calls it.
+    pub(crate) short: String,
+    /// Seconds in each of its changes' beats.
+    pub(crate) beat: f32,
+    /// The registrations, the first at beat 0.
+    pub(crate) changes: &'static [Change],
+    pub(crate) score: Score,
+}
+
+impl Demo {
+    fn from_piece(p: &Piece) -> Demo {
+        Demo {
+            name: p.name.to_string(),
+            short: p.short.to_string(),
+            beat: p.beat,
+            changes: p.changes,
+            score: compile(p).unwrap_or_else(|e| panic!("{}: {e}", p.name)),
+        }
+    }
 }
 
 // ------------------------------------------------------------------ scores
 
 /// A key going down or up, `at` seconds into the piece.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Event {
-    at: f32,
-    part: u8,
-    key: u8,
-    on: bool,
+pub(crate) struct Event {
+    pub(crate) at: f32,
+    pub(crate) part: u8,
+    pub(crate) key: u8,
+    pub(crate) on: bool,
 }
 
 /// A piece compiled: its key events in time, ups before downs at the same
@@ -698,35 +718,51 @@ pub(crate) struct Score {
 #[cfg(test)]
 impl Score {
     /// How long it lasts, in seconds, its last key lifted.
-    fn seconds(&self) -> f32 {
+    pub(crate) fn seconds(&self) -> f32 {
         self.seconds
+    }
+
+    /// How many keys go down or up in it.
+    pub(crate) fn event_count(&self) -> usize {
+        self.events.len()
     }
 }
 
-static SCORES: OnceLock<Vec<Score>> = OnceLock::new();
+static CATALOG: OnceLock<Vec<Demo>> = OnceLock::new();
 
-/// Compile every piece; done when the instrument is made, so the audio
-/// thread only ever reads the scores.
+/// Read and compile every piece; done when the instrument is made, so the
+/// audio thread only ever reads the scores.
 pub(crate) fn prepare() {
-    scores();
+    catalog();
 }
 
-fn scores() -> &'static [Score] {
-    SCORES.get_or_init(|| {
-        PIECES
-            .iter()
-            .chain([&PHRASE])
-            .map(|p| compile(p).unwrap_or_else(|e| panic!("{}: {e}", p.name)))
-            .collect()
+/// The pieces, then the tour's phrase.
+fn catalog() -> &'static [Demo] {
+    CATALOG.get_or_init(|| {
+        let mut demos = crate::demo_files::load();
+        if demos.is_empty() {
+            demos = PIECES.iter().map(Demo::from_piece).collect();
+        }
+        demos.push(Demo::from_piece(&PHRASE));
+        demos
     })
 }
 
-/// The score of piece `index` (see [`piece`]).
+/// The pieces the console lists, in its order.
+pub(crate) fn demos() -> &'static [Demo] {
+    let all = catalog();
+    &all[..all.len() - 1]
+}
+
+/// The piece of index `index`, or the tour's phrase.
+pub(crate) fn demo(index: u8) -> &'static Demo {
+    let all = catalog();
+    all.get(usize::from(index)).unwrap_or(&all[all.len() - 1])
+}
+
+/// The score of piece `index`, or of the tour's phrase.
 pub(crate) fn score(index: u8) -> &'static Score {
-    let scores = scores();
-    scores
-        .get(usize::from(index))
-        .unwrap_or(&scores[scores.len() - 1])
+    &demo(index).score
 }
 
 /// The key a note name spells: `C4` is middle C, 60.
@@ -942,6 +978,11 @@ fn compile(piece: &Piece) -> Result<Score, String> {
             });
         }
     }
+    Ok(score_of(raw))
+}
+
+/// Key events as a score, in time.
+pub(crate) fn score_of(mut raw: Vec<Event>) -> Score {
     raw.sort_by(|a, b| a.at.total_cmp(&b.at).then(a.on.cmp(&b.on)));
     // Two lines on one key of one part: it goes down with the first and up
     // with the last.
@@ -963,7 +1004,7 @@ fn compile(piece: &Piece) -> Result<Score, String> {
         }
         seconds = seconds.max(e.at);
     }
-    Ok(Score { events, seconds })
+    Score { events, seconds }
 }
 
 // ------------------------------------------------------------------ player
@@ -1108,6 +1149,7 @@ mod tests {
                 "{}: a registration from the start",
                 p.name
             );
+            assert_eq!(demo(n as u8).name, p.name);
             assert!(score(n as u8).seconds() == s.seconds);
         }
     }
@@ -1132,7 +1174,7 @@ mod tests {
                     }
                 });
             }
-            let name = piece(index).name;
+            let name = &demo(index).name;
             assert!(downs > 4, "{name}");
             assert_eq!(held, [0; 16], "{name} leaves keys down");
         }

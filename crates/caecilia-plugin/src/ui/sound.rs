@@ -8,7 +8,9 @@
 //! application serves them), and the audio devices. Each control moves its
 //! parameter as a gesture, so a host records it as it would its own knob.
 
-use manguebyte_gfx::{Circle, Color, Point, Rect, RoundedRect, Scene, Shadow, Size, Stop, Stroke};
+use manguebyte_gfx::{
+    Circle, Color, Point, Rect, RoundedRect, Scene, Shadow, Size, Stop, Stroke, TextStyle,
+};
 use manguebyte_params::Param;
 use manguebyte_plugin::editor::{EditorContext, Gesture};
 use manguebyte_ui::access::Role;
@@ -31,20 +33,33 @@ pub(crate) const TREMULANT: usize = 3;
 pub(crate) const MIDI: usize = 4;
 pub(crate) const AUDIO: usize = 5;
 
-/// The temperaments as their chips name them, short enough for one row.
-const TEMPERAMENT_CHIPS: [&str; 8] = [
-    "Equal",
-    "Mean \u{bc}",
-    "Werck. III",
-    "Kirnb. III",
-    "Vallotti",
-    "Young",
-    "Pythag.",
-    "Just",
-];
-
 /// The pitches of A a player reaches for.
 const PITCHES: [f32; 4] = [392.0, 415.0, 440.0, 466.0];
+
+/// A selector's list, open over the page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Pick {
+    Temperament,
+    Key,
+    Pitch,
+    Output,
+    Rate,
+    Buffer,
+}
+
+impl Pick {
+    /// What the panel says it chooses.
+    fn title(self) -> &'static str {
+        match self {
+            Self::Temperament => "Temperament",
+            Self::Key => "Temperament's key",
+            Self::Pitch => "Pitch of A",
+            Self::Output => "Output",
+            Self::Rate => "Sample rate",
+            Self::Buffer => "Buffer",
+        }
+    }
+}
 
 /// What MIDI learn shows: whether it is on, what it waits to bind, what it
 /// bound last, and every control learned.
@@ -83,8 +98,8 @@ pub(crate) struct SoundView {
     pub(crate) learn: LearnView,
     /// The devices, where an application serves them.
     pub(crate) devices: Option<DevicesView>,
-    /// Whether the outputs are listed to choose one.
-    pub(crate) picking: bool,
+    /// The selector's list open, if one is.
+    pub(crate) picking: Option<Pick>,
 }
 
 impl SoundView {
@@ -119,7 +134,7 @@ impl SoundView {
         page: usize,
         learn: LearnView,
         devices: Option<DevicesView>,
-        picking: bool,
+        picking: Option<Pick>,
     ) -> SoundView {
         let p = &source.shared().params;
         SoundView {
@@ -178,18 +193,21 @@ pub(crate) fn action_name(organ: &caecilia_model::Organ, action: Action) -> Stri
 // ------------------------------------------------------------------ plan
 
 const LABEL: f32 = 92.0;
-const ROW: f32 = 22.0;
+const ROW: f32 = 24.0;
 
-/// The tops of a page's three rows, below the tabs: what the desk of a
-/// short window holds.
-const ROWS: [f32; 3] = [44.0, 70.0, 96.0];
+/// The tops of a page's three rows, below the tabs, spread over what the
+/// desk has: what a short window holds, roomier in a tall one.
+fn rows(size: Size) -> [f32; 3] {
+    let gap = ((size.height - 42.0 - ROW - 14.0) / 2.0).clamp(25.0, 42.0);
+    [42.0, 42.0 + gap, 42.0 + 2.0 * gap]
+}
 
 /// A row of chips from `x` to the panel's edge, `n` of them.
 fn chips(size: Size, y: f32, n: usize) -> Vec<Rect> {
     let x = 20.0 + LABEL;
     let w = (size.width - x - 20.0) / n.max(1) as f32;
     (0..n)
-        .map(|i| Rect::new(x + i as f32 * w, y, w - 5.0, ROW))
+        .map(|i| Rect::new(x + i as f32 * w, y, w - 6.0, ROW))
         .collect()
 }
 
@@ -216,6 +234,94 @@ fn tabs(size: Size, pages: usize) -> Vec<Rect> {
     out
 }
 
+/// The list a selector opens: as many columns as it wants, under the tabs.
+fn list(size: Size, count: usize, columns: usize) -> Vec<Rect> {
+    let columns = columns.max(1);
+    let w = (size.width - 40.0) / columns as f32;
+    (0..count)
+        .map(|i| {
+            let (row, col) = (i / columns, i % columns);
+            Rect::new(
+                20.0 + col as f32 * w,
+                44.0 + row as f32 * (ROW + 4.0),
+                w - 6.0,
+                ROW,
+            )
+        })
+        .filter(|r| r.bottom() <= size.height - 4.0)
+        .collect()
+}
+
+/// What the list open offers: each choice's name on the desk, and its name
+/// for the screen reader and tests; whether it is the one chosen.
+fn choices(pick: Pick, sound: &SoundView) -> Vec<(String, String, bool)> {
+    let auto_or =
+        |values: &[u32], chosen: Option<u32>, name: fn(Option<u32>) -> String, tag: &str| {
+            std::iter::once(None)
+                .chain(values.iter().map(|v| Some(*v)))
+                .map(|v| {
+                    let shown = name(v);
+                    (shown.clone(), format!("{tag} {shown}"), v == chosen)
+                })
+                .collect()
+        };
+    match pick {
+        Pick::Temperament => TEMPERAMENT_NAMES
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.to_string(), n.to_string(), i == sound.temperament))
+            .collect(),
+        Pick::Key => KEY_NAMES
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.to_string(), format!("Key {n}"), i == sound.key))
+            .collect(),
+        Pick::Pitch => PITCHES
+            .iter()
+            .map(|hz| {
+                let on = (sound.pitch_hz - hz).abs() < 0.05;
+                (format!("A = {hz:.0} Hz"), format!("A {hz:.0}"), on)
+            })
+            .collect(),
+        Pick::Output => sound.devices.as_ref().map_or_else(Vec::new, |d| {
+            d.outputs
+                .iter()
+                .map(|o| {
+                    let tag = if o.is_default { " (default)" } else { "" };
+                    (
+                        format!("{}{tag}", o.name),
+                        format!("Output {}", o.name),
+                        o.chosen,
+                    )
+                })
+                .collect()
+        }),
+        Pick::Rate => sound.devices.as_ref().map_or_else(Vec::new, |d| {
+            auto_or(&d.sample_rates, d.sample_rate, rate_name, "Rate")
+        }),
+        Pick::Buffer => sound.devices.as_ref().map_or_else(Vec::new, |d| {
+            auto_or(&d.buffer_sizes, d.buffer_size, buffer_name, "Buffer")
+        }),
+    }
+}
+
+/// How many columns a list takes.
+fn columns(pick: Pick, count: usize) -> usize {
+    match pick {
+        Pick::Temperament => 3,
+        Pick::Key => 6,
+        Pick::Pitch => 2,
+        Pick::Output => {
+            if count > 3 {
+                2
+            } else {
+                1
+            }
+        }
+        Pick::Rate | Pick::Buffer => 5,
+    }
+}
+
 struct SoundPlan {
     level: Rect,
     reverb: Rect,
@@ -223,10 +329,11 @@ struct SoundPlan {
 }
 
 fn sound_plan(size: Size) -> SoundPlan {
+    let r = rows(size);
     SoundPlan {
-        level: track(size, ROWS[0]),
-        reverb: track(size, ROWS[1]),
-        rooms: chips(size, ROWS[2], ROOM_NAMES.len()),
+        level: track(size, r[0]),
+        reverb: track(size, r[1]),
+        rooms: chips(size, r[2], ROOM_NAMES.len()),
     }
 }
 
@@ -238,11 +345,11 @@ struct EqPlan {
 
 /// The faders stand in whatever height the desk has below the switch.
 fn eq_plan(size: Size) -> EqPlan {
-    let top = ROWS[1] + 10.0;
+    let top = 44.0 + ROW + 16.0;
     let bottom = (size.height - 24.0).max(top + 12.0);
     let col = (size.width - 40.0) / EQ_BANDS.len() as f32;
     EqPlan {
-        toggle: Rect::new(20.0 + LABEL, ROWS[0], 58.0, ROW),
+        toggle: Rect::new(20.0 + LABEL, 44.0, 58.0, ROW),
         faders: (0..EQ_BANDS.len())
             .map(|i| {
                 let column = Rect::new(20.0 + i as f32 * col, top - 6.0, col, bottom - top + 12.0);
@@ -254,36 +361,22 @@ fn eq_plan(size: Size) -> EqPlan {
 }
 
 struct TuningPlan {
-    temperaments: Vec<Rect>,
-    keys: Vec<Rect>,
+    temperament: Rect,
+    key: Rect,
     pitch: Rect,
-    pitches: Vec<Rect>,
+    presets: Rect,
 }
 
 fn tuning_plan(size: Size) -> TuningPlan {
     let x = 20.0 + LABEL;
-    let pw = 46.0;
-    let pitch = Rect::new(
-        x,
-        ROWS[2],
-        (size.width - x - 20.0 - 4.0 * (pw + 4.0)).max(40.0),
-        ROW,
-    );
-    let pitches = (0..PITCHES.len())
-        .map(|i| {
-            Rect::new(
-                pitch.right() + 10.0 + i as f32 * (pw + 4.0),
-                ROWS[2],
-                pw - 4.0,
-                ROW,
-            )
-        })
-        .collect();
+    let r = rows(size);
+    let wide = size.width - x - 20.0;
+    let presets = 112.0;
     TuningPlan {
-        temperaments: chips(size, ROWS[0], TEMPERAMENT_CHIPS.len()),
-        keys: chips(size, ROWS[1], KEY_NAMES.len()),
-        pitch: Rect::new(pitch.x, pitch.y, pitch.width - 60.0, ROW),
-        pitches,
+        temperament: Rect::new(x, r[0], wide, ROW),
+        key: Rect::new(x, r[1], wide, ROW),
+        pitch: Rect::new(x, r[2], (wide - presets - 18.0).max(40.0), ROW),
+        presets: Rect::new(size.width - 20.0 - presets, r[2], presets, ROW),
     }
 }
 
@@ -293,21 +386,21 @@ struct TremulantPlan {
 }
 
 fn tremulant_plan(size: Size) -> TremulantPlan {
+    let r = rows(size);
     TremulantPlan {
-        rate: track(size, ROWS[0]),
-        depth: track(size, ROWS[1]),
+        rate: track(size, r[0]),
+        depth: track(size, r[1]),
     }
 }
 
 struct MidiPlan {
     learn: Rect,
     forget_all: Rect,
-    /// Each manual's switch, and the one that sets the top B and C.
+    /// Each manual's key, and the one that sets the top B and C.
     switches: Vec<Rect>,
     top_keys: Rect,
-    /// Whether there is a row of input ports: where an application serves
-    /// them.
-    ports_row: bool,
+    /// Where the row of input ports goes: where an application serves them.
+    ports_row: Option<f32>,
     /// The input ports' chips.
     ports: Vec<Rect>,
     /// Where the line under the learn button goes.
@@ -320,23 +413,24 @@ struct MidiPlan {
 const PORTS_SHOWN: usize = 4;
 
 fn midi_plan(size: Size, count: usize, switches: usize, ports: Option<usize>) -> MidiPlan {
-    let ports_row = ports.is_some();
+    let r = rows(size);
+    let ports_row = ports.map(|_| r[2]);
     let ports = match ports {
-        Some(n) if n > 0 => chips(size, ROWS[2], n.min(PORTS_SHOWN)),
+        Some(n) if n > 0 => chips(size, r[2], n.min(PORTS_SHOWN)),
         _ => Vec::new(),
     };
-    let note = if ports_row {
-        ROWS[2] + ROW + 6.0
+    let note = if ports_row.is_some() {
+        r[2] + ROW + 6.0
     } else {
-        ROWS[2] + 3.0
+        r[2] + 3.0
     };
-    let mut switches = chips(size, ROWS[1], switches + 1);
+    let mut switches = chips(size, r[1], switches + 1);
     let top_keys = switches.pop().unwrap_or_default();
     let top = note + 20.0;
     let room = ((size.height - top - 10.0) / 26.0).max(0.0) as usize;
     MidiPlan {
-        learn: Rect::new(20.0, ROWS[0], 84.0, ROW),
-        forget_all: Rect::new(size.width - 20.0 - 90.0, ROWS[0], 90.0, ROW),
+        learn: Rect::new(20.0, r[0], 84.0, ROW),
+        forget_all: Rect::new(size.width - 20.0 - 90.0, r[0], 90.0, ROW),
         switches,
         top_keys,
         ports_row,
@@ -353,44 +447,40 @@ fn midi_plan(size: Size, count: usize, switches: usize, ports: Option<usize>) ->
 
 struct AudioPlan {
     output: Rect,
-    /// The outputs listed, while one is being chosen.
-    outputs: Vec<Rect>,
-    rates: Vec<Rect>,
-    buffers: Vec<Rect>,
-    /// How many lines of the report there is room for.
-    report_lines: usize,
+    rate: Rect,
+    buffer: Rect,
+    /// Where each line of the report goes, beside the selectors, and how
+    /// wide it can be.
+    report: [Point; 2],
+    report_width: f32,
 }
 
 fn rate_name(rate: Option<u32>) -> String {
     match rate {
-        None => "Device".into(),
-        Some(r) if r % 1000 == 0 => format!("{}k", r / 1000),
-        Some(r) => format!("{:.1}k", f64::from(r) / 1000.0),
+        None => "Auto".into(),
+        Some(r) if r % 1000 == 0 => format!("{} kHz", r / 1000),
+        Some(r) => format!("{:.1} kHz", f64::from(r) / 1000.0),
     }
 }
 
 fn buffer_name(frames: Option<u32>) -> String {
-    frames.map_or_else(|| "Device".into(), |f| f.to_string())
+    frames.map_or_else(|| "Auto".into(), |f| f.to_string())
 }
 
-fn audio_plan(size: Size, devices: &DevicesView, picking: bool) -> AudioPlan {
+fn audio_plan(size: Size) -> AudioPlan {
     let x = 20.0 + LABEL;
-    let output = Rect::new(x, ROWS[0], size.width - x - 20.0, ROW);
-    let outputs = if picking {
-        let room = ((size.height - ROWS[1] - 8.0) / 26.0).max(0.0) as usize;
-        (0..devices.outputs.len().min(room))
-            .map(|i| Rect::new(x, ROWS[1] + i as f32 * 26.0, output.width, 22.0))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let below = ROWS[2] + ROW + 6.0;
+    let r = rows(size);
+    let short = 110.0;
+    let beside = x + short + 14.0;
     AudioPlan {
-        output,
-        outputs,
-        rates: chips(size, ROWS[1], devices.sample_rates.len() + 1),
-        buffers: chips(size, ROWS[2], devices.buffer_sizes.len() + 1),
-        report_lines: (((size.height - 10.0 - below) / 15.0).max(0.0) as usize).min(3),
+        output: Rect::new(x, r[0], size.width - x - 20.0, ROW),
+        rate: Rect::new(x, r[1], short, ROW),
+        buffer: Rect::new(x, r[2], short, ROW),
+        report: [
+            Point::new(beside, r[1] + 5.0),
+            Point::new(beside, r[2] + 5.0),
+        ],
+        report_width: size.width - beside - 20.0,
     }
 }
 
@@ -450,7 +540,18 @@ fn slider(scene: &mut Scene, snapshot: &Snapshot, r: Rect, name: &str, at: f32, 
     );
 }
 
-/// A chip, lit when `on`.
+/// `name`, cut to fit `width`.
+fn fit(name: &str, s: TextStyle, width: f32) -> String {
+    let mut out = name.to_string();
+    while width_of(&out, s) > width && out.chars().count() > 4 {
+        let kept: String = out.trim_end_matches('\u{2026}').chars().collect();
+        let kept: String = kept.chars().take(kept.chars().count() - 1).collect();
+        out = format!("{kept}\u{2026}");
+    }
+    out
+}
+
+/// A chip, lit when `on`; its name cut if it must be.
 fn chip(scene: &mut Scene, snapshot: &Snapshot, r: Rect, name: &str, on: bool) {
     let look = snapshot.look;
     let shape = RoundedRect::new(r, r.height / 2.0);
@@ -460,18 +561,38 @@ fn chip(scene: &mut Scene, snapshot: &Snapshot, r: Rect, name: &str, on: bool) {
     } else {
         scene.fill(shape, look.edge.with_alpha(0x60));
     }
-    let size = if width_of(name, style(11.5, 500.0, look.text)) > r.width - 8.0 {
-        10.0
-    } else {
-        11.5
-    };
+    let s = style(11.5, if on { 650.0 } else { 500.0 }, look.text);
+    let shown = fit(name, s, r.width - 14.0);
     text(
         scene,
-        name,
-        style(size, if on { 650.0 } else { 500.0 }, look.text),
-        Point::new(r.center().x, r.y + (r.height - size * 1.25) / 2.0),
+        &shown,
+        s,
+        Point::new(r.center().x, r.y + (r.height - 11.5 * 1.25) / 2.0),
         0.5,
     );
+}
+
+/// A selector: its value, and the mark that says it opens a list.
+fn selector(scene: &mut Scene, snapshot: &Snapshot, r: Rect, value: &str) {
+    let look = snapshot.look;
+    let shape = RoundedRect::new(r, 8.0);
+    scene.fill(shape, look.edge.with_alpha(0x60));
+    scene.stroke(shape, Stroke::new(1.0), look.edge);
+    let s = style(12.0, 600.0, look.text);
+    text(
+        scene,
+        &fit(value, s, r.width - 36.0),
+        s,
+        Point::new(r.x + 12.0, r.y + 4.0),
+        0.0,
+    );
+    let c = Point::new(r.right() - 14.0, r.center().y);
+    let chevron = polygon(&[
+        Point::new(c.x - 4.5, c.y - 2.0),
+        Point::new(c.x + 4.5, c.y - 2.0),
+        Point::new(c.x, c.y + 3.0),
+    ]);
+    scene.fill(&chevron, look.text2);
 }
 
 fn draw_sound(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
@@ -501,7 +622,7 @@ fn draw_sound(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
 fn draw_eq(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
     let look = snapshot.look;
     let plan = eq_plan(size);
-    label(scene, snapshot, plan.toggle.y, "Master EQ");
+    label(scene, snapshot, plan.toggle.y + 1.0, "Master EQ");
     chip(
         scene,
         snapshot,
@@ -555,37 +676,22 @@ fn draw_eq(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView
 
 fn draw_tuning(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
     let plan = tuning_plan(size);
-    label(scene, snapshot, plan.temperaments[0].y, "Temperament");
-    for (i, r) in plan.temperaments.iter().enumerate() {
-        chip(
-            scene,
-            snapshot,
-            *r,
-            TEMPERAMENT_CHIPS[i],
-            i == sound.temperament,
-        );
-    }
-    label(scene, snapshot, plan.keys[0].y, "Key");
-    for (i, r) in plan.keys.iter().enumerate() {
-        chip(scene, snapshot, *r, KEY_NAMES[i], i == sound.key);
-    }
-    slider(
+    label(scene, snapshot, plan.temperament.y + 1.0, "Temperament");
+    selector(
         scene,
         snapshot,
-        plan.pitch,
-        "Pitch of A",
-        sound.pitch,
+        plan.temperament,
+        TEMPERAMENT_NAMES[sound.temperament],
+    );
+    label(scene, snapshot, plan.key.y + 1.0, "Key");
+    selector(scene, snapshot, plan.key, KEY_NAMES[sound.key]);
+    slider(scene, snapshot, plan.pitch, "Pitch of A", sound.pitch, "");
+    selector(
+        scene,
+        snapshot,
+        plan.presets,
         &format!("{:.1} Hz", sound.pitch_hz),
     );
-    for (r, hz) in plan.pitches.iter().zip(PITCHES) {
-        chip(
-            scene,
-            snapshot,
-            *r,
-            &format!("{hz:.0}"),
-            (sound.pitch_hz - hz).abs() < 0.05,
-        );
-    }
 }
 
 fn draw_tremulant(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
@@ -608,9 +714,9 @@ fn draw_tremulant(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &So
     );
     text(
         scene,
-        "The tremulant stop on the console turns it on.",
+        "The Tremulant tablet on the console turns it on.",
         style(10.5, 450.0, snapshot.look.muted),
-        Point::new(20.0, ROWS[2] + 4.0),
+        Point::new(20.0, rows(size)[2] + 4.0),
         0.0,
     );
 }
@@ -621,33 +727,38 @@ fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundVi
     let ports = sound.devices.as_ref().map(|d| d.midi_inputs.len());
     let plan = midi_plan(size, learn.bindings.len(), learn.switches.len(), ports);
     chip(scene, snapshot, plan.learn, "Learn", learn.on);
-    label(scene, snapshot, ROWS[1] + 1.0, "Switches");
+    label(scene, snapshot, plan.top_keys.y + 1.0, "Manual keys");
     for (r, (_, name, key)) in plan.switches.iter().zip(&learn.switches) {
         let shown = match key {
-            Some(key) => format!("{name} \u{b7} {key}"),
-            None => format!("{name} \u{b7} learn"),
+            Some(key) => format!("{name}: {key}"),
+            None => format!("{name}: none"),
         };
         let waiting = learn.waiting_for.as_deref() == Some(format!("Play on {name}").as_str());
         chip(scene, snapshot, *r, &shown, waiting);
     }
-    chip(scene, snapshot, plan.top_keys, "Top B and C", false);
-    if !learn.bindings.is_empty() {
+    chip(scene, snapshot, plan.top_keys, "Use top B and C", false);
+    let right = if learn.bindings.is_empty() {
+        size.width - 20.0
+    } else {
         chip(scene, snapshot, plan.forget_all, "Forget all", false);
-    }
-    let say = match (learn.on, &learn.waiting_for) {
-        (true, Some(what)) => format!("Move a key, pedal or controller for {what}"),
-        (true, None) => "Choose a stop, coupler or piston on the console".to_string(),
-        (false, _) => "Learn binds your MIDI controls to the console's".to_string(),
+        plan.forget_all.x - 8.0
     };
+    let say = match (learn.on, &learn.waiting_for) {
+        (true, Some(what)) => format!("Move a key or controller for {what}"),
+        (true, None) => "Choose a stop, coupler or piston on the console".to_string(),
+        (false, _) => "Binds your MIDI keys and controls to the console".to_string(),
+    };
+    let s = style(12.0, 600.0, if learn.on { look.accent } else { look.text });
+    let at = plan.learn.right() + 14.0;
     text(
         scene,
-        &say,
-        style(12.0, 600.0, if learn.on { look.accent } else { look.text }),
-        Point::new(plan.learn.right() + 14.0, plan.learn.y + 5.0),
+        &fit(&say, s, right - at),
+        s,
+        Point::new(at, plan.learn.y + 4.0),
         0.0,
     );
-    if plan.ports_row {
-        label(scene, snapshot, ROWS[2] + 1.0, "Inputs");
+    if let Some(y) = plan.ports_row {
+        label(scene, snapshot, y + 1.0, "Inputs");
         match &sound.devices {
             Some(d) if !d.midi_inputs.is_empty() => {
                 for (r, port) in plan.ports.iter().zip(&d.midi_inputs) {
@@ -659,7 +770,7 @@ fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundVi
                     scene,
                     "No MIDI input port is connected",
                     style(11.5, 500.0, look.text2),
-                    Point::new(20.0 + LABEL, ROWS[2] + 5.0),
+                    Point::new(20.0 + LABEL, y + 5.0),
                     0.0,
                 );
             }
@@ -671,19 +782,16 @@ fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundVi
         .or_else(|| learn.route.clone())
         .unwrap_or_else(|| {
             if learn.bindings.is_empty() {
-                "Press Learn, then a stop, coupler, piston or switch, then the control to bind \
-             to it. No control learned yet."
-                    .into()
+                "Press a manual, then the key that switches your keyboard to it.".into()
             } else {
-                "Press Learn, then a stop, coupler, piston or switch, then the control to bind \
-             to it."
-                    .into()
+                String::new()
             }
         });
+    let s = style(10.5, 450.0, look.muted);
     text(
         scene,
-        &below,
-        style(10.5, 450.0, look.muted),
+        &fit(&below, s, size.width - 40.0),
+        s,
         Point::new(20.0, plan.note),
         0.0,
     );
@@ -718,99 +826,32 @@ fn draw_audio(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
     let Some(devices) = &sound.devices else {
         return;
     };
-    let plan = audio_plan(size, devices, sound.picking);
+    let plan = audio_plan(size);
     label(scene, snapshot, plan.output.y + 1.0, "Output");
-    let shape = RoundedRect::new(plan.output, 8.0);
-    scene.fill(shape, look.edge.with_alpha(0x60));
-    scene.stroke(shape, Stroke::new(1.0), look.edge);
     let chosen = devices
         .outputs
         .iter()
         .find(|d| d.chosen)
         .map_or("No output", |d| d.name.as_str());
-    let s = style(12.0, 600.0, look.text);
-    let mut name = chosen.to_string();
-    while width_of(&name, s) > plan.output.width - 40.0 && name.chars().count() > 4 {
-        name = format!(
-            "{}\u{2026}",
-            name.chars()
-                .take(name.chars().count() - 2)
-                .collect::<String>()
-        );
-    }
-    text(
+    selector(scene, snapshot, plan.output, chosen);
+    label(scene, snapshot, plan.rate.y + 1.0, "Sample rate");
+    selector(scene, snapshot, plan.rate, &rate_name(devices.sample_rate));
+    label(scene, snapshot, plan.buffer.y + 1.0, "Buffer");
+    selector(
         scene,
-        &name,
-        s,
-        Point::new(plan.output.x + 12.0, plan.output.y + 5.0),
-        0.0,
+        snapshot,
+        plan.buffer,
+        &buffer_name(devices.buffer_size),
     );
-    // A chevron: down to list the outputs, up while they are listed.
-    let c = Point::new(plan.output.right() - 16.0, plan.output.center().y);
-    let d = if sound.picking { -1.0 } else { 1.0 };
-    let chevron = polygon(&[
-        Point::new(c.x - 4.5, c.y - 2.0 * d),
-        Point::new(c.x + 4.5, c.y - 2.0 * d),
-        Point::new(c.x, c.y + 3.0 * d),
-    ]);
-    scene.fill(&chevron, look.text2);
-    if sound.picking {
-        for (r, d) in plan.outputs.iter().zip(&devices.outputs) {
-            let shape = RoundedRect::new(*r, 6.0);
-            if d.chosen {
-                scene.fill(shape, look.accent.with_alpha(0x2A));
-                scene.stroke(shape, Stroke::new(1.0), look.accent);
-            } else {
-                scene.fill(shape, look.panel_bottom);
-                scene.stroke(shape, Stroke::new(1.0), look.edge);
-            }
-            let tag = if d.is_default {
-                "  (system default)"
-            } else {
-                ""
-            };
-            text(
-                scene,
-                &format!("{}{tag}", d.name),
-                style(11.5, if d.chosen { 650.0 } else { 500.0 }, look.text),
-                Point::new(r.x + 12.0, r.y + 4.0),
-                0.0,
-            );
-        }
-        return;
-    }
-    label(scene, snapshot, plan.rates[0].y, "Rate");
-    let rates = std::iter::once(None).chain(devices.sample_rates.iter().map(|r| Some(*r)));
-    for (r, rate) in plan.rates.iter().zip(rates) {
-        chip(
-            scene,
-            snapshot,
-            *r,
-            &rate_name(rate),
-            rate == devices.sample_rate,
-        );
-    }
-    label(scene, snapshot, plan.buffers[0].y, "Buffer");
-    let sizes = std::iter::once(None).chain(devices.buffer_sizes.iter().map(|b| Some(*b)));
-    for (r, frames) in plan.buffers.iter().zip(sizes) {
-        chip(
-            scene,
-            snapshot,
-            *r,
-            &buffer_name(frames),
-            frames == devices.buffer_size,
-        );
-    }
-    // What plays, as much of it as there is room for; a failure first.
+    // What plays, beside them; a failure first.
     let all: Vec<&str> = devices.report.lines().collect();
-    let n = plan.report_lines.min(all.len());
+    let n = plan.report.len().min(all.len());
     let lines = if devices.failed {
         &all[all.len() - n..]
     } else {
         &all[..n]
     };
-    let bottom = size.height - 10.0;
-    for (i, line) in lines.iter().enumerate() {
+    for (i, (line, at)) in lines.iter().zip(plan.report).enumerate() {
         let failed = devices.failed && i + 1 == lines.len();
         let ink = if failed {
             look.set_red
@@ -819,13 +860,17 @@ fn draw_audio(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
         } else {
             look.accent
         };
-        text(
-            scene,
-            line,
-            style(10.5, if i == 0 { 500.0 } else { 450.0 }, ink),
-            Point::new(20.0, bottom - (lines.len() - i) as f32 * 15.0),
-            0.0,
-        );
+        let s = style(10.5, if i == 0 { 500.0 } else { 450.0 }, ink);
+        text(scene, &fit(line, s, plan.report_width), s, at, 0.0);
+    }
+}
+
+/// The list a selector opened.
+fn draw_list(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView, pick: Pick) {
+    let options = choices(pick, sound);
+    let rects = list(size, options.len(), columns(pick, options.len()));
+    for (r, (shown, _, on)) in rects.iter().zip(&options) {
+        chip(scene, snapshot, *r, shown, *on);
     }
 }
 
@@ -833,22 +878,21 @@ fn draw_audio(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
 pub(crate) fn draw(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
     let look = snapshot.look;
     let tabs = tabs(size, sound.pages());
+    let title = sound.picking.map_or("Settings", Pick::title);
     let heading = style(13.0, 650.0, look.text);
-    // The page's name, where the tabs leave room for it.
+    // Its name, where the tabs leave room for it.
     if tabs
         .first()
-        .is_none_or(|t| t.x > 28.0 + width_of(PAGES[sound.page], heading))
+        .is_none_or(|t| t.x > 28.0 + width_of(title, heading))
     {
-        text(
-            scene,
-            PAGES[sound.page],
-            heading,
-            Point::new(20.0, 13.0),
-            0.0,
-        );
+        text(scene, title, heading, Point::new(20.0, 13.0), 0.0);
     }
     for (i, r) in tabs.iter().enumerate() {
         chip(scene, snapshot, *r, PAGES[i], i == sound.page);
+    }
+    if let Some(pick) = sound.picking {
+        draw_list(size, scene, snapshot, sound, pick);
+        return;
     }
     match sound.page {
         EQ => draw_eq(size, scene, snapshot, sound),
@@ -987,49 +1031,27 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
         .enumerate()
         .map(|(i, r)| button(format!("Page {}", PAGES[i]), Some(i == sound.page), r))
         .collect();
+    if let Some(pick) = sound.picking {
+        let options = choices(pick, sound);
+        let rects = list(size, options.len(), columns(pick, options.len()));
+        for (r, (_, name, on)) in rects.iter().zip(options) {
+            items.push(button(name, Some(on), *r));
+        }
+        return items;
+    }
     match sound.page {
         AUDIO => {
-            let Some(devices) = &sound.devices else {
-                return items;
-            };
-            let plan = audio_plan(size, devices, sound.picking);
-            items.push(button("Output".into(), Some(sound.picking), plan.output));
-            for (r, d) in plan.outputs.iter().zip(&devices.outputs) {
-                items.push(button(format!("Output {}", d.name), Some(d.chosen), *r));
-            }
-            if !sound.picking {
-                let rates =
-                    std::iter::once(None).chain(devices.sample_rates.iter().map(|r| Some(*r)));
-                for (r, rate) in plan.rates.iter().zip(rates) {
-                    let on = Some(rate == devices.sample_rate);
-                    items.push(button(format!("Rate {}", rate_name(rate)), on, *r));
-                }
-                let sizes =
-                    std::iter::once(None).chain(devices.buffer_sizes.iter().map(|b| Some(*b)));
-                for (r, frames) in plan.buffers.iter().zip(sizes) {
-                    let on = Some(frames == devices.buffer_size);
-                    items.push(button(format!("Buffer {}", buffer_name(frames)), on, *r));
-                }
-            }
+            let plan = audio_plan(size);
+            items.push(button("Output".into(), None, plan.output));
+            items.push(button("Sample rate".into(), None, plan.rate));
+            items.push(button("Buffer".into(), None, plan.buffer));
         }
         TUNING => {
             let plan = tuning_plan(size);
-            for (i, r) in plan.temperaments.iter().enumerate() {
-                let on = Some(i == sound.temperament);
-                items.push(button(TEMPERAMENT_NAMES[i].into(), on, *r));
-            }
-            for (i, r) in plan.keys.iter().enumerate() {
-                items.push(button(
-                    format!("Key {}", KEY_NAMES[i]),
-                    Some(i == sound.key),
-                    *r,
-                ));
-            }
+            items.push(button("Temperament".into(), None, plan.temperament));
+            items.push(button("Key".into(), None, plan.key));
             items.push(slider_item("Pitch of A", plan.pitch));
-            for (r, hz) in plan.pitches.iter().zip(PITCHES) {
-                let on = Some((sound.pitch_hz - hz).abs() < 0.05);
-                items.push(button(format!("A {hz:.0}"), on, *r));
-            }
+            items.push(button("Pitch presets".into(), None, plan.presets));
         }
         TREMULANT => {
             let plan = tremulant_plan(size);
@@ -1051,12 +1073,8 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
             for (r, (_, name, _)) in plan.switches.iter().zip(&learn.switches) {
                 items.push(button(format!("Switch to {name}"), None, *r));
             }
-            items.push(button(
-                "Switches on the top B and C".into(),
-                None,
-                plan.top_keys,
-            ));
-            if !sound.learn.bindings.is_empty() {
+            items.push(button("Use the top B and C".into(), None, plan.top_keys));
+            if !learn.bindings.is_empty() {
                 items.push(button("Forget all".into(), None, plan.forget_all));
             }
             if let Some(devices) = &sound.devices {
@@ -1064,7 +1082,7 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
                     items.push(button(format!("MIDI {}", port.name), Some(port.chosen), *r));
                 }
             }
-            for ((_, x), (control, _)) in plan.rows.iter().zip(&sound.learn.bindings) {
+            for ((_, x), (control, _)) in plan.rows.iter().zip(&learn.bindings) {
                 items.push(button(format!("Forget {control}"), None, *x));
             }
         }
@@ -1143,6 +1161,10 @@ pub(crate) fn input(
             source.sound_page(i);
             return Handled::Yes;
         }
+        if let Some(pick) = sound.picking {
+            press_list(&context, source, sound, pick, size, at);
+            return Handled::Yes;
+        }
         let pressed = match sound.page {
             AUDIO => press_audio(source, sound, size, at),
             TUNING => press_tuning(&context, source, size, at),
@@ -1219,17 +1241,14 @@ fn press_eq(context: &EditorContext, source: &Source, size: Size, at: Point) -> 
 fn press_tuning(context: &EditorContext, source: &Source, size: Size, at: Point) -> Pressed {
     let p = &source.shared().params;
     let plan = tuning_plan(size);
-    if let Some(i) = plan.temperaments.iter().position(|r| r.contains(at)) {
-        let n = TEMPERAMENT_NAMES.len();
-        Gesture::set_once(context, p.temperament.param_id(), choice(i, n));
+    if plan.temperament.contains(at) {
+        source.pick(Some(Pick::Temperament));
         Pressed::Done
-    } else if let Some(i) = plan.keys.iter().position(|r| r.contains(at)) {
-        let n = KEY_NAMES.len();
-        Gesture::set_once(context, p.temperament_key.param_id(), choice(i, n));
+    } else if plan.key.contains(at) {
+        source.pick(Some(Pick::Key));
         Pressed::Done
-    } else if let Some(i) = plan.pitches.iter().position(|r| r.contains(at)) {
-        let normalized = p.pitch.range().normalize(PITCHES[i]);
-        Gesture::set_once(context, p.pitch.param_id(), normalized);
+    } else if plan.presets.contains(at) {
+        source.pick(Some(Pick::Pitch));
         Pressed::Done
     } else if row(plan.pitch).contains(at) {
         Pressed::Drag(begin(context, &p.pitch, plan.pitch, false, at))
@@ -1263,7 +1282,7 @@ fn press_midi(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pres
     } else if plan.top_keys.contains(at) {
         source.switches_on_top_keys();
         Pressed::Done
-    } else if !sound.learn.bindings.is_empty() && plan.forget_all.contains(at) {
+    } else if !learn.bindings.is_empty() && plan.forget_all.contains(at) {
         source.forget_controls(None);
         Pressed::Done
     } else if let (Some(i), Some(devices)) = (
@@ -1282,29 +1301,71 @@ fn press_midi(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pres
 }
 
 fn press_audio(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pressed {
-    let Some(devices) = &sound.devices else {
+    if sound.devices.is_none() {
         return Pressed::Nothing;
-    };
-    let plan = audio_plan(size, devices, sound.picking);
-    if plan.output.contains(at) {
-        source.pick_output(!sound.picking);
-        return Pressed::Done;
     }
-    if sound.picking {
-        if let Some(i) = plan.outputs.iter().position(|r| r.contains(at)) {
-            source.ask_devices(DeviceRequest::Output(devices.outputs[i].id.clone()));
-        }
-        source.pick_output(false);
-        return Pressed::Done;
-    }
-    if let Some(i) = plan.rates.iter().position(|r| r.contains(at)) {
-        let rate = i.checked_sub(1).map(|i| devices.sample_rates[i]);
-        source.ask_devices(DeviceRequest::SampleRate(rate));
-    } else if let Some(i) = plan.buffers.iter().position(|r| r.contains(at)) {
-        let frames = i.checked_sub(1).map(|i| devices.buffer_sizes[i]);
-        source.ask_devices(DeviceRequest::BufferSize(frames));
+    let plan = audio_plan(size);
+    let pick = if plan.output.contains(at) {
+        Pick::Output
+    } else if plan.rate.contains(at) {
+        Pick::Rate
+    } else if plan.buffer.contains(at) {
+        Pick::Buffer
     } else {
         return Pressed::Nothing;
+    };
+    source.pick(Some(pick));
+    Pressed::Done
+}
+
+/// A press while a list is open: a choice taken, and the list closes either
+/// way.
+fn press_list(
+    context: &EditorContext,
+    source: &Source,
+    sound: &SoundView,
+    pick: Pick,
+    size: Size,
+    at: Point,
+) -> Pressed {
+    let p = &source.shared().params;
+    let count = choices(pick, sound).len();
+    let chosen = list(size, count, columns(pick, count))
+        .iter()
+        .position(|r| r.contains(at));
+    if let Some(i) = chosen {
+        match pick {
+            Pick::Temperament => {
+                let n = TEMPERAMENT_NAMES.len();
+                Gesture::set_once(context, p.temperament.param_id(), choice(i, n));
+            }
+            Pick::Key => {
+                let n = KEY_NAMES.len();
+                Gesture::set_once(context, p.temperament_key.param_id(), choice(i, n));
+            }
+            Pick::Pitch => {
+                let normalized = p.pitch.range().normalize(PITCHES[i]);
+                Gesture::set_once(context, p.pitch.param_id(), normalized);
+            }
+            Pick::Output => {
+                if let Some(d) = &sound.devices {
+                    source.ask_devices(DeviceRequest::Output(d.outputs[i].id.clone()));
+                }
+            }
+            Pick::Rate => {
+                if let Some(d) = &sound.devices {
+                    let rate = i.checked_sub(1).map(|i| d.sample_rates[i]);
+                    source.ask_devices(DeviceRequest::SampleRate(rate));
+                }
+            }
+            Pick::Buffer => {
+                if let Some(d) = &sound.devices {
+                    let frames = i.checked_sub(1).map(|i| d.buffer_sizes[i]);
+                    source.ask_devices(DeviceRequest::BufferSize(frames));
+                }
+            }
+        }
     }
+    source.pick(None);
     Pressed::Done
 }

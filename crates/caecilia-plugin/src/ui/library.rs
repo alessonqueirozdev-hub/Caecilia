@@ -67,7 +67,7 @@ pub(crate) fn scan(playing: Option<&Path>) -> Vec<Entry> {
     }
     files.sort_by_key(|p| name_of(p).to_lowercase());
     let mut entries = vec![Entry {
-        name: "Demonstration organ".into(),
+        name: "Caecilia Pipe Organ".into(),
         path: None,
     }];
     entries.extend(files.into_iter().map(|path| Entry {

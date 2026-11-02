@@ -19,24 +19,30 @@ use super::Shared;
 use super::actions;
 use super::snapshot::name_registration;
 use crate::UiNote;
-use crate::demo::{PHRASE, PHRASE_INDEX, PIECES, Registration};
+use crate::demo::{self, PHRASE, PHRASE_INDEX, Registration};
 
 /// The rows the console offers: each piece, then the tour.
 pub(crate) fn names() -> Vec<&'static str> {
-    PIECES.iter().map(|p| p.name).chain([PHRASE.name]).collect()
+    demo::demos()
+        .iter()
+        .map(|d| d.name.as_str())
+        .chain([PHRASE.name])
+        .collect()
 }
 
 /// The rows' short names, for a desk too narrow for the whole ones.
 pub(crate) fn labels() -> Vec<&'static str> {
-    PIECES
+    demo::demos()
         .iter()
-        .map(|p| p.short)
-        .chain(["Every stop"])
+        .map(|d| d.short.as_str())
+        .chain(["Every stop, one by one"])
         .collect()
 }
 
 /// The row of the tour.
-pub(crate) const TOUR_ROW: usize = PIECES.len();
+pub(crate) fn tour_row() -> usize {
+    demo::demos().len()
+}
 
 /// How long each stop of the tour sounds, its phrase and a breath.
 const TOUR_STEP: Duration = Duration::from_millis(2400);
@@ -148,7 +154,7 @@ pub(crate) fn play(
     named: &Rc<RefCell<Vec<(u64, String)>>>,
     n: usize,
 ) {
-    let Some(piece) = PIECES.get(n) else {
+    let Some(piece) = demo::demos().get(n) else {
         return;
     };
     if let Some(first) = piece.changes.first() {
@@ -203,7 +209,7 @@ impl Script {
     /// Draw the registration the piece has reached, if one is due; false
     /// once every one is drawn.
     pub(crate) fn advance(&mut self, now: Duration, shared: &Shared, organ: &Organ) -> bool {
-        let Some(piece) = PIECES.get(self.piece) else {
+        let Some(piece) = demo::demos().get(self.piece) else {
             return false;
         };
         let began = *self.began.get_or_insert(now);

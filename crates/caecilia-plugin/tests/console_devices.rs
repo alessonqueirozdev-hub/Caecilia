@@ -150,14 +150,16 @@ fn the_audio_page_chooses_the_devices() {
     c.click(Role::Button, "Page Audio");
     assert_eq!(
         c.says("Wind"),
-        "Audio: Playing on \"Speakers\" at 48000 Hz; rate Device, buffer Device; \
+        "Audio: Playing on \"Speakers\" at 48000 Hz; rate Auto, buffer Auto; \
          MIDI in: Organ keyboard open"
     );
 
     // The outputs listed, one chosen.
     c.click(Role::Button, "Output");
     c.click(Role::Button, "Output UMC204HD");
-    c.click(Role::Button, "Rate 96k");
+    c.click(Role::Button, "Sample rate");
+    c.click(Role::Button, "Rate 96 kHz");
+    c.click(Role::Button, "Buffer");
     c.click(Role::Button, "Buffer 128");
     // The input ports are on the MIDI page.
     c.click(Role::Button, "Page MIDI");
@@ -174,7 +176,7 @@ fn the_audio_page_chooses_the_devices() {
     );
     assert_eq!(
         c.says("Wind"),
-        "Audio: Playing on \"UMC204HD\" at 96000 Hz; rate 96k, buffer 128; \
+        "Audio: Playing on \"UMC204HD\" at 96000 Hz; rate 96 kHz, buffer 128; \
          MIDI in: Organ keyboard closed"
     );
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");

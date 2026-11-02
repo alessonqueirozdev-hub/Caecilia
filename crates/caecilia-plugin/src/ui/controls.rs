@@ -1062,11 +1062,11 @@ fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
     match button {
         StatusButton::Undo => "Undo",
         StatusButton::Redo => "Redo",
-        StatusButton::Light if snapshot.look.night => "Day",
-        StatusButton::Light => "Night",
+        StatusButton::Light if snapshot.look.night => "Day mode",
+        StatusButton::Light => "Night mode",
         StatusButton::Sound => "Settings",
         StatusButton::Demos => "Demos",
-        StatusButton::Organ => "Organ\u{2026}",
+        StatusButton::Organ => "Organs",
     }
 }
 
@@ -1102,17 +1102,43 @@ fn status_plan(size: Size, snapshot: &Snapshot) -> (Vec<Chip>, Vec<(StatusButton
     } else {
         ("Wind under load".to_string(), look.accent)
     };
+    // Each chip as wide as what it can ever say, so a number changing moves
+    // nothing; the least needed go first when there is no room for them all.
     let chips_in = [
-        (snapshot.tuning.clone(), Some(look.accent)),
-        (wind.0, Some(wind.1)),
-        (snapshot.cpu.clone(), None),
+        (
+            snapshot.cpu.clone(),
+            None,
+            width_of("CPU 100 % \u{b7} 000 voices", s),
+        ),
+        (wind.0, Some(wind.1), width_of("Wind under load", s)),
+        (
+            snapshot.tuning.clone(),
+            Some(look.accent),
+            width_of(&snapshot.tuning, s),
+        ),
     ];
+    let width =
+        |c: &(String, Option<Color>, f32)| c.2 + 32.0 + if c.1.is_some() { 14.0 } else { 0.0 };
+    let mut kept = chips_in.len();
+    let room = x - 8.0;
+    while kept > 0 {
+        let needed: f32 = chips_in
+            .iter()
+            .rev()
+            .take(kept)
+            .map(|c| width(c) + 12.0)
+            .sum();
+        if needed <= room {
+            break;
+        }
+        kept -= 1;
+    }
     let mut chips = Vec::new();
     x -= 8.0;
-    for (label, dot) in chips_in.into_iter().rev() {
-        let w = width_of(&label, s) + 32.0 + if dot.is_some() { 14.0 } else { 0.0 };
+    for chip in chips_in.iter().skip(chips_in.len() - kept) {
+        let w = width(chip);
         x -= w;
-        chips.push((Rect::new(x, y, w, 30.0), label, dot));
+        chips.push((Rect::new(x, y, w, 30.0), chip.0.clone(), chip.1));
         x -= 12.0;
     }
     (chips, buttons)
@@ -1221,6 +1247,5 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
         }
         Handled::Yes
     })
-    .width(900.0)
     .into_view()
 }

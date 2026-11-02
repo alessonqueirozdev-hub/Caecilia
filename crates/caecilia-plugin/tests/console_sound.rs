@@ -153,8 +153,11 @@ fn the_tuning_page_tunes_the_organ_and_its_tremulant() {
     c.click(Role::Button, "Page Tuning");
     assert_eq!(c.says("Wind"), "Tuning: Equal on C, A 440.0 Hz");
     let params = c.h.plugin_mut().params();
+    c.click(Role::Button, "Temperament");
     c.click(Role::Button, "Werckmeister III");
+    c.click(Role::Button, "Key");
     c.click(Role::Button, "Key G");
+    c.click(Role::Button, "Pitch presets");
     c.click(Role::Button, "A 415");
     assert_eq!(params.temperament.index(), 2);
     assert_eq!(params.temperament_key.index(), 7);
@@ -256,7 +259,7 @@ fn the_midi_page_sets_the_manual_switches() {
         "{}",
         c.says("Wind")
     );
-    c.click(Role::Button, "Switches on the top B and C");
+    c.click(Role::Button, "Use the top B and C");
     let said = c.says("Wind");
     assert!(said.contains("B6 switches to Récit"), "{said}");
     assert!(said.contains("C7 switches to Grand-Orgue"), "{said}");

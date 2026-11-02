@@ -20,9 +20,9 @@ use manguebyte_ui::{
 use super::actions;
 use super::bench::{BENCH, bench};
 use super::controls::{jamb_view, pedalboard, shoes, status};
-use super::demos::{self, TOUR_ROW};
+use super::demos::{self, tour_row};
 use super::live::{Item, live};
-use super::paint::{arrow, gauge, heading, panel, style, text, width_of};
+use super::paint::{arrow, gauge, heading, panel, polygon, style, text, width_of};
 use super::registration::registration;
 use super::snapshot::{DemosView, Snapshot, Source};
 use super::sound;
@@ -52,31 +52,46 @@ fn library_rows(size: Size, count: usize) -> Vec<Rect> {
         .collect()
 }
 
-/// Where the demonstrations go: a column with a word under it where the
-/// desk is tall enough, else a grid of as many columns as it takes, so
-/// every piece is there on a short desk. Whether the word fits.
-fn demo_rows(size: Size, count: usize) -> (Vec<Rect>, bool) {
+/// Where the demonstrations go: two columns of rows, in pages when there
+/// are more than the desk holds.
+struct DemoPlan {
+    /// The rows of the page shown: the piece's number, and where it goes.
+    rows: Vec<(usize, Rect)>,
+    /// How many pages there are, and the arrows between them.
+    pages: usize,
+    page: usize,
+    previous: Rect,
+    next: Rect,
+}
+
+fn demo_plan(size: Size, count: usize, page: usize) -> DemoPlan {
     let top = 44.0;
-    let column = ((size.height - top - 30.0) / LIBRARY_ROW).max(0.0) as usize;
-    if column >= count {
-        return (library_rows(size, count), true);
-    }
-    let rows = (((size.height - top - 6.0) / LIBRARY_ROW).max(1.0) as usize).max(1);
-    let columns = count.div_ceil(rows);
-    let w = (size.width - 40.0) / columns as f32;
-    let cells = (0..count)
-        .map(|i| {
-            let (row, col) = (i / columns, i % columns);
-            Rect::new(
+    const COLUMNS: usize = 2;
+    let across = (((size.height - top - 6.0) / LIBRARY_ROW).max(1.0)) as usize;
+    let holds = (across * COLUMNS).max(1);
+    let pages = count.div_ceil(holds).max(1);
+    let page = page.min(pages - 1);
+    let w = (size.width - 40.0) / COLUMNS as f32;
+    let rows = (page * holds..count.min((page + 1) * holds))
+        .enumerate()
+        .map(|(i, n)| {
+            let (row, col) = (i / COLUMNS, i % COLUMNS);
+            let r = Rect::new(
                 20.0 + col as f32 * w,
                 top + row as f32 * LIBRARY_ROW,
                 w - 5.0,
                 LIBRARY_ROW - 4.0,
-            )
+            );
+            (n, r)
         })
-        .filter(|r| r.bottom() <= size.height - 2.0)
         .collect();
-    (cells, false)
+    DemoPlan {
+        rows,
+        pages,
+        page,
+        previous: Rect::new(150.0, 12.0, 26.0, 22.0),
+        next: Rect::new(232.0, 12.0, 26.0, 22.0),
+    }
 }
 
 fn draw_wind(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
@@ -173,23 +188,41 @@ fn draw_wind(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
 fn draw_demos(size: Size, scene: &mut Scene, snapshot: &Snapshot, demos: &DemosView) {
     let look = snapshot.look;
     let rect = Rect::new(0.0, 0.0, size.width, size.height);
-    heading(
-        scene,
-        &look,
-        rect,
-        "Demonstrations",
-        "the organ plays itself",
-    );
     let names = demos::names();
     let labels = demos::labels();
-    let (rows, roomy) = demo_rows(size, names.len());
-    for (n, (r, name)) in rows.iter().zip(&names).enumerate() {
-        // The whole name where it fits, else the piece's short one.
-        let name = if width_of(name, style(12.0, 650.0, look.text)) + 110.0 < r.width {
-            *name
-        } else {
-            labels[n]
-        };
+    // What plays says so at the top, where nothing is in its way.
+    let saying = match (demos.playing, &demos.tour) {
+        (Some(n), _) if n == tour_row() => demos.tour.clone().unwrap_or_default(),
+        (Some(n), _) => format!("Playing: {}", labels[n]),
+        (None, _) => "Choose a piece; the organ plays it".to_string(),
+    };
+    heading(scene, &look, rect, "Demonstrations", &saying);
+    let plan = demo_plan(size, names.len(), demos.page);
+    if plan.pages > 1 {
+        let ink = look.text;
+        for (r, left) in [(plan.previous, true), (plan.next, false)] {
+            let shape = RoundedRect::new(r, 8.0);
+            scene.fill(shape, look.edge.with_alpha(0x60));
+            let c = r.center();
+            let d = if left { -1.0 } else { 1.0 };
+            let mark = polygon(&[
+                Point::new(c.x - 2.5 * d, c.y - 5.0),
+                Point::new(c.x + 3.5 * d, c.y),
+                Point::new(c.x - 2.5 * d, c.y + 5.0),
+            ]);
+            scene.fill(&mark, ink);
+        }
+        text(
+            scene,
+            &format!("{} / {}", plan.page + 1, plan.pages),
+            style(11.5, 500.0, look.text2),
+            Point::new((plan.previous.right() + plan.next.x) / 2.0, 16.0),
+            0.5,
+        );
+    }
+    for (n, r) in &plan.rows {
+        let n = *n;
+        let name = labels[n];
         let playing = demos.playing == Some(n);
         let shape = RoundedRect::new(*r, 8.0);
         if playing {
@@ -212,30 +245,7 @@ fn draw_demos(size: Size, scene: &mut Scene, snapshot: &Snapshot, demos: &DemosV
             Point::new(r.x + 28.0, r.y + 4.0),
             0.0,
         );
-        if playing {
-            let what = match (&demos.tour, n == TOUR_ROW) {
-                (Some(stop), true) => stop.clone(),
-                _ => "playing".to_string(),
-            };
-            text(
-                scene,
-                &what,
-                style(10.5, 500.0, look.accent),
-                Point::new(r.right() - 12.0, r.y + 5.0),
-                1.0,
-            );
-        }
     }
-    if !roomy {
-        return;
-    }
-    text(
-        scene,
-        "Each piece draws its own stops; the tour plays every stop alone.",
-        style(10.5, 450.0, look.muted),
-        Point::new(20.0, size.height - 26.0),
-        0.0,
-    );
 }
 
 /// The wind: a gauge for each chest; or, while the library is open, the
@@ -259,7 +269,7 @@ fn wind(source: &Rc<Source>) -> View {
                 .iter()
                 .enumerate()
                 .map(|(n, name)| match (demos.playing == Some(n), &demos.tour) {
-                    (true, Some(stop)) if n == TOUR_ROW => format!("{name} (playing {stop})"),
+                    (true, Some(stop)) if n == tour_row() => format!("{name} (playing {stop})"),
                     (true, _) => format!("{name} (playing)"),
                     _ => name.to_string(),
                 })
@@ -297,18 +307,31 @@ fn wind(source: &Rc<Source>) -> View {
         }
         if let Some(demos) = &s.demos {
             let names = demos::names();
-            return demo_rows(size, names.len())
-                .0
-                .into_iter()
-                .zip(names)
-                .enumerate()
-                .map(|(n, (rect, name))| Item {
+            let plan = demo_plan(size, names.len(), demos.page);
+            let mut items: Vec<Item> = plan
+                .rows
+                .iter()
+                .map(|(n, rect)| Item {
                     role: Role::Button,
-                    name: format!("Play {name}"),
-                    checked: Some(demos.playing == Some(n)),
-                    rect,
+                    name: format!("Play {}", names[*n]),
+                    checked: Some(demos.playing == Some(*n)),
+                    rect: *rect,
                 })
                 .collect();
+            if plan.pages > 1 {
+                for (name, rect) in [
+                    ("Previous pieces", plan.previous),
+                    ("Next pieces", plan.next),
+                ] {
+                    items.push(Item {
+                        role: Role::Button,
+                        name: name.into(),
+                        checked: None,
+                        rect,
+                    });
+                }
+            }
+            return items;
         }
         let Some(library) = &s.library else {
             return Vec::new();
@@ -339,12 +362,20 @@ fn wind(source: &Rc<Source>) -> View {
         if !matches!(event, Event::PointerDown { .. }) {
             return Handled::No;
         }
-        if snapshot.demos.is_some() {
-            let (rows, _) = demo_rows(size, demos::names().len());
-            let Some(n) = rows.iter().position(|r| r.contains(at)) else {
+        if let Some(view) = &snapshot.demos {
+            let plan = demo_plan(size, demos::names().len(), view.page);
+            if plan.pages > 1 && plan.previous.contains(at) {
+                here.demo_page(plan.page.saturating_sub(1));
+                return Handled::Yes;
+            }
+            if plan.pages > 1 && plan.next.contains(at) {
+                here.demo_page(plan.page + 1);
+                return Handled::Yes;
+            }
+            let Some((n, _)) = plan.rows.iter().find(|(_, r)| r.contains(at)) else {
                 return Handled::No;
             };
-            here.press_demo(cx.context(), n);
+            here.press_demo(cx.context(), *n);
             return Handled::Yes;
         }
         let Some(library) = &snapshot.library else {
@@ -371,7 +402,7 @@ fn wind(source: &Rc<Source>) -> View {
 fn title(source: &Rc<Source>) -> View {
     live(
         "Title",
-        Size::new(420.0, 40.0),
+        Size::new(340.0, 40.0),
         source,
         |_| 0,
         |size, scene, snapshot| {
@@ -473,7 +504,7 @@ impl Widget for Ticker {
 
 /// The console.
 pub(crate) fn screen(source: &Rc<Source>) -> View {
-    let top = row((title(source), Ticker.flex(1.0), status(source)))
+    let top = row((title(source), Ticker, status(source).flex(1.0)))
         .spacing(12.0)
         .align(Align::Center);
     let middle = column((registration(source), wind(source)))

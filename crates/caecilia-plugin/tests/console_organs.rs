@@ -143,10 +143,10 @@ fn the_library_changes_the_organ_and_the_console_follows() {
     );
     assert!(c.find(Role::Button, "Great C4").is_some());
 
-    c.click(Role::Button, "Organ\u{2026}");
+    c.click(Role::Button, "Organs");
     let library = c.says("Wind");
     assert!(
-        library.starts_with("Organs: Demonstration organ"),
+        library.starts_with("Organs: Caecilia Pipe Organ"),
         "{library}"
     );
     assert!(library.contains("chamber (playing)"), "{library}");
@@ -171,8 +171,8 @@ fn the_library_changes_the_organ_and_the_console_follows() {
     assert_eq!(&*params.stops[2].info().display_name(), "Stop 02 (unused)");
 
     // And back to the demonstration organ.
-    c.click(Role::Button, "Organ\u{2026}");
-    c.click(Role::Button, "Organ Demonstration organ");
+    c.click(Role::Button, "Organs");
+    c.click(Role::Button, "Organ Caecilia Pipe Organ");
     assert!(c.find(Role::Button, "R\u{e9}cit C4").is_some());
     assert_eq!(
         &*params.stops[0].info().display_name(),
@@ -185,7 +185,7 @@ fn an_organ_file_with_an_error_says_so_and_changes_nothing() {
     let dir = organs("error");
     std::fs::write(dir.join("broken.organ.json"), "{ \"name\": \"Broken\", ").unwrap();
     let mut c = Console::open(harness_on(&dir.join("chamber.organ.json")));
-    c.click(Role::Button, "Organ\u{2026}");
+    c.click(Role::Button, "Organs");
     c.click(Role::Button, "Organ broken");
     let library = c.says("Wind");
     assert!(library.contains("broken:"), "{library}");
@@ -196,13 +196,13 @@ fn an_organ_file_with_an_error_says_so_and_changes_nothing() {
 fn the_day_s_light_is_chosen_and_the_session_keeps_it() {
     let mut c = Console::open(Harness::<Caecilia>::new(48000.0, 256));
     assert!(c.says("Title").ends_with("night's light"));
-    c.click(Role::Button, "Day");
+    c.click(Role::Button, "Day mode");
     assert!(
         c.says("Title").ends_with("day's light"),
         "{}",
         c.says("Title")
     );
-    assert!(c.find(Role::Button, "Night").is_some());
+    assert!(c.find(Role::Button, "Night mode").is_some());
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
     std::fs::create_dir_all(&dir).unwrap();
     let png = c.ui.pixels().expect("drawn").encode_png().unwrap();

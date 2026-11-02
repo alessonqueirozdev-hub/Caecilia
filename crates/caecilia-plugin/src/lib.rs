@@ -31,6 +31,7 @@
 mod console;
 mod controller;
 mod demo;
+mod demo_files;
 mod devices;
 mod params;
 mod sound;
@@ -138,7 +139,7 @@ pub(crate) enum UiNote {
     /// A key or pedal played: its MIDI channel, its key, and whether it went
     /// down.
     Key { channel: u8, key: u8, on: bool },
-    /// Play a demonstration (see [`demo::piece`]), its parts on `channels`
+    /// Play a demonstration (see [`demo::demo`]), its parts on `channels`
     /// and every key moved by `shift` semitones.
     Play {
         piece: u8,
@@ -384,13 +385,13 @@ impl Caecilia {
 
     /// The demonstrations' names, in their order.
     pub fn demonstrations() -> Vec<&'static str> {
-        demo::PIECES.iter().map(|p| p.name).collect()
+        demo::demos().iter().map(|d| d.name.as_str()).collect()
     }
 
     /// Play demonstration `n` on the organ playing, its stops left as they
     /// are; false if there is no such piece or it could not be sent.
     pub fn play_demonstration(&self, n: usize) -> bool {
-        if n >= demo::PIECES.len() {
+        if n >= demo::demos().len() {
             return false;
         }
         let channels = ui::demo_channels(&self.params.organ.organ());

@@ -16,7 +16,7 @@ use caecilia_model::{DivisionKind, Organ, StopId};
 use caecilia_registration::{FACTORY_GENERALS, Reason, RegistrationEngine, RegistrationState};
 
 use super::Shared;
-use super::demos::{self, Script, TOUR_ROW, Tour};
+use super::demos::{self, Script, Tour, tour_row};
 use super::library::{Entry, organs_folder, scan};
 use super::look::{DAY, Look, NIGHT};
 use super::sound::{self as sound_page, LearnView, SoundView};
@@ -222,6 +222,8 @@ pub(crate) struct LibraryView {
 /// the row playing, and the stop the tour is on.
 #[derive(Clone, PartialEq, Hash)]
 pub(crate) struct DemosView {
+    /// The page of the list showing.
+    pub(crate) page: usize,
     pub(crate) playing: Option<usize>,
     pub(crate) tour: Option<String>,
 }
@@ -397,6 +399,7 @@ pub(crate) struct Source {
     library: RefCell<Option<(Vec<Entry>, Option<String>)>>,
     /// Whether the demonstrations are open.
     demos: Cell<bool>,
+    demo_page: Cell<usize>,
     /// Whether the sound panel is open, and on which page.
     sound: Cell<bool>,
     page: Cell<usize>,
@@ -412,7 +415,7 @@ pub(crate) struct Source {
     devices: RefCell<Option<crate::devices::DevicesView>>,
     devices_asked: Cell<Option<(Duration, bool)>>,
     device_requests: RefCell<Vec<crate::devices::DeviceRequest>>,
-    picking: Cell<bool>,
+    picking: Cell<Option<sound_page::Pick>>,
     /// The tour of the stops, while it plays.
     tour: RefCell<Option<Tour>>,
     /// The registrations of the piece playing, still to come.
@@ -439,6 +442,7 @@ impl Source {
             focus: Cell::new(None),
             library: RefCell::new(None),
             demos: Cell::new(false),
+            demo_page: Cell::new(0),
             sound: Cell::new(false),
             page: Cell::new(0),
             learning: Cell::new(false),
@@ -447,7 +451,7 @@ impl Source {
             devices: RefCell::new(crate::devices::ask(&[], false)),
             devices_asked: Cell::new(None),
             device_requests: RefCell::default(),
-            picking: Cell::new(false),
+            picking: Cell::new(None),
             tour: RefCell::new(None),
             script: RefCell::new(None),
             named: Rc::default(),
@@ -485,7 +489,7 @@ impl Source {
         self.script.borrow_mut().take();
         demos::stop(&self.shared);
         if playing != Some(n) {
-            if n == TOUR_ROW {
+            if n == tour_row() {
                 *self.tour.borrow_mut() = Some(Tour::new(context, Rc::clone(&self.named)));
             } else {
                 demos::play(context, &self.shared, &self.organ(), &self.named, n);
@@ -495,16 +499,22 @@ impl Source {
         self.refresh();
     }
 
+    /// Show page `n` of the list of demonstrations.
+    pub(crate) fn demo_page(&self, n: usize) {
+        self.demo_page.set(n);
+        self.refresh();
+    }
+
     /// The row playing: a piece, as the audio thread says, or the tour.
     fn demo_playing(&self) -> Option<usize> {
         if self.tour.borrow().is_some() {
-            return Some(TOUR_ROW);
+            return Some(tour_row());
         }
         self.shared
             .telemetry
             .demo()
             .map(usize::from)
-            .filter(|n| *n < TOUR_ROW)
+            .filter(|n| *n < tour_row())
     }
 
     /// Ask the devices for something; the next frame carries it out.
@@ -514,9 +524,9 @@ impl Source {
     }
 
     /// List the outputs to choose one, or stop listing them.
-    pub(crate) fn pick_output(&self, on: bool) {
-        self.picking.set(on);
-        if on {
+    pub(crate) fn pick(&self, pick: Option<sound_page::Pick>) {
+        self.picking.set(pick);
+        if pick == Some(sound_page::Pick::Output) {
             // Listed afresh: one may have been plugged in.
             self.devices_asked.set(None);
         }
@@ -560,7 +570,7 @@ impl Source {
     /// Turn the sound panel to page `n`; learning stops off the MIDI page.
     pub(crate) fn sound_page(&self, n: usize) {
         self.page.set(n);
-        self.picking.set(false);
+        self.picking.set(None);
         if n != sound_page::MIDI {
             self.set_learning(false);
         }
@@ -932,6 +942,7 @@ impl Source {
             });
 
         let demos = self.demos.get().then(|| DemosView {
+            page: self.demo_page.get(),
             playing: self.demo_playing(),
             tour: self.tour.borrow().as_ref().map(|t| {
                 let n = t.at();
@@ -1114,15 +1125,16 @@ fn registration_text(
     named: &[(u64, String)],
 ) -> RegistrationText {
     let drawn = stops.count_ones();
+    let noun = if drawn == 1 { "stop" } else { "stops" };
     let summary = match general {
         Some(n) => {
             let tag = FACTORY_GENERALS.get(n).map(|g| g.tag);
             match tag {
-                Some(tag) => format!("{drawn} stops drawn \u{b7} General {} ({tag})", n + 1),
-                None => format!("{drawn} stops drawn \u{b7} General {}", n + 1),
+                Some(tag) => format!("{drawn} {noun} drawn \u{b7} General {} ({tag})", n + 1),
+                None => format!("{drawn} {noun} drawn \u{b7} General {}", n + 1),
             }
         }
-        None => format!("{drawn} stops drawn"),
+        None => format!("{drawn} {noun} drawn"),
     };
     let nodes = engine.history();
     let here = engine.current_node();
