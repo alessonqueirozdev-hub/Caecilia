@@ -360,10 +360,16 @@ fn remove_for_good(path: &Path, sys: &mut dyn System, log: &mut Log) -> (Option<
         Err(_) => match move_out(path) {
             Some(aside) => {
                 let (left, at_restart) = delete_or_defer(&aside, sys, log);
-                // In the temporary folder it is out of the installation;
-                // its cleaning takes it.
+                // In the temporary folder it is out of the installation:
+                // its cleaning or the next restart takes it, and nobody has
+                // to restart for that. (The uninstaller running as an
+                // administrator comes here every time.)
                 let temp = std::env::temp_dir();
-                (left.filter(|p| !p.starts_with(&temp)), at_restart)
+                let outside = aside.starts_with(&temp);
+                (
+                    left.filter(|p| !p.starts_with(&temp)),
+                    at_restart && !outside,
+                )
             }
             // Not even that: deleted at restart if it can be, else kept.
             None if sys.delete_at_restart(path) => {

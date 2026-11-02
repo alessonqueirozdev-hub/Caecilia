@@ -378,7 +378,15 @@ impl<R: BufRead, W: Write> Session<'_, R, W> {
             if job.progress.step != said {
                 said.clone_from(&job.progress.step);
                 let step = said.as_deref().unwrap_or("");
-                if let Some((_, words)) = t.step_names.iter().find(|(key, _)| *key == step) {
+                let words = if step == "register" {
+                    Some(t.term_register)
+                } else {
+                    t.step_names
+                        .iter()
+                        .find(|(key, _)| *key == step)
+                        .map(|(_, words)| *words)
+                };
+                if let Some(words) = words {
                     let share = (job.progress.fraction() * 100.0) as u32;
                     self.say(&format!("[{share:3}%] {words}"));
                 }

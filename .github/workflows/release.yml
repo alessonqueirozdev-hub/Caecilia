@@ -157,10 +157,13 @@ jobs:
           # launcher, install.
           printf 'y\n2\n\ny\ny\ny\ny\ny\ny\n' | ask "$SETUP"
           test -x "$program/caecilia"
-          # Remove it, and leave the organs.
+          # An organ of the person's own stays; what was installed goes.
+          organs=$HOME/.config/caecilia/organs
+          echo '{}' > "$organs/mine.organ.json"
           printf 'y\nn\n' | ask "$program/uninstall" --uninstall
           test ! -e "$program"
-          test -f "$HOME/.config/caecilia/organs/caecilia-pipe-organ.organ.json"
+          test ! -e "$organs/caecilia-pipe-organ.organ.json"
+          test -f "$organs/mine.organ.json"
 
       - name: Install for everyone
         run: |

@@ -288,6 +288,8 @@ pub struct Text {
     pub term_run: &'static str,
     /// No windows on this system yet.
     pub term_no_window: &'static str,
+    /// The step that registers, where there is no *Apps & features*.
+    pub term_register: &'static str,
 }
 
 /// English.
@@ -412,6 +414,7 @@ pub const EN: Text = Text {
     term_protected: "For everyone, Caecilia goes inside {0}, which only an administrator can change.",
     term_run: "Start it with: {0}",
     term_no_window: "On this system Caecilia plays in the terminal: its windows come later.",
+    term_register: "Registering the installation…",
 };
 
 /// Brazilian Portuguese.
@@ -542,6 +545,7 @@ pub const PT: Text = Text {
     term_protected: "Para todos, o Caecilia fica dentro de {0}, que só um administrador pode alterar.",
     term_run: "Para abrir: {0}",
     term_no_window: "Neste sistema o Caecilia toca pelo terminal: as janelas vêm depois.",
+    term_register: "Registrando a instalação…",
 };
 
 /// Spanish.
@@ -675,6 +679,7 @@ pub const ES: Text = Text {
     term_protected: "Para todos, Caecilia va dentro de {0}, que solo un administrador puede cambiar.",
     term_run: "Para abrirlo: {0}",
     term_no_window: "En este sistema Caecilia toca en el terminal: sus ventanas vendrán después.",
+    term_register: "Registrando la instalación…",
 };
 
 /// A size in bytes, for people: `14 MB`.

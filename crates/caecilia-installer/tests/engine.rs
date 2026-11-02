@@ -508,14 +508,16 @@ fn a_removal_started_inside_the_program_folder_still_removes_it() {
     let was = std::env::current_dir().unwrap();
     std::env::set_current_dir(&plan.program_dir).unwrap();
     let gone = uninstall(&mut sys, &record, None);
-    let now = std::env::current_dir().unwrap();
+    // Windows refuses to remove the folder a process works in, so it steps
+    // out. Linux and macOS allow it, and it may not have needed to.
+    #[cfg(windows)]
+    assert_eq!(
+        std::env::current_dir().unwrap().canonicalize().unwrap(),
+        std::env::temp_dir().canonicalize().unwrap()
+    );
     std::env::set_current_dir(was).unwrap();
     assert!(gone.kept.is_empty(), "{:?}", gone.kept);
     assert!(!plan.program_dir.exists());
-    assert_eq!(
-        now.canonicalize().unwrap(),
-        std::env::temp_dir().canonicalize().unwrap()
-    );
 }
 
 #[test]
@@ -799,9 +801,13 @@ fn the_running_uninstaller_leaves_no_folder_behind() {
         &places,
         14,
     );
-    // The uninstaller is a real program: this test binary.
+    // The uninstaller is a real program: this test binary. As an
+    // administrator, whose copy is deleted at the next restart.
     let me = fs::read(std::env::current_exe().unwrap()).unwrap();
-    let mut sys = MemorySystem::default();
+    let mut sys = MemorySystem {
+        can_delete_at_restart: true,
+        ..MemorySystem::default()
+    };
     let mut log = Log::in_memory();
     let record = Engine {
         sys: &mut sys,
@@ -823,6 +829,7 @@ fn the_running_uninstaller_leaves_no_folder_behind() {
     running.wait().unwrap();
     assert!(gone.kept.is_empty(), "{:?}", gone.kept);
     assert!(!plan.program_dir.exists(), "the folder went with it");
+    assert!(!gone.restart, "nobody has to restart for a temporary file");
     // What the temporary folder's cleaning would take.
     let moved =
         std::env::temp_dir().join(format!("uninstall.exe.{}.caecilia-old", std::process::id()));
