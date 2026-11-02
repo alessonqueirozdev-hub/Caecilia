@@ -11,6 +11,15 @@ Contributions of any size are welcome, from a typo fix to a whole subsystem, and
 many of them need no Rust at all. Not sure where to start, or whether an idea
 fits? Open an issue and ask, in any language.
 
+## Helping Caecilia helps Manguebyte
+
+Caecilia's development is tied to the
+[Manguebyte Audio Framework](https://github.com/alessonqueirozdev-hub/manguebyte),
+which it uses as its core. Many of Caecilia's improvements are made there, such as
+new DSP blocks, plugin formats, audio devices and console widgets, and every program
+built on the framework gains from them. So contributing to Caecilia is also
+contributing to Manguebyte, and a bug you report here may be fixed there.
+
 ## Ways to help
 
 | You are... | You could... | Start here |
@@ -102,7 +111,9 @@ in the `Demos` folder there joins the demonstrations.
 and the [documentation index](docs/README.md) says which documents are current.
 
 Something missing in the framework itself (audio devices, widgets, DSP blocks)
-belongs in [Manguebyte](https://github.com/alessonqueirozdev-hub/manguebyte/blob/main/CONTRIBUTING.md).
+belongs in [Manguebyte](https://github.com/alessonqueirozdev-hub/manguebyte/blob/main/CONTRIBUTING.md),
+which has its own rules. If you're not sure which side a problem is on, open the
+issue here and we'll find out together.
 
 ## The rules that matter most
 

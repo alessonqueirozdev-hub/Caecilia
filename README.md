@@ -34,6 +34,14 @@ Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 > plugins, with a Windows installer. The sound is the main work in progress, and
 > this is the best moment to help shape it.
 
+## Built on Manguebyte
+
+Caecilia uses the [Manguebyte Audio Framework](https://manguebyte.org) as its core:
+its DSP, plugin formats, audio devices and the toolkit the console is drawn with all
+come from there. The two are developed together, so improving Caecilia often means
+improving Manguebyte, and **contributing to Caecilia is contributing to Manguebyte
+too**.
+
 ## Why Caecilia
 
 - **Modeled, not sampled.** Every rank speaks with its own additive voice:
@@ -105,7 +113,9 @@ translators are as welcome as programmers:
   [Good first issues](https://github.com/alessonqueirozdev-hub/Caecilia/labels/good%20first%20issue)
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the details, and the [roadmap](docs/ROADMAP.md)
-says where it's going. Issues may be written in any language.
+says where it's going. Issues may be written in any language. What you find here
+often reaches [Manguebyte](https://github.com/alessonqueirozdev-hub/manguebyte) too,
+and every program built on it gains from that.
 
 ## How it fits together
 
