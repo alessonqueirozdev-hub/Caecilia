@@ -9,7 +9,9 @@ use caecilia_installer::engine::{Engine, Error};
 use caecilia_installer::log::Log;
 use caecilia_installer::payload::{Payload, PayloadBuilder, Root, Unpacked};
 use caecilia_installer::plan::{Choices, Components, Places, Plan, Scope};
-use caecilia_installer::record::{Leftover, Record};
+#[cfg(windows)]
+use caecilia_installer::record::Leftover;
+use caecilia_installer::record::Record;
 use caecilia_installer::system::{MemorySystem, System};
 
 /// A folder of its own for each test, removed at the end.
@@ -101,11 +103,13 @@ fn places(base: &Path) -> Places {
     p
 }
 
+#[cfg(windows)]
 fn paths(leftovers: &[Leftover]) -> Vec<&PathBuf> {
     leftovers.iter().map(|l| &l.path).collect()
 }
 
 /// The bytes of the first file under `root` in `files`.
+#[cfg(windows)]
 fn files_bytes_of(files: &Unpacked, root: Root) -> Vec<u8> {
     let entry = files
         .manifest
