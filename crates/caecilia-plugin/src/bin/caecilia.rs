@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
+// No terminal of its own on Windows: it opens as any application does, and
+// closing a terminal can't take the organ with it.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 //! Caecilia standalone: the organ on the sound card, played from every
 //! connected MIDI keyboard and from its console, in a window of its own.
 //!
@@ -10,9 +14,12 @@
 //! is kept in `%APPDATA%\Caecilia\session.txt`
 //! (`~/.config/caecilia/session.txt` elsewhere) and restored on the next
 //! start; the sound card and the MIDI ports, chosen on the console's
-//! Sound > Audio page, in `audio.txt` beside it. Closing the window quits. With `--no-window`, or where there are
-//! no application windows, it plays from the terminal: `organ <file>`
-//! changes the organ; an empty line quits.
+//! Settings > Audio page, in `audio.txt` beside it. Closing the window quits.
+//! With `--no-window`, or where there are no application windows, it plays from
+//! a terminal: `organ <file>` changes the organ; an empty line quits. Started
+//! from a terminal, it reports there. A failure it can't report that way is
+//! said in a message box, and a panic is kept in `caecilia.log` beside the
+//! session.
 
 use std::cell::RefCell;
 use std::io::BufRead;
@@ -38,7 +45,83 @@ fn session_path() -> Option<PathBuf> {
     )
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// What it does on a terminal, and without one.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod system {
+    use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+
+    /// Report to the terminal it was started from, if it was.
+    pub fn use_parent_terminal() {
+        // SAFETY: takes no pointers; failing, with no parent terminal or
+        // being attached already, changes nothing.
+        unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
+    }
+
+    /// A terminal to play from, its own if it has none.
+    pub fn open_terminal() {
+        // SAFETY: takes no pointers; failing, with a terminal already,
+        // changes nothing.
+        unsafe { AllocConsole() };
+    }
+
+    /// Say that it failed, where there may be no terminal to say it on.
+    pub fn show_error(message: &str) {
+        let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+        let (text, caption) = (wide(message), wide("Caecilia"));
+        // SAFETY: both strings end in a zero and outlive the call, which
+        // blocks; no owner window is passed.
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                caption.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            )
+        };
+    }
+}
+
+/// Elsewhere, it always has what it was started with.
+#[cfg(not(windows))]
+mod system {
+    pub fn use_parent_terminal() {}
+    pub fn open_terminal() {}
+    pub fn show_error(_message: &str) {}
+}
+
+fn main() -> std::process::ExitCode {
+    // `--no-window` asks for a terminal of its own, whose input is its alone.
+    if std::env::args().any(|a| a == "--no-window") {
+        system::open_terminal();
+    } else {
+        system::use_parent_terminal();
+    }
+    keep_panics();
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e}");
+            system::show_error(&format!("Caecilia could not go on:\n\n{e}"));
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+/// With no terminal a panic would vanish: keep it in `caecilia.log`, for a bug
+/// report, as well as saying it the usual way.
+fn keep_panics() {
+    let usual = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(path) = session_path().map(|p| p.with_file_name("caecilia.log")) {
+            let _ = std::fs::write(path, format!("{info}\n"));
+        }
+        usual(info);
+    }));
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     // `--organ <file>`: play that organ, whatever the last session played.
     let mut args = std::env::args().skip(1);
     let mut organ_arg = None;
@@ -146,6 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(Err(e)) = failed {
                 println!("The console did not open ({e}); playing from the terminal.");
             }
+            system::open_terminal();
             terminal(&player.borrow())?;
         }
     }

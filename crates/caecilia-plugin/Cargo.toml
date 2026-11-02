@@ -32,9 +32,17 @@ manguebyte-ui.workspace = true
 manguebyte-standalone = { workspace = true, optional = true }
 manguebyte-window = { workspace = true, optional = true }
 
+# Only for the standalone application on Windows: its terminal, when it has
+# one, and how it says it failed when it doesn't.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", optional = true, features = [
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [features]
 ## Builds the standalone application (src/bin/caecilia.rs).
-standalone = ["dep:manguebyte-standalone", "dep:manguebyte-window"]
+standalone = ["dep:manguebyte-standalone", "dep:manguebyte-window", "dep:windows-sys"]
 
 [[bin]]
 name = "caecilia"
