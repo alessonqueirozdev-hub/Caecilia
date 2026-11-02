@@ -197,15 +197,6 @@ fn draw_demos(size: Size, scene: &mut Scene, snapshot: &Snapshot, demos: &DemosV
         (None, _) => "Choose a piece; the organ plays it".to_string(),
     };
     heading(scene, &look, rect, "Demonstrations", &saying);
-    if tour_row() == 0 {
-        text(
-            scene,
-            "No pieces yet: put MIDI files in the Demos folder, beside your organs, and restart.",
-            style(10.5, 450.0, look.muted),
-            Point::new(20.0, 44.0 + LIBRARY_ROW + 4.0),
-            0.0,
-        );
-    }
     let plan = demo_plan(size, names.len(), demos.page);
     if plan.pages > 1 {
         let ink = look.text;

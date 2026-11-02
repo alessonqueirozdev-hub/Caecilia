@@ -32,7 +32,6 @@ mod console;
 mod controller;
 mod demo;
 mod demo_files;
-pub use demo_files::set_demo_folder_for_new_instances;
 mod devices;
 mod params;
 mod sound;
