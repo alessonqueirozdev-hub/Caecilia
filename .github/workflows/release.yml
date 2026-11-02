@@ -153,14 +153,18 @@ jobs:
               ask() { script -q /dev/null "$@"; }
               ;;
           esac
+          # A person answers once the question is there: macOS's `script`
+          # drops what comes before the program has its terminal, and takes
+          # the end of its input as the end of the answers.
+          answers() { sleep 3; printf "$1"; sleep 10; }
           # The licence, just me, the default folder, every component, the
           # launcher, install.
-          printf 'y\n2\n\ny\ny\ny\ny\ny\ny\n' | ask "$SETUP"
+          answers 'y\n2\n\ny\ny\ny\ny\ny\ny\n' | ask "$SETUP"
           test -x "$program/caecilia"
           # An organ of the person's own stays; what was installed goes.
           organs=$HOME/.config/caecilia/organs
           echo '{}' > "$organs/mine.organ.json"
-          printf 'y\nn\n' | ask "$program/uninstall" --uninstall
+          answers 'y\nn\n' | ask "$program/uninstall" --uninstall
           test ! -e "$program"
           test ! -e "$organs/caecilia-pipe-organ.organ.json"
           test -f "$organs/mine.organ.json"
