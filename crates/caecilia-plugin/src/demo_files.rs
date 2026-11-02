@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
-//! Demonstrations from MIDI files: every `.mid` in the Demos folder beside
-//! the session (`%APPDATA%\Caecilia\Demos`) becomes a piece the instrument
-//! plays on itself.
+//! Demonstrations from MIDI files: the ones the instrument carries
+//! (`assets/demos`), and every `.mid` in the Demos folder beside the session
+//! (`%APPDATA%\Caecilia\Demos`), which adds to them and replaces one of the
+//! same name.
 //!
 //! Each track goes to a part by its name, or failing that by its range: the
 //! lowest line to the pedal, any other to the great (a trio's two upper
@@ -11,8 +12,7 @@
 //! octaves. Pieces this file knows have their proper names and their own
 //! registrations; any other is named after its file and given one in turn.
 
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::path::PathBuf;
 
 use caecilia_model::TonalFamily::{self, Flute, Mixture, Principal, Reed, String as Strings};
 use manguebyte_midi::MidiMessage;
@@ -20,21 +20,10 @@ use manguebyte_midi::file::{Division, MetaEvent, MidiFile, TrackEventKind};
 
 use crate::demo::{Change, Demo, Draw, Event, GREAT, PEDAL, Registration, SWELL, score_of};
 
-static FOLDER: OnceLock<PathBuf> = OnceLock::new();
-
-/// Read the demonstrations from `folder` rather than the usual one: for
-/// tests, before the first instance is made.
-pub fn set_demo_folder_for_new_instances(folder: &Path) {
-    let _ = FOLDER.set(folder.to_owned());
-}
-
-/// The folder demonstrations are read from: the one set, or `CAECILIA_DEMOS`
-/// (empty for none), else beside the session. Nothing under `cargo`, whose
-/// tests must not hear what happens to be on this machine.
+/// The folder demonstrations are read from: `CAECILIA_DEMOS` if set (empty
+/// for none), else beside the session. Nothing under `cargo`, whose tests
+/// must not hear what happens to be on this machine.
 fn folder() -> Option<PathBuf> {
-    if let Some(set) = FOLDER.get() {
-        return Some(set.clone());
-    }
     if let Some(named) = std::env::var_os("CAECILIA_DEMOS") {
         return (!named.is_empty()).then(|| PathBuf::from(named));
     }
@@ -55,48 +44,203 @@ fn folder() -> Option<PathBuf> {
 /// a byte, and the top one means the tour.
 const MOST: usize = 200;
 
-/// The pieces in the Demos folder, those this file knows first and in its
-/// order; none if there is no folder or nothing in it plays.
-pub(crate) fn load() -> Vec<Demo> {
-    folder().map_or_else(Vec::new, |f| load_from(&f))
-}
+/// The MIDI files the instrument carries: each file's name without its
+/// extension, and its bytes.
+const CARRIED: &[(&str, &[u8])] = &[
+    (
+        "01AusmeinesHerz",
+        include_bytes!("../../../assets/demos/01AusmeinesHerz.mid"),
+    ),
+    (
+        "02Ichdankdir",
+        include_bytes!("../../../assets/demos/02Ichdankdir.mid"),
+    ),
+    (
+        "03AchGott",
+        include_bytes!("../../../assets/demos/03AchGott.mid"),
+    ),
+    (
+        "04EsistdasHeiluns",
+        include_bytes!("../../../assets/demos/04EsistdasHeiluns.mid"),
+    ),
+    (
+        "05AnWasserflussen",
+        include_bytes!("../../../assets/demos/05AnWasserflussen.mid"),
+    ),
+    (
+        "06Christus",
+        include_bytes!("../../../assets/demos/06Christus.mid"),
+    ),
+    (
+        "07Nunlob",
+        include_bytes!("../../../assets/demos/07Nunlob.mid"),
+    ),
+    (
+        "08Freueteuch",
+        include_bytes!("../../../assets/demos/08Freueteuch.mid"),
+    ),
+    (
+        "09Ermuntredich",
+        include_bytes!("../../../assets/demos/09Ermuntredich.mid"),
+    ),
+    (
+        "10AustieferNot",
+        include_bytes!("../../../assets/demos/10AustieferNot.mid"),
+    ),
+    ("11Jesu", include_bytes!("../../../assets/demos/11Jesu.mid")),
+    (
+        "12PuerNatusinBet",
+        include_bytes!("../../../assets/demos/12PuerNatusinBet.mid"),
+    ),
+    (
+        "13Alleinzudir",
+        include_bytes!("../../../assets/demos/13Alleinzudir.mid"),
+    ),
+    (
+        "14OHerreGott",
+        include_bytes!("../../../assets/demos/14OHerreGott.mid"),
+    ),
+    (
+        "15ChristlaginTode",
+        include_bytes!("../../../assets/demos/15ChristlaginTode.mid"),
+    ),
+    (
+        "BSGJG_A",
+        include_bytes!("../../../assets/demos/BSGJG_A.MID"),
+    ),
+    (
+        "BSGJG_B",
+        include_bytes!("../../../assets/demos/BSGJG_B.MID"),
+    ),
+    (
+        "BSGJG_C",
+        include_bytes!("../../../assets/demos/BSGJG_C.MID"),
+    ),
+    (
+        "BSGJG_D",
+        include_bytes!("../../../assets/demos/BSGJG_D.MID"),
+    ),
+    (
+        "BSGJG_E",
+        include_bytes!("../../../assets/demos/BSGJG_E.MID"),
+    ),
+    (
+        "BSGJG_F",
+        include_bytes!("../../../assets/demos/BSGJG_F.MID"),
+    ),
+    (
+        "BSGJG_G",
+        include_bytes!("../../../assets/demos/BSGJG_G.MID"),
+    ),
+    (
+        "BSGJG_H",
+        include_bytes!("../../../assets/demos/BSGJG_H.MID"),
+    ),
+    (
+        "BSGJG_I",
+        include_bytes!("../../../assets/demos/BSGJG_I.MID"),
+    ),
+    (
+        "BSGJG_J",
+        include_bytes!("../../../assets/demos/BSGJG_J.MID"),
+    ),
+    (
+        "BSGJG_K",
+        include_bytes!("../../../assets/demos/BSGJG_K.MID"),
+    ),
+    (
+        "BSGJG_L",
+        include_bytes!("../../../assets/demos/BSGJG_L.MID"),
+    ),
+    ("JESU1", include_bytes!("../../../assets/demos/JESU1.MID")),
+    ("JESU2", include_bytes!("../../../assets/demos/JESU2.MID")),
+    (
+        "orgel19",
+        include_bytes!("../../../assets/demos/orgel19.mid"),
+    ),
+    (
+        "prefug1",
+        include_bytes!("../../../assets/demos/prefug1.mid"),
+    ),
+    (
+        "prefug2",
+        include_bytes!("../../../assets/demos/prefug2.mid"),
+    ),
+    (
+        "prefug3",
+        include_bytes!("../../../assets/demos/prefug3.mid"),
+    ),
+    (
+        "prefug4",
+        include_bytes!("../../../assets/demos/prefug4.mid"),
+    ),
+    (
+        "prefug5",
+        include_bytes!("../../../assets/demos/prefug5.mid"),
+    ),
+    (
+        "prefug6",
+        include_bytes!("../../../assets/demos/prefug6.mid"),
+    ),
+    (
+        "prefug7",
+        include_bytes!("../../../assets/demos/prefug7.mid"),
+    ),
+    (
+        "prefug8",
+        include_bytes!("../../../assets/demos/prefug8.mid"),
+    ),
+    ("schub5", include_bytes!("../../../assets/demos/schub5.mid")),
+    ("schub6", include_bytes!("../../../assets/demos/schub6.mid")),
+    (
+        "toccata1",
+        include_bytes!("../../../assets/demos/toccata1.mid"),
+    ),
+    ("trio3a", include_bytes!("../../../assets/demos/trio3a.mid")),
+    ("trio3b", include_bytes!("../../../assets/demos/trio3b.mid")),
+    ("trio3c", include_bytes!("../../../assets/demos/trio3c.mid")),
+];
 
-fn load_from(folder: &Path) -> Vec<Demo> {
-    let Ok(entries) = std::fs::read_dir(folder) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("mid") || e.eq_ignore_ascii_case("midi"))
-        })
+/// The pieces, those this file knows first and in its order.
+pub(crate) fn load() -> Vec<Demo> {
+    let mut files: Vec<(String, Vec<u8>)> = CARRIED
+        .iter()
+        .map(|(name, bytes)| (name.to_string(), bytes.to_vec()))
         .collect();
-    let stem = |p: &Path| {
-        p.file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-    };
-    let rank = |p: &Path| {
-        let s = stem(p);
+    if let Some(entries) = folder().and_then(|f| std::fs::read_dir(f).ok()) {
+        for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
+            let midi = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("mid") || e.eq_ignore_ascii_case("midi"));
+            let (Some(name), Ok(bytes), true) = (
+                path.file_stem().and_then(|s| s.to_str()),
+                std::fs::read(&path),
+                midi,
+            ) else {
+                continue;
+            };
+            match files.iter_mut().find(|f| f.0.eq_ignore_ascii_case(name)) {
+                Some(same) => same.1 = bytes,
+                None => files.push((name.to_string(), bytes)),
+            }
+        }
+    }
+    let rank = |name: &str| {
+        let s = name.to_ascii_lowercase();
         KNOWN
             .iter()
             .position(|k| k.file == s)
             .unwrap_or(KNOWN.len())
     };
-    files.sort_by_key(|p| (rank(p), stem(p)));
+    files.sort_by_key(|f| (rank(&f.0), f.0.to_ascii_lowercase()));
     let mut unknown = 0;
     let mut demos = Vec::new();
-    for path in files.into_iter().take(MOST) {
-        let Ok(bytes) = std::fs::read(&path) else {
-            continue;
-        };
+    for (file_name, bytes) in files.into_iter().take(MOST) {
         let Ok(file) = MidiFile::from_bytes(&bytes) else {
             continue;
         };
-        let s = stem(&path);
+        let s = file_name.to_ascii_lowercase();
         let events = events_of(&file, s.starts_with("trio"));
         if events.is_empty() {
             continue;
@@ -104,13 +248,12 @@ fn load_from(folder: &Path) -> Vec<Demo> {
         let (name, short, changes) = match KNOWN.iter().find(|k| k.file == s) {
             Some(k) => (k.name.to_string(), k.short.to_string(), k.changes),
             None => {
-                let name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_default()
-                    .to_string();
                 unknown += 1;
-                (name.clone(), name, IN_TURN[unknown % IN_TURN.len()])
+                (
+                    file_name.clone(),
+                    file_name,
+                    IN_TURN[unknown % IN_TURN.len()],
+                )
             }
         };
         demos.push(Demo {
@@ -845,23 +988,16 @@ mod tests {
         assert!((events[1].at - 1.5).abs() < 1e-4, "{}", events[1].at);
     }
 
-    /// The real files, where `CAECILIA_DEMOS_CHECK` names a folder of them:
-    /// every one reads, plays and fits the keyboards.
+    /// Every file the instrument carries reads, plays and has a key down
+    /// within its keyboards.
     #[test]
-    fn the_folder_named_reads() {
-        let Some(folder) = std::env::var_os("CAECILIA_DEMOS_CHECK") else {
-            return;
-        };
-        let demos = load_from(Path::new(&folder));
-        assert!(!demos.is_empty());
+    fn the_carried_files_read() {
+        let demos = load();
+        assert_eq!(demos.len(), CARRIED.len());
+        assert_eq!(demos[0].name, "Toccata and Fugue in D minor, BWV 565");
         for d in &demos {
-            println!(
-                "{:>7.1} s  {:>5} events  {}",
-                d.score.seconds(),
-                d.score.event_count(),
-                d.name
-            );
             assert!(d.score.seconds() > 5.0, "{}", d.name);
+            assert!(d.score.event_count() > 50, "{}", d.name);
         }
     }
 }

@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
+name: Organ proposal
+description: An organ you'd like to build or see in Caecilia, or a problem with an organ file.
+labels: ["organ-file"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Organs are JSON files, described in
+        [the organ file guide](https://github.com/alessonqueirozdev-hub/Caecilia/blob/main/docs/ORGAN_FILE.md).
+        Write in any language.
+
+  - type: input
+    id: organ
+    attributes:
+      label: The organ
+      description: A real instrument, or a style.
+      placeholder: A German Baroque positive, or the organ of my parish in Recife
+    validations:
+      required: true
+
+  - type: textarea
+    id: specification
+    attributes:
+      label: Its specification
+      description: Divisions and stops, if you know them. A link is fine.
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: What would you like to do?
+      options:
+        - I'd like to write the organ file myself
+        - I can help someone write it
+        - I'm only suggesting it
+    validations:
+      required: true
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: What the format can't express yet, errors you got, your file so far.

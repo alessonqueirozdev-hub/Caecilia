@@ -5,6 +5,12 @@ Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # Caecilia — Architecture
 
+> **Written for Caecilia 1.x, the C++ instrument.** The ideas still hold, but paths,
+> types and plans here describe 1.x, kept at the tag
+> [`v1-cpp-final`](https://github.com/alessonqueirozdev-hub/Caecilia/tree/v1-cpp-final).
+> For what is true today, see the [documentation index](README.md). Bringing this
+> document up to date is a welcome contribution.
+
 This is the master architecture document: the layering model, module
 responsibilities, the four load-bearing design decisions (hybrid voice, wind,
 RT contract, semantic registration), the end-to-end data flow, and the

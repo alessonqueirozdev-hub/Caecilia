@@ -16,7 +16,7 @@ Fixes #
      For audio changes, say what you listened for and on what. -->
 
 - [ ] `cargo test --profile caecilia --workspace` passes
-- [ ] `cargo fmt --all` and `cargo clippy --workspace --all-targets -- -D warnings` are clean
+- [ ] `cargo fmt --all` and `cargo clippy --profile caecilia --workspace --all-targets --features caecilia-plugin/standalone -- -D warnings` are clean
 - [ ] Tested at more than one buffer size and sample rate
 
 ## Real-time safety

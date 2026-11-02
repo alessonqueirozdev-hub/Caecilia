@@ -23,20 +23,21 @@ caecilia-synth = { path = "crates/caecilia-synth" }
 caecilia-engine = { path = "crates/caecilia-engine" }
 caecilia-registration = { path = "crates/caecilia-registration" }
 
-# The framework, by path while both are developed side by side (as Parabolic
-# does). Pinned to git + rev before a release, so a clean checkout builds.
-manguebyte-core = { path = "C:/manguebyte/crates/manguebyte-core" }
-manguebyte-dsp = { path = "C:/manguebyte/crates/manguebyte-dsp" }
-manguebyte-params = { path = "C:/manguebyte/crates/manguebyte-params" }
-manguebyte-plugin = { path = "C:/manguebyte/crates/manguebyte-plugin" }
-manguebyte-midi = { path = "C:/manguebyte/crates/manguebyte-midi" }
-manguebyte-clap = { path = "C:/manguebyte/crates/manguebyte-clap" }
-manguebyte-vst3 = { path = "C:/manguebyte/crates/manguebyte-vst3" }
-manguebyte-standalone = { path = "C:/manguebyte/crates/manguebyte-standalone" }
-manguebyte-gfx = { path = "C:/manguebyte/crates/manguebyte-gfx" }
-manguebyte-ui = { path = "C:/manguebyte/crates/manguebyte-ui" }
-manguebyte-gui = { path = "C:/manguebyte/crates/manguebyte-gui" }
-manguebyte-window = { path = "C:/manguebyte/crates/manguebyte-window" }
+# The framework, by path while both change together: clone Manguebyte beside
+# this repository (see CONTRIBUTING.md). To be pinned to a git revision or a
+# published version once its API settles, so one clone is enough.
+manguebyte-core = { path = "../manguebyte/crates/manguebyte-core" }
+manguebyte-dsp = { path = "../manguebyte/crates/manguebyte-dsp" }
+manguebyte-params = { path = "../manguebyte/crates/manguebyte-params" }
+manguebyte-plugin = { path = "../manguebyte/crates/manguebyte-plugin" }
+manguebyte-midi = { path = "../manguebyte/crates/manguebyte-midi" }
+manguebyte-clap = { path = "../manguebyte/crates/manguebyte-clap" }
+manguebyte-vst3 = { path = "../manguebyte/crates/manguebyte-vst3" }
+manguebyte-standalone = { path = "../manguebyte/crates/manguebyte-standalone" }
+manguebyte-gfx = { path = "../manguebyte/crates/manguebyte-gfx" }
+manguebyte-ui = { path = "../manguebyte/crates/manguebyte-ui" }
+manguebyte-gui = { path = "../manguebyte/crates/manguebyte-gui" }
+manguebyte-window = { path = "../manguebyte/crates/manguebyte-window" }
 
 serde_json = "1"
 
@@ -45,9 +46,8 @@ missing_docs = "warn"
 unsafe_code = "deny"
 
 # Tests render seconds of a full organ, which an unoptimised build makes slow
-# enough to matter; checks stay on. Share the framework's build folder to keep
-# one copy of its artifacts on disk:
-#   CARGO_TARGET_DIR=C:/manguebyte/target cargo test --profile caecilia
+# enough to matter; checks stay on:
+#   cargo test --profile caecilia --workspace
 [profile.caecilia]
 inherits = "dev"
 opt-level = 2

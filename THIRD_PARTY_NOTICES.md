@@ -42,3 +42,11 @@ are cited only by their observable behaviour and public documentation.
 
 If you believe any part of this repository infringes a third party's rights,
 please open an issue and it will be addressed.
+
+## Demonstration MIDI files
+
+`assets/demos` holds MIDI sequences of works by J. S. Bach (public domain as
+compositions), supplied by the project's author. They carry no copyright
+notice; `JESU1.MID` credits its arranger, John Renfro Davis. Their sequencers
+are otherwise unknown: anyone with a claim to one of them is asked to write to
+alessonqueiroz.dev@gmail.com, and it will be credited or removed.

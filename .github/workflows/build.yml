@@ -7,8 +7,8 @@
 # application; builds the installer (caecilia-dist) and uploads it too.
 #
 # Caecilia depends on Manguebyte by path while both are developed side by
-# side (`C:/manguebyte/crates/...` in Cargo.toml), so the job checks the
-# framework out at exactly that path. No test opens an audio device.
+# side (`../manguebyte/crates/...` in Cargo.toml), so the job checks the
+# framework out beside this repository. No test opens an audio device.
 
 name: Build Caecilia
 
@@ -24,13 +24,12 @@ jobs:
     name: Windows (tests, bundles, standalone)
     runs-on: windows-latest
     env:
-      CARGO_TARGET_DIR: C:\manguebyte\target
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
 
       - name: Check out Manguebyte where Cargo.toml expects it
-        run: git clone --depth 1 https://github.com/alessonqueirozdev-hub/manguebyte.git C:\manguebyte
+        run: git clone --depth 1 https://github.com/alessonqueirozdev-hub/manguebyte.git ..\manguebyte
 
       - name: Rust toolchain
         run: |
@@ -47,22 +46,22 @@ jobs:
         run: cargo test --profile caecilia --workspace
 
       - name: Bundles (cargo mangue)
-        run: cargo run --release --manifest-path C:\manguebyte\crates\cargo-mangue\Cargo.toml -- mangue bundle -p caecilia-plugin --profile caecilia-release --format clap,vst3
+        run: cargo run --release --manifest-path ..\manguebyte\crates\cargo-mangue\Cargo.toml -- mangue bundle -p caecilia-plugin --profile caecilia-release --format clap,vst3
 
       - name: The bundles in a host
-        run: cargo run --profile caecilia-release -p caecilia-plugin --example host_check -- C:\manguebyte\target\bundled\Caecilia.clap C:\manguebyte\target\bundled\Caecilia.vst3
+        run: cargo run --profile caecilia-release -p caecilia-plugin --example host_check -- target\bundled\Caecilia.clap target\bundled\Caecilia.vst3
 
       - name: Standalone application
         run: cargo build --profile caecilia-release -p caecilia-plugin --features standalone --bin caecilia
 
       - name: Installer
-        run: cargo run --profile caecilia-release -p caecilia-installer --bin caecilia-dist -- build --target-dir C:\manguebyte\target
+        run: cargo run --profile caecilia-release -p caecilia-installer --bin caecilia-dist -- build
 
       - uses: actions/upload-artifact@v4
         with:
           name: Caecilia-windows
           path: |
-            C:\manguebyte\target\bundled\Caecilia.clap
-            C:\manguebyte\target\bundled\Caecilia.vst3
-            C:\manguebyte\target\caecilia-release\caecilia.exe
-            C:\manguebyte\target\installer\Caecilia-Setup-*.exe
+            target\bundled\Caecilia.clap
+            target\bundled\Caecilia.vst3
+            target\caecilia-release\caecilia.exe
+            target\installer\Caecilia-Setup-*.exe

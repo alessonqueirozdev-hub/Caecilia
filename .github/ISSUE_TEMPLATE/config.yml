@@ -6,9 +6,9 @@ contact_links:
   - name: Contributing guide
     url: https://github.com/alessonqueirozdev-hub/Caecilia/blob/main/CONTRIBUTING.md
     about: Build instructions, the real-time rules, commit convention and PR flow.
-  - name: Architecture overview
-    url: https://github.com/alessonqueirozdev-hub/Caecilia/blob/main/docs/ARCHITECTURE.md
-    about: Layering, the audio-thread seam, and how the subsystems fit together.
+  - name: Roadmap
+    url: https://github.com/alessonqueirozdev-hub/Caecilia/blob/main/docs/ROADMAP.md
+    about: Where the project is going, and where help is wanted.
   - name: Security advisory
     url: https://github.com/alessonqueirozdev-hub/Caecilia/security/advisories/new
     about: Report a security-relevant issue privately, not as a public issue.

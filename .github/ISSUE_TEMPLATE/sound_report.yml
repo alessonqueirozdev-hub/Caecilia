@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+
+name: Sound report
+description: Something doesn't sound like a real organ. No programming needed.
+labels: ["sound"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Your ear is what the tests can't replace. Write in any language, and
+        don't worry about technical terms: describe what you hear.
+
+  - type: textarea
+    id: what-you-hear
+    attributes:
+      label: What you hear
+      description: What sounds wrong or artificial, and what you'd expect from a real organ.
+      placeholder: The Montre 8 sounds thin in the bass, and every note starts the same way.
+    validations:
+      required: true
+
+  - type: input
+    id: stops
+    attributes:
+      label: Stops and notes
+      description: Which stops were drawn, and in which part of the keyboard.
+      placeholder: Grand-Orgue Montre 8 and Prestant 4, low octave
+    validations:
+      required: true
+
+  - type: input
+    id: settings
+    attributes:
+      label: Room, reverb and temperament
+      placeholder: Hall, reverb 25 %, Equal
+
+  - type: textarea
+    id: reference
+    attributes:
+      label: A real organ to compare with
+      description: A recording or video you like, or an instrument you know. Links are welcome.
+
+  - type: textarea
+    id: recording
+    attributes:
+      label: A recording of Caecilia
+      description: A short clip helps a lot. Drag a file here, zipped if GitHub refuses it.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version and how you play it
+      placeholder: 2.0.0-alpha.0, standalone on Windows 11

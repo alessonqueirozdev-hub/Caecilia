@@ -5,9 +5,6 @@
 //! its stops, plays on its own (the keys lighting as they go), ends by
 //! itself or when pressed again; the tour plays every stop alone.
 
-#[path = "fixture/mod.rs"]
-mod fixture;
-
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -36,7 +33,6 @@ struct Console {
 
 impl Console {
     fn open() -> Console {
-        fixture::demos();
         let mut h = Harness::<Caecilia>::new(48000.0, BLOCK);
         h.render(BLOCK);
         let spec = h
@@ -135,9 +131,19 @@ fn a_piece_draws_its_stops_and_plays_by_itself() {
     std::fs::create_dir_all(&dir).unwrap();
     let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
     std::fs::write(dir.join("console-demos@1x.png"), png).unwrap();
+}
 
-    // It ends by itself, every key lifted.
-    c.play_for(5.0);
+#[test]
+fn a_piece_ends_by_itself_every_key_lifted() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Demos");
+    let shortest = "Play Chorale: Christus, der ist mein Leben";
+    while c.ui.find(Role::Button, shortest).is_none() {
+        c.click(Role::Button, "Next pieces");
+    }
+    c.click(Role::Button, shortest);
+    assert!(c.says("Wind").contains("(playing)"), "{}", c.says("Wind"));
+    c.play_for(21.0);
     assert!(!c.says("Wind").contains("(playing)"), "{}", c.says("Wind"));
     assert!(nothing_held(&c), "{}", c.says("Manuals"));
 }

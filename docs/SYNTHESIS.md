@@ -5,6 +5,12 @@ Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 # Caecilia — Synthesis Design
 
+> **Written for Caecilia 1.x, the C++ instrument.** The ideas still hold, but paths,
+> types and plans here describe 1.x, kept at the tag
+> [`v1-cpp-final`](https://github.com/alessonqueirozdev-hub/Caecilia/tree/v1-cpp-final).
+> For what is true today, see the [documentation index](README.md). Bringing this
+> document up to date is a welcome contribution.
+
 How `caecilia::synth` turns a keypress into sound: the **layered voice pipeline**
 (attack → sustain → release), the two physical synthesis engines plus the
 CPU-cheap partial bank, per-pipe hand-voicing, the attack-splice hybrid, and how
