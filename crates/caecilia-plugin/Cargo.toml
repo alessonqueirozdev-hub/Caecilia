@@ -47,7 +47,7 @@ manguebyte-gui = { workspace = true, features = ["headless"] }
 manguebyte-window.workspace = true
 caecilia-registration.workspace = true
 # Loads the built bundles the way a host does (examples/host_check.rs).
-manguebyte-host = { path = "C:/manguebyte/crates/manguebyte-host", default-features = false, features = ["clap", "vst3"] }
+manguebyte-host = { path = "../../../manguebyte/crates/manguebyte-host", default-features = false, features = ["clap", "vst3"] }
 
 [package.metadata.manguebyte]
 name = "Caecilia"

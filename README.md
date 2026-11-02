@@ -3,108 +3,140 @@ SPDX-License-Identifier: Apache-2.0
 Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
-# Caecilia
+<p align="center">
+  <img src="assets/brand/caecilia-icon-512.png" alt="The Caecilia logo, a gold C around organ pipes" width="140">
+</p>
 
-**An open-source modeled pipe organ: living wind, every rank its own voice.
-CLAP, VST3 and a standalone application.**
+<h1 align="center">Caecilia</h1>
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+<p align="center">
+  <strong>An open-source virtual pipe organ in Rust. No samples: every pipe is calculated as it sounds, on a wind that lives.</strong>
+</p>
 
-> Status: **2.0 alpha.** Caecilia 2.0 is the instrument rewritten in Rust on the
-> [Manguebyte Audio Framework](https://github.com/alessonqueirozdev-hub/manguebyte):
-> no JUCE, no WebView, no JavaScript. It builds and plays on Windows as CLAP,
-> VST3 and a standalone application. The 1.x C++/JUCE instrument it replaces
-> is kept at the tag [`v1-cpp-final`](https://github.com/alessonqueirozdev-hub/Caecilia/tree/v1-cpp-final);
-> what it measured is frozen in `reference/cpp-1.x`, which 2.0 is tested against.
+<p align="center">
+  <a href="https://github.com/alessonqueirozdev-hub/Caecilia/actions/workflows/build.yml"><img src="https://github.com/alessonqueirozdev-hub/Caecilia/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
+  <a href="https://github.com/alessonqueirozdev-hub/Caecilia/releases"><img src="https://img.shields.io/github/v/release/alessonqueirozdev-hub/Caecilia?include_prereleases&label=release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome"></a>
+</p>
 
-## What it is
+<p align="center">
+  <a href="https://github.com/alessonqueirozdev-hub/Caecilia/releases">Download</a> ·
+  <a href="https://manguebyte.org/caecilia/#videos">Hear it</a> ·
+  <a href="https://manguebyte.org/caecilia/">Website</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a> ·
+  <a href="docs/ROADMAP.md">Roadmap</a>
+</p>
+
+![The Caecilia console: drawstop jambs, registration, demonstrations and keyboards](docs/images/console-night.png)
+
+> **Early alpha.** Caecilia plays today, as a standalone app and as VST3 and CLAP
+> plugins, with a Windows installer. The sound is the main work in progress, and
+> this is the best moment to help shape it.
+
+## Why Caecilia
 
 - **Modeled, not sampled.** Every rank speaks with its own additive voice:
-  staggered onsets, chiff, mixtures that break back, drift. Every pipe takes
-  its wind from a windchest fed by a modeled bellows, so a full chord sags the
-  wind and the pipes answer to it. The tremulant shakes the wind, not the
-  volume.
-- **Any organ.** An organ is a JSON file of windchests, ranks, divisions, stops
-  and couplers ([docs/ORGAN_FILE.md](docs/ORGAN_FILE.md)). The Caecilia Pipe
-  Organ, French in style, with two manuals and pedal and 32 stops, is built in. Organs change live, without a click,
-  from the console's library.
-- **A console that is an organ console.** Drawstop jambs, manuals with key
-  slips and general pistons, swell and crescendo shoes, a pedalboard with toe
-  studs, wind gauges in millimetres of water. It is drawn natively with
-  Manguebyte's toolkit, in a night or a day light, and lays itself out for
-  whatever organ plays.
-- **Registration that thinks.** A selector language
-  (`div:recit & family:string`) draws stops by their nature. Branching undo
-  and redo walk the history. Factory and captured generals sit on the pistons.
-  Every stop says why it is drawn.
-- **Demonstrations.** Pieces the organ plays on itself, each drawing its own
-  stops, and a tour that plays every stop alone. The organ can be heard
-  without a keyboard.
-- **Sound and tuning.** The reverb's room (room, chamber, hall, cathedral,
-  plate), a five-band master EQ in the organ's voicing, eight
-  temperaments on any key, the pitch of A, and the tremulant's rate and depth.
-- **MIDI learn from the console.** Press a stop or a piston, then move a key,
-  pedal or controller.
-- **Real-time safe.** Nothing on the audio thread allocates, locks or waits,
-  and tests prove it, including while an organ is changed or a demonstration
-  plays.
+  staggered onsets, chiff, mixtures that break back, drift.
+- **The wind is alive.** Every pipe draws on a windchest fed by a modeled bellows.
+  A full chord sags the wind and the pipes answer in pitch, level and brightness.
+  The tremulant shakes the wind, not the volume.
+- **Any organ.** An organ is a [JSON file](docs/ORGAN_FILE.md) of windchests, ranks,
+  divisions, stops and couplers, and it changes live, without a click. The Caecilia
+  Pipe Organ is built in: French in style, two manuals and pedal, 32 stops.
+- **A console that is an organ console.** Drawstop jambs, general pistons, swell
+  and crescendo shoes, a pedalboard and wind gauges in millimetres of water, in a
+  night or a day light. It is drawn natively, with no WebView.
+- **Registration that thinks.** A selector language (`div:recit & family:string`)
+  draws stops by their nature, undo and redo walk the history, and every stop can
+  say why it is drawn.
+- **Plays without a keyboard.** Bach demonstrations draw their own stops and play
+  themselves, and a tour sounds every stop alone. With one MIDI keyboard, keys you
+  choose switch between the manuals or play both.
+- **Real-time safe, and proved.** Nothing on the audio thread allocates, locks or
+  waits, and tests with a counting allocator check it.
 
-## Repository layout
+## Try it
 
-| Crate | What it is |
-|---|---|
-| `crates/caecilia-model` | The organ model and its JSON file; the demonstration organ |
-| `crates/caecilia-wind` | Bellows, windchests, trunks and tremulants |
-| `crates/caecilia-synth` | The pipe voices |
-| `crates/caecilia-engine` | The organ engine: keys over ranks and couplers, chests, swell boxes |
-| `crates/caecilia-registration` | Selectors, history, generals, plenum, explanations |
-| `crates/caecilia-plugin` | The CLAP/VST3 plugin, its console, and the standalone application |
-| `crates/caecilia-tools` | Reference comparison against 1.x and other development tools |
+Download the installer from [Releases](https://github.com/alessonqueirozdev-hub/Caecilia/releases).
+Windows is available now; Linux and macOS are [on the way](https://github.com/alessonqueirozdev-hub/Caecilia/pull/2).
+The installer is not signed yet, so Windows SmartScreen may warn you: choose
+**More info**, then **Run anyway**.
 
-## Building
+## Build it
 
-Caecilia 2.0 builds against Manguebyte by path while both are developed side
-by side. Check Manguebyte out at `C:/manguebyte` (the path is set in
-`Cargo.toml` under `[workspace.dependencies]`).
+You need [Rust](https://rustup.rs) 1.85 or newer. Caecilia is developed side by side
+with its framework, [Manguebyte](https://github.com/alessonqueirozdev-hub/manguebyte),
+so clone both into the same folder:
 
 ```bash
-# Every test
-cargo test --profile caecilia --workspace
+git clone https://github.com/alessonqueirozdev-hub/manguebyte.git
+git clone https://github.com/alessonqueirozdev-hub/Caecilia.git
+cd Caecilia
+```
 
-# The CLAP and VST3 bundles, with Manguebyte's bundler
-cargo run --release --manifest-path C:/manguebyte/crates/cargo-mangue/Cargo.toml --     mangue bundle -p caecilia-plugin --profile caecilia-release --format clap,vst3
+Then play the organ:
 
-# The standalone application: the console in its own window, on the sound card
+```bash
 cargo run --profile caecilia-release -p caecilia-plugin --features standalone --bin caecilia
 ```
 
-The standalone accepts `--organ <file.organ.json>`, and `--no-window` to play
-from the terminal. It keeps its session in `%APPDATA%\Caecilia\session.txt`.
+Or run every test:
 
-## License
+```bash
+cargo test --profile caecilia --workspace
+```
 
-Caecilia is licensed under the **Apache License, Version 2.0**.
-See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+The first build compiles the whole framework, so it takes a while and a few
+gigabytes of disk. No test opens an audio device.
 
-    SPDX-License-Identifier: Apache-2.0
-    Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+## Help build it
 
-Apache-2.0 was chosen for its explicit patent grant: audio DSP is a field where
-third-party patents exist. Without JUCE, the 2.0 binaries are Apache-2.0 too.
-Manguebyte is MIT OR Apache-2.0. Full details are in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+You don't have to write Rust to help. Organists, sound designers, testers and
+translators are as welcome as programmers:
 
-### Provenance of the DSP
+- **Listen and report.** Tell us what doesn't sound like an organ, and which stop.
+  [Report the sound](https://github.com/alessonqueirozdev-hub/Caecilia/issues/new?template=sound_report.yml)
+- **Voice an organ.** Organs are JSON files you can write and share.
+  [Read the format](docs/ORGAN_FILE.md)
+- **Try it in your DAW.** Testing in real hosts and on real hardware helps a lot.
+  [Report a bug](https://github.com/alessonqueirozdev-hub/Caecilia/issues/new?template=bug_report.yml)
+- **Write code.** DSP, the console, new platforms, tests.
+  [Good first issues](https://github.com/alessonqueirozdev-hub/Caecilia/labels/good%20first%20issue)
 
-Every algorithm here is written from public literature and standard
-mathematics. **No GPL source (GrandOrgue, Aeolus, or otherwise) was referenced
-or copied.** Other instruments are cited only by their observable behaviour
-and public documentation. If you believe any part infringes, please open an
-issue and it will be addressed.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the details, and the [roadmap](docs/ROADMAP.md)
+says where it's going. Issues may be written in any language.
 
-## Contributing
+## How it fits together
 
-Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
-Everyone participating is expected to follow the
-[Code of Conduct](CODE_OF_CONDUCT.md). By contributing, you agree that your
-contributions are licensed under Apache-2.0, per section 5 of the licence.
+| Crate | What it is |
+|---|---|
+| [`caecilia-model`](crates/caecilia-model) | The organ model, its JSON file and the built-in organs |
+| [`caecilia-wind`](crates/caecilia-wind) | Bellows, windchests, trunks and tremulants |
+| [`caecilia-synth`](crates/caecilia-synth) | The pipe voices |
+| [`caecilia-engine`](crates/caecilia-engine) | Keys over ranks and couplers, chests and swell boxes |
+| [`caecilia-registration`](crates/caecilia-registration) | Selectors, history, generals, plenum and explanations |
+| [`caecilia-plugin`](crates/caecilia-plugin) | The plugin, the console, the demonstrations and the standalone app |
+| [`caecilia-installer`](crates/caecilia-installer) | The installer, also written in Rust |
+| [`caecilia-tools`](crates/caecilia-tools) | Comparison against 1.x, and other development tools |
+
+The [documentation index](docs/README.md) lists every document and how current it
+is. The 1.x C++/JUCE instrument is kept at the tag
+[`v1-cpp-final`](https://github.com/alessonqueirozdev-hub/Caecilia/tree/v1-cpp-final);
+what it measured is frozen in `reference/cpp-1.x`, which 2.0 is tested against.
+
+## License and provenance
+
+Caecilia is licensed under the [Apache License 2.0](LICENSE) (see also
+[NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). Apache-2.0
+was chosen for its explicit patent grant, since audio DSP is a field where
+third-party patents exist. Manguebyte is MIT OR Apache-2.0.
+
+The algorithms are written from public literature and standard mathematics. **No
+GPL source (GrandOrgue, Aeolus or otherwise) was referenced or copied.** Other
+instruments are cited only by their observable behaviour and public documentation.
+If you believe any part infringes, please open an issue and it will be addressed.
+
+Created by Alesson Queiroz (alessonqueiroz.dev@gmail.com) and the Caecilia
+contributors. By contributing, you agree that your contributions are licensed under
+Apache-2.0. Everyone participating follows the [Code of Conduct](CODE_OF_CONDUCT.md).

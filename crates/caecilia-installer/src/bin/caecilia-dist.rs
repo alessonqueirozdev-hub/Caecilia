@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! cargo run --profile caecilia-release -p caecilia-installer --bin caecilia-dist -- build
-//!     [--target-dir C:/manguebyte/target] [--manguebyte C:/manguebyte]
+//!     [--target-dir <folder>] [--manguebyte <folder, default ../manguebyte>]
 //!     [--offline] [--sign <certificate thumbprint>]
 //! ```
 //!
@@ -116,7 +116,7 @@ fn workspace_version() -> Result<String, String> {
 fn build(args: Vec<String>) -> Result<(), String> {
     let mut target = std::env::var_os("CARGO_TARGET_DIR")
         .map_or_else(|| repository().join("target"), PathBuf::from);
-    let mut manguebyte = PathBuf::from("C:/manguebyte");
+    let mut manguebyte = repository().join("../manguebyte");
     let (mut offline, mut thumbprint) = (false, None);
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
