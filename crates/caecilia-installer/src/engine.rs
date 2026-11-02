@@ -575,7 +575,11 @@ impl Engine<'_> {
             components: plan.components,
             program_dir: plan.program_dir.clone(),
             organs_dir,
-            data_dir: Some(plan.data_dir.clone()),
+            // The person who installed it first: an update or a change run
+            // by someone else must not make a later purge remove their data.
+            data_dir: previous
+                .and_then(|r| r.data_dir.clone())
+                .or_else(|| Some(plan.data_dir.clone())),
             files,
             dirs,
             shortcuts,
@@ -738,6 +742,7 @@ impl Engine<'_> {
             }
         }
         self.log.line("step", "shortcuts");
+        let mut stuck = None;
         for link in &record.shortcuts {
             match fs::remove_file(link) {
                 Ok(()) => self.log.line("removed", link.display()),
@@ -745,11 +750,16 @@ impl Engine<'_> {
                     self.log.line("removed", link.display())
                 }
                 Err(e) => {
-                    self.log
-                        .error(format_args!("could not remove {}: {e}", link.display()));
-                    kept.push(link.clone());
+                    let e = io_err("remove the shortcut", link)(e);
+                    self.log.error(&e);
+                    stuck.get_or_insert(e);
                 }
             }
+        }
+        // Before the entry and the record go, as for the purge: a shortcut
+        // left behind would be tracked by nothing, and Remove tries again.
+        if let Some(e) = stuck {
+            return Err(e);
         }
         // No process can remove the folder it works in: one started inside
         // a folder going now (a prompt opened there) steps out first.

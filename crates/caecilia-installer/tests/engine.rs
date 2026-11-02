@@ -826,3 +826,81 @@ fn the_running_uninstaller_leaves_no_folder_behind() {
 fn sleeper() {
     std::thread::sleep(std::time::Duration::from_secs(30));
 }
+
+#[test]
+fn an_update_by_someone_else_keeps_the_first_persons_data_folder() {
+    let scratch = Scratch::new("update-other-person");
+    let places = places(&scratch.0);
+    let files = payload("2.0.0", false);
+    let mut sys = MemorySystem::default();
+    let choices = Choices::defaults(Scope::Machine);
+    let plan = Plan::new(&files.manifest, &choices, &places, 14);
+    let first = install(&mut sys, &plan, &files, None).unwrap().record;
+    let mine = places.user_data_dir("Caecilia");
+    assert_eq!(first.data_dir.as_deref(), Some(mine.as_path()));
+
+    // Another account updates it, its organs in its own folder.
+    let theirs = scratch.0.join("Other").join("AppData").join("Caecilia");
+    let update = Plan::new(
+        &payload("2.1.0", false).manifest,
+        &Choices {
+            organs_dir: Some(theirs.join("Organs")),
+            ..choices
+        },
+        &places,
+        14,
+    );
+    assert_eq!(update.data_dir, theirs);
+    let files = payload("2.1.0", false);
+    let record = install(&mut sys, &update, &files, Some(&first))
+        .unwrap()
+        .record;
+    assert_eq!(record.data_dir.as_deref(), Some(mine.as_path()));
+    assert_eq!(
+        Record::load(&update.program_dir)
+            .unwrap()
+            .data_dir
+            .as_deref(),
+        Some(mine.as_path())
+    );
+}
+
+#[test]
+fn a_shortcut_that_cannot_go_keeps_the_record_to_try_again() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let scratch = Scratch::new("shortcut-stays");
+    let places = places(&scratch.0);
+    let files = payload("2.0.0", false);
+    let plan = Plan::new(
+        &files.manifest,
+        &Choices::defaults(Scope::User),
+        &places,
+        14,
+    );
+    let mut sys = MemorySystem::default();
+    let record = install(&mut sys, &plan, &files, None).unwrap().record;
+    let link = record.shortcuts.first().expect("a shortcut").clone();
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&link)
+        .unwrap();
+    let mut log = Log::in_memory();
+    let err = Engine {
+        sys: &mut sys,
+        log: &mut log,
+        cancelled: &|| false,
+    }
+    .uninstall(&record, None)
+    .unwrap_err();
+    drop(held);
+    assert!(matches!(err, Error::Io { .. }), "{err}");
+    assert!(sys.installed(Scope::User, "Caecilia").is_some());
+    let again = Record::load(&plan.program_dir).expect("the record stays");
+    assert!(again.shortcuts.iter().any(|s| s == &link));
+
+    uninstall(&mut sys, &again, None);
+    assert!(!link.exists());
+    assert!(!plan.program_dir.exists());
+    assert!(sys.installed(Scope::User, "Caecilia").is_none());
+}
