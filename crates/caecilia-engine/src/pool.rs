@@ -7,8 +7,11 @@
 use caecilia_model::{Calibration, DivisionId, MidiNote, PipeId, WindchestId};
 use caecilia_synth::AdditiveVoice;
 use caecilia_wind::WindSnapshot;
+use manguebyte_core::AudioBuffer;
 use manguebyte_core::pool::{BlockReport, Job, PoolConfig, RenderPool};
+use manguebyte_dsp::space::{Windchest, WindchestSettings};
 
+use crate::space::Layout;
 use crate::{MAX_CHESTS, MAX_DIVISIONS};
 
 /// Voices a render job holds. 512 voices make eight jobs: enough to spread
@@ -27,6 +30,43 @@ pub(crate) struct Slot {
     /// What this pipe draws from its chest, booked every block it sounds.
     pub flow: f32,
     pub chest: WindchestId,
+    /// Its pipe's place in its chest's windchest, where the organ has places.
+    pub place: Option<usize>,
+}
+
+/// A group's share of the space: its own windchests, so groups render apart
+/// and sum in order, and its pipes' sum per chest, for the room's reflections.
+struct GroupSpace {
+    chests: Vec<Windchest>,
+    output: AudioBuffer<f32>,
+    left: Vec<f32>,
+    right: Vec<f32>,
+    point: Vec<f32>,
+    mono: Vec<Vec<f32>>,
+}
+
+impl GroupSpace {
+    fn new(layout: &Layout, sample_rate: f64, max_block: usize) -> Option<Self> {
+        let mut chests = Vec::with_capacity(layout.placements.len());
+        for placements in &layout.placements {
+            let mut settings =
+                WindchestSettings::new(placements.len().max(1), 2, sample_rate, max_block);
+            settings.max_delay_seconds = layout.latest_pipe + 0.001;
+            let mut chest = Windchest::new(&settings).ok()?;
+            for (pipe, placement) in placements.iter().enumerate() {
+                chest.set_placement(pipe, placement);
+            }
+            chests.push(chest);
+        }
+        Some(Self {
+            mono: vec![vec![0.0; max_block]; chests.len()],
+            chests,
+            output: AudioBuffer::new(2, max_block),
+            left: vec![0.0; max_block],
+            right: vec![0.0; max_block],
+            point: vec![0.0; max_block],
+        })
+    }
 }
 
 /// A render job: a group of voices and its own bus per chest. It renders
@@ -42,6 +82,7 @@ pub(crate) struct VoiceGroup {
     offset: usize,
     wind: WindSnapshot,
     expr: [(f32, f32); MAX_DIVISIONS],
+    space: Option<GroupSpace>,
 }
 
 impl VoiceGroup {
@@ -64,6 +105,11 @@ impl Job for VoiceGroup {
             self.bus_l[c][..n].fill(0.0);
             self.bus_r[c][..n].fill(0.0);
         }
+        if let Some(space) = &mut self.space {
+            for mono in &mut space.mono {
+                mono[..n].fill(0.0);
+            }
+        }
         for i in 0..self.slots.len() {
             if self.slots[i].active && !self.slots[i].voice.is_active() {
                 self.reclaim(i);
@@ -81,12 +127,48 @@ impl Job for VoiceGroup {
             } else {
                 0
             };
-            s.voice.render_add(
-                &mut self.bus_l[c][..n],
-                &mut self.bus_r[c][..n],
-                Some(&self.wind),
-                self.offset,
-            );
+            match (&mut self.space, s.place) {
+                (Some(space), Some(place)) if c < space.chests.len() => {
+                    // One point in space: both sides the same, at equal power.
+                    space.left[..n].fill(0.0);
+                    space.right[..n].fill(0.0);
+                    s.voice.render_add(
+                        &mut space.left[..n],
+                        &mut space.right[..n],
+                        Some(&self.wind),
+                        self.offset,
+                    );
+                    for ((o, l), r) in space.point[..n]
+                        .iter_mut()
+                        .zip(&space.left[..n])
+                        .zip(&space.right[..n])
+                    {
+                        *o = (l + r) * std::f32::consts::FRAC_1_SQRT_2;
+                    }
+                    space.chests[c].add(place, &space.point[..n]);
+                    for (o, x) in space.mono[c][..n].iter_mut().zip(&space.point[..n]) {
+                        *o += x;
+                    }
+                }
+                _ => s.voice.render_add(
+                    &mut self.bus_l[c][..n],
+                    &mut self.bus_r[c][..n],
+                    Some(&self.wind),
+                    self.offset,
+                ),
+            }
+        }
+        if let Some(space) = &mut self.space {
+            space.output.set_num_frames(n);
+            for (c, chest) in space.chests.iter_mut().enumerate().take(self.chests) {
+                chest.finish(&mut space.output);
+                for (o, x) in self.bus_l[c][..n].iter_mut().zip(space.output.channel(0)) {
+                    *o += x;
+                }
+                for (o, x) in self.bus_r[c][..n].iter_mut().zip(space.output.channel(1)) {
+                    *o += x;
+                }
+            }
         }
     }
 }
@@ -113,6 +195,7 @@ impl Pool {
         chests: usize,
         max_block: usize,
         config: PoolConfig,
+        layout: Option<&Layout>,
     ) -> Self {
         let count = capacity.div_ceil(GROUP_SIZE).max(1);
         let groups = (0..count)
@@ -121,7 +204,14 @@ impl Pool {
                 VoiceGroup {
                     slots: (0..size)
                         .map(|_| Slot {
-                            voice: AdditiveVoice::new(sample_rate, calibration),
+                            voice: {
+                                let mut voice = AdditiveVoice::new(sample_rate, calibration);
+                                if layout.is_some() {
+                                    voice.set_stereo_spread(0.0);
+                                }
+                                voice
+                            },
+                            place: None,
                             active: false,
                             pipe: PipeId::default(),
                             start_frame: 0,
@@ -139,6 +229,7 @@ impl Pool {
                     offset: 0,
                     wind: WindSnapshot::default(),
                     expr: [(1.0, 0.0); MAX_DIVISIONS],
+                    space: layout.and_then(|l| GroupSpace::new(l, sample_rate, max_block)),
                 }
             })
             .collect();
@@ -256,6 +347,11 @@ impl Pool {
                     job.reclaim(i);
                 }
             }
+            if let Some(space) = &mut job.space {
+                for chest in &mut space.chests {
+                    chest.reset();
+                }
+            }
         });
     }
 
@@ -305,6 +401,18 @@ impl Pool {
             job.expr = *expr;
         });
         self.groups.run(self.count)
+    }
+
+    /// Add the sum of chest `c`'s placed pipes, of every group rendered, in
+    /// index order.
+    pub fn mix_mono(&self, c: usize, out: &mut [f32]) {
+        for (_, job) in self.groups.rendered() {
+            let Some(space) = &job.space else { continue };
+            let n = out.len().min(job.frames);
+            for (o, x) in out[..n].iter_mut().zip(&space.mono[c][..n]) {
+                *o += x;
+            }
+        }
     }
 
     /// Add chest `c`'s bus of every group rendered, in index order.

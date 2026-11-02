@@ -14,8 +14,8 @@ even if you're not sure you can finish it.
 The main work today. Caecilia's voices are clean and steady, which is exactly what
 a real organ is not.
 
-- [ ] **Space:** each pipe speaks from its own place on the windchest, with the
-  church's first reflections. *The blocks are coming from Manguebyte.*
+- [x] **Space:** each pipe speaks from its own place on the windchest, with the
+  room's first reflections. It needs ears on it: tell us how it sounds.
 - [ ] **Air and attack:** the breath of a flue pipe, each partial's own attack, wind
   jitter. *The blocks are coming from Manguebyte.*
 - [ ] **Per-pipe voicing:** level, detune, brightness, air and chiff for every pipe,

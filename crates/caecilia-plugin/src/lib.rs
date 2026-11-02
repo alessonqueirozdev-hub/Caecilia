@@ -531,6 +531,10 @@ impl Caecilia {
         if let Some((stops, couplers)) = swap.registration.take() {
             self.set_masks(stops, couplers);
         }
+        // The new organ stands in the room the old one did.
+        if let (Some(room), Some(e)) = (self.room, self.engine.as_mut()) {
+            e.set_room(room);
+        }
         // The swap now holds the organ being left.
         self.fading = Some(swap);
         self.fade_done = 0;
@@ -982,6 +986,9 @@ impl Plugin for Caecilia {
         if self.room != Some(room) {
             self.room = Some(room);
             sound::set_room(&mut self.reverb, room);
+            if let Some(e) = self.engine.as_mut() {
+                e.set_room(room);
+            }
         }
         self.reverb.set_mix(f64::from(self.params.reverb.value()));
         self.reverb.process(buffer);

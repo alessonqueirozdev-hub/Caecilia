@@ -181,3 +181,43 @@ fn playing_the_organ_never_allocates() {
     });
     assert!(l.iter().chain(&r).all(|s| s.is_finite()));
 }
+
+#[test]
+fn playing_in_a_room_never_allocates() {
+    let organ = demo_organ();
+    let mut e = OrganEngine::with_space(
+        &organ,
+        48000.0,
+        256,
+        512,
+        caecilia_model::Calibration::V2,
+        caecilia_engine::PoolConfig::offline(),
+    );
+    let all: Vec<StopId> = organ.stops().iter().map(|s| s.id).collect();
+    let t = e.table_for(&organ, &all, &[]);
+    e.set_engaged(t);
+    let (mut l, mut r) = (vec![0.0f32; 256], vec![0.0f32; 256]);
+    let events: Vec<Timed> = [36u8, 48, 60, 72]
+        .map(|note| Timed {
+            offset: 7,
+            command: Command::NoteOn {
+                division: DivisionId(1),
+                note,
+            },
+        })
+        .to_vec();
+
+    WATCHING.with(|w| w.set(true));
+    HEAP_CALLS.with(|c| c.set(0));
+    e.process(&mut l, &mut r, &events);
+    for b in 0..200 {
+        if b % 40 == 0 {
+            e.set_room(b / 40);
+        }
+        e.process(&mut l, &mut r, &[]);
+    }
+    e.reset();
+    WATCHING.with(|w| w.set(false));
+    let calls = HEAP_CALLS.with(Cell::get);
+    assert_eq!(calls, 0, "the heap was touched {calls} time(s)");
+}

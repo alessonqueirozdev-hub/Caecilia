@@ -112,7 +112,7 @@ impl Inner {
 /// silence for its voices, a late callback a click for everything).
 pub(crate) fn build_engine(organ: &Organ, sample_rate: f64, max_block: usize) -> OrganEngine {
     let block = std::time::Duration::from_secs_f64(max_block as f64 / sample_rate.max(1.0));
-    OrganEngine::with_config(
+    OrganEngine::with_space(
         organ,
         sample_rate,
         max_block,

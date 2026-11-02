@@ -86,6 +86,12 @@ impl AdditiveVoice {
         self.per_family_liveliness = on;
     }
 
+    /// How far its partials spread across the stereo image; 0 makes the voice
+    /// one point, for placing it in a room as a whole.
+    pub fn set_stereo_spread(&mut self, spread: f32) {
+        self.bank.set_stereo_spread(spread);
+    }
+
     /// Become one rank: its spectrum, its speech, its chest and its family's
     /// wind response scaled by the rank's own sensitivity (0.5 leaves the
     /// family curve alone). Allocation-free.

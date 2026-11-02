@@ -8,7 +8,8 @@
 //! renders into the bus of the chest its rank stands on; enclosed chests pass
 //! through their swell box; the buses sum to the output. The wind is stepped
 //! once per block under the flow every sounding pipe draws, before any voice
-//! reads it.
+//! reads it. An engine built [`with_space`](OrganEngine::with_space) also gives
+//! every pipe its own place in the case, and the room its first reflections.
 //!
 //! # Real time
 //!
@@ -20,18 +21,24 @@
 mod engaged;
 mod pool;
 mod shutter;
+mod space;
 
 use caecilia_model::{
     Calibration, DivisionId, MidiNote, Organ, PipeId, RankVoicing, StopId, WindchestId,
     build_rank_voicing,
 };
 use caecilia_wind::{WindModel, WindSnapshot, config_from_organ, flow_per_voice};
+use manguebyte_core::AudioBuffer;
 pub use manguebyte_core::pool::PoolConfig;
 pub use manguebyte_dsp::Tuning;
+use manguebyte_dsp::space::EarlyReflections;
 
 pub use engaged::{EngagedCoupler, EngagedRank, EngagedTable, MAX_COUPLERS, MAX_RANKS};
 use pool::Pool;
 use shutter::OnePole;
+use space::Layout;
+
+pub use space::ROOMS;
 
 /// Default polyphony: as many pipes as can sound at once.
 pub const DEFAULT_POLYPHONY: usize = 512;
@@ -179,11 +186,62 @@ pub struct OrganEngine {
     bus_l: Vec<Vec<f32>>,
     bus_r: Vec<Vec<f32>>,
     shutters: Vec<[OnePole; 2]>,
+    room: Option<RoomSound>,
     frame: u64,
     meters: Meters,
     pending_meters: Meters,
     meter_sum_sq: f64,
     meter_samples: u64,
+}
+
+/// The pipes' places, and each chest's early reflections in the room chosen.
+struct RoomSound {
+    layout: Layout,
+    early: Vec<EarlyReflections>,
+    /// How much of each chest goes to its reflections, as it stands and where
+    /// it is going.
+    send: Vec<(f32, f32)>,
+    mono: Vec<f32>,
+    output: AudioBuffer<f32>,
+}
+
+impl std::fmt::Debug for RoomSound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RoomSound")
+            .field("chests", &self.early.len())
+            .finish()
+    }
+}
+
+impl RoomSound {
+    /// The room to start in: the hall.
+    const FIRST: usize = 2;
+
+    fn new(layout: Layout, sample_rate: f64, max_block: usize) -> Option<Self> {
+        let first = layout.rooms.get(Self::FIRST)?;
+        let mut early = Vec::with_capacity(first.len());
+        let mut send = Vec::with_capacity(first.len());
+        for (reflections, amount) in first {
+            early.push(
+                EarlyReflections::with_capacity(
+                    reflections,
+                    sample_rate,
+                    max_block,
+                    Layout::most_paths(),
+                    Layout::latest_reflection(),
+                )
+                .ok()?,
+            );
+            send.push((*amount, *amount));
+        }
+        Some(Self {
+            layout,
+            early,
+            send,
+            mono: vec![0.0; max_block],
+            output: AudioBuffer::new(2, max_block),
+        })
+    }
 }
 
 impl OrganEngine {
@@ -223,6 +281,65 @@ impl OrganEngine {
         calibration: Calibration,
         threads: PoolConfig,
     ) -> Self {
+        Self::build(
+            organ,
+            sample_rate,
+            max_block,
+            polyphony,
+            calibration,
+            threads,
+            false,
+        )
+    }
+
+    /// An engine as [`with_config`](Self::with_config) makes one, in which
+    /// every pipe stands in its own place in the case, and the room answers
+    /// with its first reflections (see [`set_room`](Self::set_room)).
+    pub fn with_space(
+        organ: &Organ,
+        sample_rate: f64,
+        max_block: usize,
+        polyphony: usize,
+        calibration: Calibration,
+        threads: PoolConfig,
+    ) -> Self {
+        Self::build(
+            organ,
+            sample_rate,
+            max_block,
+            polyphony,
+            calibration,
+            threads,
+            true,
+        )
+    }
+
+    /// The room the organ stands in, of [`ROOMS`]: room, chamber, hall,
+    /// cathedral, plate. Its reflections crossfade in. Does nothing for an
+    /// engine without space. Real-time safe.
+    pub fn set_room(&mut self, room: usize) {
+        let Some(sound) = &mut self.room else {
+            return;
+        };
+        let Some(chests) = sound.layout.rooms.get(room) else {
+            return;
+        };
+        for (c, (reflections, amount)) in chests.iter().enumerate() {
+            if sound.early[c].set_reflections(reflections).is_ok() {
+                sound.send[c].1 = *amount;
+            }
+        }
+    }
+
+    fn build(
+        organ: &Organ,
+        sample_rate: f64,
+        max_block: usize,
+        polyphony: usize,
+        calibration: Calibration,
+        threads: PoolConfig,
+        with_space: bool,
+    ) -> Self {
         let sample_rate = if sample_rate > 0.0 {
             sample_rate
         } else {
@@ -230,11 +347,14 @@ impl OrganEngine {
         };
         let max_block = max_block.max(1);
         let chest_count = organ.windchests().len().clamp(1, MAX_CHESTS);
-        let voicings = organ
+        let voicings: Vec<RankVoicing> = organ
             .stops()
             .iter()
             .map(|s| build_rank_voicing(organ, s.id, calibration).unwrap_or_default())
             .collect();
+        let layout = with_space
+            .then(|| Layout::new(organ, &voicings, chest_count))
+            .flatten();
 
         // Which chests stand in a swell box, and whose shoe closes them.
         let mut shoe_for_chest = [None; MAX_CHESTS];
@@ -287,7 +407,9 @@ impl OrganEngine {
                 chest_count,
                 max_block,
                 threads,
+                layout.as_ref(),
             ),
+            room: layout.and_then(|l| RoomSound::new(l, sample_rate, max_block)),
             missed_jobs: 0,
             table: EngagedTable::default(),
             held: [HeldKey::default(); MAX_HELD_KEYS],
@@ -376,6 +498,11 @@ impl OrganEngine {
         }
         for f in self.shutters.iter_mut().flatten() {
             f.reset();
+        }
+        if let Some(sound) = &mut self.room {
+            for early in &mut sound.early {
+                early.reset();
+            }
         }
         self.wind.reset();
         self.snapshot = self.wind.snapshot();
@@ -519,6 +646,37 @@ impl OrganEngine {
             );
         }
 
+        // The room's first reflections of each chest, before its swell box
+        // as the sound leaves the box before it meets the walls.
+        if let Some(sound) = &mut self.room {
+            for c in 0..self.chest_count.min(sound.early.len()) {
+                let mono = &mut sound.mono[..frames];
+                mono.fill(0.0);
+                self.pool.mix_mono(c, mono);
+                let (from, to) = sound.send[c];
+                let step = (to - from) / frames as f32;
+                for (i, x) in mono.iter_mut().enumerate() {
+                    *x *= from + step * i as f32;
+                }
+                sound.send[c].0 = to;
+                sound.output.set_num_frames(frames);
+                sound.output.clear();
+                sound.early[c].process_add(mono, &mut sound.output);
+                for (o, x) in self.bus_l[c][..frames]
+                    .iter_mut()
+                    .zip(sound.output.channel(0))
+                {
+                    *o += x;
+                }
+                for (o, x) in self.bus_r[c][..frames]
+                    .iter_mut()
+                    .zip(sound.output.channel(1))
+                {
+                    *o += x;
+                }
+            }
+        }
+
         // The spectral half of the swell box: a low-pass that closes with the shoe.
         for c in 0..self.chest_count {
             let Some(shoe) = self.shoe_for_chest[c] else {
@@ -648,9 +806,14 @@ impl OrganEngine {
             return false;
         }
         let freq = self.key_frequency(note);
+        let place = self
+            .room
+            .as_ref()
+            .and_then(|r| r.layout.pipe(rank.stop, note));
         let Some(slot) = self.pool.acquire(pipe, self.frame) else {
             return false;
         };
+        slot.place = place;
         slot.flow = rank.wind_flow * octaves_below_middle_c.exp2() * self.flow_per_voice;
         slot.chest = rank.chest;
         if let Some(v) = self.voicings.get(rank.stop.index()) {

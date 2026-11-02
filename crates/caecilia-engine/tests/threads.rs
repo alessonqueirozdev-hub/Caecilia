@@ -12,10 +12,14 @@ use caecilia_model::{Calibration, CouplerId, DivisionId, StopId, WindchestId, de
 /// rendered under `threads`, in uneven blocks.
 fn render(threads: PoolConfig) -> (Vec<f32>, u64) {
     let organ = demo_organ();
-    let mut e = OrganEngine::with_config(&organ, 48000.0, 512, 512, Calibration::V2, threads);
+    let e = OrganEngine::with_config(&organ, 48000.0, 512, 512, Calibration::V2, threads);
+    render_on(&organ, e)
+}
+
+fn render_on(organ: &caecilia_model::Organ, mut e: OrganEngine) -> (Vec<f32>, u64) {
     let all: Vec<StopId> = organ.stops().iter().map(|s| s.id).collect();
     let couplers: Vec<CouplerId> = organ.couplers().iter().map(|c| c.id).collect();
-    let t = e.table_for(&organ, &all, &couplers);
+    let t = e.table_for(organ, &all, &couplers);
     e.set_engaged(t);
 
     let mut out = Vec::new();
@@ -80,6 +84,29 @@ fn render(threads: PoolConfig) -> (Vec<f32>, u64) {
     }
     assert!(frame > 48000 * 2, "{frame} frames");
     (out, e.missed_jobs())
+}
+
+#[test]
+fn in_their_places_too_three_workers_render_what_one_thread_does() {
+    let organ = demo_organ();
+    let build =
+        |threads| OrganEngine::with_space(&organ, 48000.0, 512, 512, Calibration::V2, threads);
+    let (alone, _) = render_on(&organ, build(PoolConfig::offline()));
+    let (pooled, missed) = render_on(
+        &organ,
+        build(
+            PoolConfig::with_workers(3)
+                .real_time(false)
+                .wait_limit(Duration::from_secs(10)),
+        ),
+    );
+    assert_eq!(missed, 0);
+    assert!(alone.iter().any(|x| *x != 0.0));
+    let first = alone
+        .iter()
+        .zip(&pooled)
+        .position(|(a, b)| a.to_bits() != b.to_bits());
+    assert_eq!(first, None, "threads changed the output");
 }
 
 #[test]

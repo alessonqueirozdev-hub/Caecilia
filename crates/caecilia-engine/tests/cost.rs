@@ -18,14 +18,36 @@ fn tutti_real_time_factor() {
     let couplers: Vec<CouplerId> = organ.couplers().iter().map(|c| c.id).collect();
     let keys = [36u8, 43, 48, 52, 55, 60, 64, 67, 72, 76];
     let cores = std::thread::available_parallelism().map_or(1, usize::from);
-    for (cal, threads, label) in [
-        (Calibration::OneX, PoolConfig::offline(), "one thread"),
-        (Calibration::V2, PoolConfig::offline(), "one thread"),
-        (Calibration::V2, PoolConfig::all_cores(), "all cores"),
+    for (cal, threads, label, placed) in [
+        (
+            Calibration::OneX,
+            PoolConfig::offline(),
+            "one thread",
+            false,
+        ),
+        (Calibration::V2, PoolConfig::offline(), "one thread", false),
+        (Calibration::V2, PoolConfig::all_cores(), "all cores", false),
+        (
+            Calibration::V2,
+            PoolConfig::offline(),
+            "one thread, placed",
+            true,
+        ),
+        (
+            Calibration::V2,
+            PoolConfig::all_cores(),
+            "all cores, placed",
+            true,
+        ),
     ] {
         let mut best = f64::MAX;
         for _ in 0..3 {
-            let mut e = OrganEngine::with_config(&organ, 48000.0, 256, 1024, cal, threads);
+            let build = if placed {
+                OrganEngine::with_space
+            } else {
+                OrganEngine::with_config
+            };
+            let mut e = build(&organ, 48000.0, 256, 1024, cal, threads);
             let t = e.table_for(&organ, &all, &couplers);
             e.set_engaged(t);
             let on: Vec<Timed> = keys
