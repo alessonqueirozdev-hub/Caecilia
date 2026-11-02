@@ -2,27 +2,37 @@
 // Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
 //! The demonstrations as the console plays them: each piece's parts given
-//! to the organ playing, its stops drawn, and the tour that plays every stop
-//! alone.
+//! to the organ playing, its registrations drawn as it reaches them, and
+//! the tour that plays every stop alone.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use manguebyte_plugin::editor::EditorContext;
+use manguebyte_params::Param;
+use manguebyte_plugin::editor::{EditorContext, Gesture};
 
-use caecilia_model::{DivisionId, DivisionKind, Organ, StopId};
+use caecilia_model::{CouplerId, DivisionId, DivisionKind, Organ, StopId};
 use caecilia_registration::{RegistrationState, StopSet};
 
 use super::Shared;
 use super::actions;
 use super::snapshot::name_registration;
 use crate::UiNote;
-use crate::demo::{PHRASE, PHRASE_INDEX, PIECES, Piece};
+use crate::demo::{PHRASE, PHRASE_INDEX, PIECES, Registration};
 
 /// The rows the console offers: each piece, then the tour.
 pub(crate) fn names() -> Vec<&'static str> {
     PIECES.iter().map(|p| p.name).chain([PHRASE.name]).collect()
+}
+
+/// The rows' short names, for a desk too narrow for the whole ones.
+pub(crate) fn labels() -> Vec<&'static str> {
+    PIECES
+        .iter()
+        .map(|p| p.short)
+        .chain(["Every stop"])
+        .collect()
 }
 
 /// The row of the tour.
@@ -66,21 +76,61 @@ pub(crate) fn parts(organ: &Organ) -> [(DivisionId, u8); 3] {
     [great, swell, pedal].map(|d| (d, manual_of(d)))
 }
 
-/// The stops `piece` draws on this organ.
-fn registration(organ: &Organ, piece: &Piece) -> RegistrationState {
+/// What `registration` draws on this organ: each part's stops by name, or
+/// by family where the organ has none of the names; the couplers it names.
+fn registration(organ: &Organ, registration: &Registration) -> RegistrationState {
     let parts = parts(organ);
     let mut stops = StopSet::new();
-    for (part, families) in piece.registration {
-        let division = parts[usize::from(*part)].0;
-        for stop in organ.stops() {
-            if stop.division == division && families.contains(&stop.family) {
-                stops.insert(stop.id);
+    for draw in registration.draws {
+        let division = parts[usize::from(draw.part)].0;
+        let named: Vec<StopId> = organ
+            .stops()
+            .iter()
+            .filter(|s| s.division == division && draw.names.contains(&s.name.as_str()))
+            .map(|s| s.id)
+            .collect();
+        if named.is_empty() {
+            for stop in organ.stops() {
+                if stop.division == division && draw.families.contains(&stop.family) {
+                    stops.insert(stop.id);
+                }
+            }
+        } else {
+            for id in named {
+                stops.insert(id);
             }
         }
     }
-    RegistrationState {
-        stops,
-        couplers: Vec::new(),
+    let mut couplers: Vec<CouplerId> = organ
+        .couplers()
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| registration.couplers.contains(&c.name.as_str()))
+        .map(|(i, _)| CouplerId(i as u16))
+        .collect();
+    couplers.sort();
+    RegistrationState { stops, couplers }
+}
+
+/// Draw `r`, the tremulant with it, naming it `label` in the history.
+fn draw_registration(
+    context: &EditorContext,
+    shared: &Shared,
+    organ: &Organ,
+    named: &Rc<RefCell<Vec<(u64, String)>>>,
+    r: &Registration,
+    label: &str,
+) {
+    let state = registration(organ, r);
+    name_registration(named, state.stops.to_mask(), label);
+    actions::recall_state(context, shared, state);
+    let tremulant = &shared.params.tremulant;
+    if tremulant.value() != r.tremulant {
+        Gesture::set_once(
+            context,
+            tremulant.param_id(),
+            if r.tremulant { 1.0 } else { 0.0 },
+        );
     }
 }
 
@@ -90,14 +140,27 @@ fn send(shared: &Shared, note: UiNote) {
     }
 }
 
-/// Draw piece `n`'s stops and play it; returns the stops drawn.
-pub(crate) fn play(context: &EditorContext, shared: &Shared, organ: &Organ, n: usize) -> u64 {
+/// Draw piece `n`'s first registration and play it.
+pub(crate) fn play(
+    context: &EditorContext,
+    shared: &Shared,
+    organ: &Organ,
+    named: &Rc<RefCell<Vec<(u64, String)>>>,
+    n: usize,
+) {
     let Some(piece) = PIECES.get(n) else {
-        return 0;
+        return;
     };
-    let state = registration(organ, piece);
-    let mask = state.stops.to_mask();
-    actions::recall_state(context, shared, state);
+    if let Some(first) = piece.changes.first() {
+        draw_registration(
+            context,
+            shared,
+            organ,
+            named,
+            &first.registration,
+            first.label,
+        );
+    }
     let channels = parts(organ).map(|p| p.1);
     send(
         shared,
@@ -107,7 +170,60 @@ pub(crate) fn play(context: &EditorContext, shared: &Shared, organ: &Organ, n: u
             shift: 0,
         },
     );
-    mask
+}
+
+/// The registrations of a piece playing, drawn as it reaches them.
+pub(crate) struct Script {
+    context: EditorContext,
+    named: Rc<RefCell<Vec<(u64, String)>>>,
+    piece: usize,
+    /// The next registration to draw.
+    next: usize,
+    /// When the piece began, on the console's clock; `None` before the
+    /// first frame.
+    began: Option<Duration>,
+}
+
+impl Script {
+    /// The registrations after the first of piece `n`, which [`play`] drew.
+    pub(crate) fn new(
+        context: &EditorContext,
+        named: Rc<RefCell<Vec<(u64, String)>>>,
+        n: usize,
+    ) -> Script {
+        Script {
+            context: context.clone(),
+            named,
+            piece: n,
+            next: 1,
+            began: None,
+        }
+    }
+
+    /// Draw the registration the piece has reached, if one is due; false
+    /// once every one is drawn.
+    pub(crate) fn advance(&mut self, now: Duration, shared: &Shared, organ: &Organ) -> bool {
+        let Some(piece) = PIECES.get(self.piece) else {
+            return false;
+        };
+        let began = *self.began.get_or_insert(now);
+        let at = now.saturating_sub(began).as_secs_f32();
+        while let Some(change) = piece.changes.get(self.next) {
+            if change.beat * piece.beat > at {
+                return true;
+            }
+            draw_registration(
+                &self.context,
+                shared,
+                organ,
+                &self.named,
+                &change.registration,
+                change.label,
+            );
+            self.next += 1;
+        }
+        false
+    }
 }
 
 /// Stop whatever plays.

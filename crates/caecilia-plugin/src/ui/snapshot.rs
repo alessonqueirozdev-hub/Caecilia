@@ -16,7 +16,7 @@ use caecilia_model::{DivisionKind, Organ, StopId};
 use caecilia_registration::{FACTORY_GENERALS, Reason, RegistrationEngine, RegistrationState};
 
 use super::Shared;
-use super::demos::{self, TOUR_ROW, Tour};
+use super::demos::{self, Script, TOUR_ROW, Tour};
 use super::library::{Entry, organs_folder, scan};
 use super::look::{DAY, Look, NIGHT};
 use super::sound::{self as sound_page, LearnView, SoundView};
@@ -415,6 +415,8 @@ pub(crate) struct Source {
     picking: Cell<bool>,
     /// The tour of the stops, while it plays.
     tour: RefCell<Option<Tour>>,
+    /// The registrations of the piece playing, still to come.
+    script: RefCell<Option<Script>>,
     /// The registrations demonstrations drew, and what the history calls
     /// them.
     named: Rc<RefCell<Vec<(u64, String)>>>,
@@ -447,6 +449,7 @@ impl Source {
             device_requests: RefCell::default(),
             picking: Cell::new(false),
             tour: RefCell::new(None),
+            script: RefCell::new(None),
             named: Rc::default(),
         })
     }
@@ -479,13 +482,14 @@ impl Source {
     pub(crate) fn press_demo(&self, context: &manguebyte_plugin::editor::EditorContext, n: usize) {
         let playing = self.demo_playing();
         self.tour.borrow_mut().take();
+        self.script.borrow_mut().take();
         demos::stop(&self.shared);
         if playing != Some(n) {
             if n == TOUR_ROW {
                 *self.tour.borrow_mut() = Some(Tour::new(context, Rc::clone(&self.named)));
             } else {
-                let mask = demos::play(context, &self.shared, &self.organ(), n);
-                name_registration(&self.named, mask, crate::demo::PIECES[n].short);
+                demos::play(context, &self.shared, &self.organ(), &self.named, n);
+                *self.script.borrow_mut() = Some(Script::new(context, Rc::clone(&self.named), n));
             }
         }
         self.refresh();
@@ -590,6 +594,35 @@ impl Source {
         true
     }
 
+    /// Learn the key that switches the keyboard to `division`: learning
+    /// starts, and the next key or controller moved is bound to it.
+    pub(crate) fn learn_switch(&self, division: u16) {
+        if !self.learning.get() {
+            self.set_learning(true);
+        }
+        self.learn(crate::console::Action::Manual(division));
+    }
+
+    /// The manual switches most keyboards can spare: the top B plays the
+    /// swell, the top C the great, both together both; on the first
+    /// channel, the top of a five-octave keyboard.
+    pub(crate) fn switches_on_top_keys(&self) {
+        use crate::console::{Action, Binding, Source as Control};
+        let [great, swell, _] = demos::parts(&self.organ());
+        let console = &self.shared.params.console;
+        for (note, division) in [(95, swell.0), (96, great.0)] {
+            console.bind(Binding {
+                source: Control::Key { channel: 0, note },
+                action: Action::Manual(division.0),
+            });
+        }
+        *self.learned.borrow_mut() = Some(
+            "B6 now switches the keyboard to the swell, C7 to the great; both together play both"
+                .into(),
+        );
+        self.refresh();
+    }
+
     /// Forget the `n`th learned control, or every one.
     pub(crate) fn forget_controls(&self, n: Option<usize>) {
         let console = &self.shared.params.console;
@@ -618,10 +651,39 @@ impl Source {
             });
             self.waiting.set(None);
         }
+        let bindings = console.bindings();
+        let switches = organ
+            .divisions()
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.kind == caecilia_model::DivisionKind::Manual)
+            .map(|(i, d)| {
+                let key = bindings
+                    .iter()
+                    .find(|b| b.action == crate::console::Action::Manual(i as u16))
+                    .map(|b| match b.source {
+                        crate::console::Source::Key { note, .. } => note_name(note),
+                        other => sound_page::control_name(other),
+                    });
+                (i as u16, d.name.clone(), key)
+            })
+            .collect();
+        let route = self.shared.telemetry.route().map(|(channel, divisions)| {
+            let names: Vec<&str> = organ
+                .divisions()
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| divisions & (1 << i) != 0)
+                .map(|(_, d)| d.name.as_str())
+                .collect();
+            format!("Channel {} plays {}", channel + 1, names.join(" + "))
+        });
         LearnView {
             on: self.learning.get(),
             waiting_for: armed.map(|a| sound_page::action_name(organ, a)),
             last: self.learned.borrow().clone(),
+            switches,
+            route,
             bindings: console
                 .bindings()
                 .into_iter()
@@ -739,6 +801,15 @@ impl Source {
             .is_some_and(|t| !t.advance(now, &self.shared, &self.organ()));
         if done {
             self.tour.borrow_mut().take();
+        }
+        // So do the registrations of the piece playing.
+        let done = self
+            .script
+            .borrow_mut()
+            .as_mut()
+            .is_some_and(|s| !s.advance(now, &self.shared, &self.organ()));
+        if done {
+            self.script.borrow_mut().take();
         }
         self.follow_devices(now);
         let snapshot = Rc::new(self.read());

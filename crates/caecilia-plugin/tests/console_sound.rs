@@ -245,3 +245,31 @@ fn learn_binds_a_midi_control_to_a_stop_pressed_on_the_console() {
         c.says("Wind")
     );
 }
+
+#[test]
+fn the_midi_page_sets_the_manual_switches() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Settings");
+    c.click(Role::Button, "Page MIDI");
+    assert!(
+        c.says("Wind").contains("no switch to Récit"),
+        "{}",
+        c.says("Wind")
+    );
+    c.click(Role::Button, "Switches on the top B and C");
+    let said = c.says("Wind");
+    assert!(said.contains("B6 switches to Récit"), "{said}");
+    assert!(said.contains("C7 switches to Grand-Orgue"), "{said}");
+    // A switch learned by hand: the next key moved switches to it.
+    c.click(Role::Button, "Switch to Grand-Orgue");
+    assert!(
+        c.says("Wind")
+            .contains("waiting for a control for Play on Grand-Orgue"),
+        "{}",
+        c.says("Wind")
+    );
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-switches@1x.png"), png).unwrap();
+}

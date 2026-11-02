@@ -192,6 +192,15 @@ pub struct Caecilia {
     played: Producer<Played>,
     /// Keys a learned control swallowed, per channel, so their note-offs go too.
     swallowed: [u128; 16],
+    /// Manual switches held, per channel: pressed together, their divisions
+    /// add up.
+    switches_held: [u128; 16],
+    /// The divisions each channel plays, as bits, once a manual switch has
+    /// chosen them; 0 for the organ's own channel map.
+    routes: [u16; 16],
+    /// The divisions each held key went down on, so it comes up there
+    /// whatever was switched since.
+    sounding: [[u16; 128]; 16],
     /// Each controller's last value, for firing learned controls on the press.
     controller_values: [[u8; 128]; 16],
     /// Who changed the registration this block, if the console did.
@@ -321,6 +330,8 @@ impl Caecilia {
                 self.set_masks(0, 0);
                 self.origin.get_or_insert(Origin::Control);
             }
+            // Taken where the key's channel is known (`console_takes`).
+            Action::Manual(_) => {}
         }
     }
 
@@ -332,6 +343,19 @@ impl Caecilia {
             return console.capture(source);
         }
         match console.lookup(source) {
+            Some(Action::Manual(division)) => {
+                if pressed {
+                    match source {
+                        Source::Key { channel, note } => {
+                            self.switch_manual(channel, Some(note), division);
+                        }
+                        Source::Controller { channel, .. } => {
+                            self.switch_manual(channel, None, division);
+                        }
+                    }
+                }
+                true
+            }
             Some(action) => {
                 if pressed {
                     self.perform(action);
@@ -422,6 +446,51 @@ impl Caecilia {
         }
     }
 
+    /// The divisions channel `c` plays, as bits.
+    fn route(&self, c: usize) -> u16 {
+        match self.routes[c] {
+            0 => 1u16
+                .checked_shl(u32::from(self.division_of_channel[c].0))
+                .unwrap_or(0),
+            r => r,
+        }
+    }
+
+    /// A key down or up on each division of `divisions`.
+    fn push_divisions(&mut self, offset: u32, divisions: u16, note: u8, on: bool) {
+        let mut left = divisions;
+        while left != 0 {
+            let division = DivisionId(left.trailing_zeros() as u16);
+            left &= left - 1;
+            let command = if on {
+                Command::NoteOn { division, note }
+            } else {
+                Command::NoteOff { division, note }
+            };
+            self.push(offset, command);
+        }
+    }
+
+    /// A manual switch pressed on `channel`: that keyboard plays `division`
+    /// from now on, or `division` too while another switch is held.
+    fn switch_manual(&mut self, channel: u8, note: Option<u8>, division: u16) {
+        if usize::from(division) >= self.organ.divisions().len().min(16) {
+            return;
+        }
+        let c = usize::from(channel & 0x0F);
+        let bit = 1u16 << division;
+        let others = note.map_or(0, |n| self.switches_held[c] & !(1u128 << (n & 0x7F)));
+        self.routes[c] = if others != 0 {
+            self.route(c) | bit
+        } else {
+            bit
+        };
+        if let Some(n) = note {
+            self.switches_held[c] |= 1u128 << (n & 0x7F);
+        }
+        self.telemetry.set_route(channel, self.routes[c]);
+    }
+
     fn push(&mut self, offset: u32, command: Command) {
         if self.events.len() < self.events.capacity() {
             self.events.push(Timed { offset, command });
@@ -469,13 +538,18 @@ impl Caecilia {
         self.tremulant = None;
         self.swell = None;
         self.retune = true;
+        // The manual switches named the old organ's divisions: the new one
+        // plays by its own channel map until a switch is pressed again.
+        self.routes = [0; 16];
+        self.telemetry.set_route(0, 0);
         for channel in 0..16 {
             let mut keys = self.held[channel];
             while keys != 0 {
                 let note = keys.trailing_zeros() as u8;
                 keys &= keys - 1;
-                let division = self.division_of_channel[channel];
-                self.push(0, Command::NoteOn { division, note });
+                let divisions = self.route(channel);
+                self.sounding[channel][usize::from(note)] = divisions;
+                self.push_divisions(0, divisions, note, true);
             }
         }
     }
@@ -567,6 +641,9 @@ impl Plugin for Caecilia {
     type Params = CaeciliaParams;
 
     fn new() -> Self {
+        // The demonstrations' scores, compiled here so the audio thread
+        // only reads them.
+        demo::prepare();
         let (organ, path) = organ_for_new_instance();
         let (params, switch) = CaeciliaParams::new(Arc::clone(&organ), path);
         let params = Arc::new(params);
@@ -616,6 +693,9 @@ impl Plugin for Caecilia {
             controller,
             played,
             swallowed: [0; 16],
+            switches_held: [0; 16],
+            routes: [0; 16],
+            sounding: [[0; 128]; 16],
             controller_values: [[0; 128]; 16],
             origin: None,
             temperaments: temperament_tables(),
@@ -667,6 +747,8 @@ impl Plugin for Caecilia {
         self.fade_left = vec![0.0; spec.max_block_size];
         self.fade_right = vec![0.0; spec.max_block_size];
         self.held = [0; 16];
+        self.sounding = [[0; 128]; 16];
+        self.switches_held = [0; 16];
         self.sample_rate = spec.sample_rate;
         // Everything is sent again on the first block.
         self.stop_mask = u64::MAX;
@@ -789,48 +871,53 @@ impl Plugin for Caecilia {
                     shift,
                 } => {
                     let mut demo = std::mem::replace(&mut self.demo, demo::Player::new());
-                    demo.start(demo::piece(piece), channels, shift, rate, |at, c, k, on| {
+                    demo.start(piece, channels, shift, |at, c, k, on| {
                         self.play_key(at, c, k, on)
                     });
                     self.demo = demo;
                 }
                 UiNote::Stop => {
                     let mut demo = std::mem::replace(&mut self.demo, demo::Player::new());
-                    demo.stop(rate, |at, c, k, on| self.play_key(at, c, k, on));
+                    demo.stop(|at, c, k, on| self.play_key(at, c, k, on));
                     self.demo = demo;
                 }
             }
         }
         let first_host_event = self.events.len();
+        let division_of_channel = self.division_of_channel;
         for event in context.events {
-            let channel_division = |c: u8| self.division_of_channel[usize::from(c & 0x0F)];
+            let channel_division = |c: u8| division_of_channel[usize::from(c & 0x0F)];
             let command = match event.kind {
                 EventKind::NoteOn { note, .. } => {
                     let c = usize::from(note.channel & 0x0F);
-                    let bit = 1u128 << (note.key & 0x7F);
-                    if self.swallowed[c] & bit != 0 {
-                        None
-                    } else {
+                    let key = note.key & 0x7F;
+                    let bit = 1u128 << key;
+                    if self.swallowed[c] & bit == 0 {
                         self.held[c] |= bit;
-                        Some(Command::NoteOn {
-                            division: channel_division(note.channel),
-                            note: note.key,
-                        })
+                        // Every division the keyboard is switched to.
+                        let divisions = self.route(c);
+                        self.sounding[c][usize::from(key)] = divisions;
+                        self.push_divisions(event.offset, divisions, key, true);
                     }
+                    None
                 }
                 EventKind::NoteOff { note, .. } | EventKind::NoteChoke { note } => {
                     let c = usize::from(note.channel & 0x0F);
-                    let bit = 1u128 << (note.key & 0x7F);
+                    let key = note.key & 0x7F;
+                    let bit = 1u128 << key;
                     if self.swallowed[c] & bit != 0 {
                         self.swallowed[c] &= !bit;
-                        None
+                        self.switches_held[c] &= !bit;
                     } else {
                         self.held[c] &= !bit;
-                        Some(Command::NoteOff {
-                            division: channel_division(note.channel),
-                            note: note.key,
-                        })
+                        let divisions =
+                            match std::mem::take(&mut self.sounding[c][usize::from(key)]) {
+                                0 => self.route(c),
+                                d => d,
+                            };
+                        self.push_divisions(event.offset, divisions, key, false);
                     }
+                    None
                 }
                 EventKind::Midi(MidiMessage::ControlChange {
                     channel,
@@ -853,6 +940,7 @@ impl Plugin for Caecilia {
                         }),
                         120 | 123 => {
                             self.held = [0; 16];
+                            self.sounding = [[0; 128]; 16];
                             Some(Command::Panic)
                         }
                         _ => None,
@@ -876,13 +964,7 @@ impl Plugin for Caecilia {
                 sort_by_offset(&mut self.events[first_host_event..]);
             }
         }
-        let playing = self.demo.playing().map(|p| {
-            demo::PIECES
-                .iter()
-                .position(|q| std::ptr::eq(p, q))
-                .map_or(demo::PHRASE_INDEX, |i| i as u8)
-        });
-        self.telemetry.set_demo(playing);
+        self.telemetry.set_demo(self.demo.playing());
 
         let (left, right) = buffer.channel_pair_mut(0, 1);
         engine.process(left, right, &self.events);
@@ -924,6 +1006,8 @@ impl Plugin for Caecilia {
         // The organ being left stops now; it is handed back next block.
         self.fade_done = self.fade_len;
         self.held = [0; 16];
+        self.sounding = [[0; 128]; 16];
+        self.switches_held = [0; 16];
         self.demo = demo::Player::new();
         self.retune = true;
         self.stop_mask = u64::MAX;

@@ -52,6 +52,33 @@ fn library_rows(size: Size, count: usize) -> Vec<Rect> {
         .collect()
 }
 
+/// Where the demonstrations go: a column with a word under it where the
+/// desk is tall enough, else a grid of as many columns as it takes, so
+/// every piece is there on a short desk. Whether the word fits.
+fn demo_rows(size: Size, count: usize) -> (Vec<Rect>, bool) {
+    let top = 44.0;
+    let column = ((size.height - top - 30.0) / LIBRARY_ROW).max(0.0) as usize;
+    if column >= count {
+        return (library_rows(size, count), true);
+    }
+    let rows = (((size.height - top - 6.0) / LIBRARY_ROW).max(1.0) as usize).max(1);
+    let columns = count.div_ceil(rows);
+    let w = (size.width - 40.0) / columns as f32;
+    let cells = (0..count)
+        .map(|i| {
+            let (row, col) = (i / columns, i % columns);
+            Rect::new(
+                20.0 + col as f32 * w,
+                top + row as f32 * LIBRARY_ROW,
+                w - 5.0,
+                LIBRARY_ROW - 4.0,
+            )
+        })
+        .filter(|r| r.bottom() <= size.height - 2.0)
+        .collect();
+    (cells, false)
+}
+
 fn draw_wind(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
     let look = snapshot.look;
     let rect = Rect::new(0.0, 0.0, size.width, size.height);
@@ -154,8 +181,15 @@ fn draw_demos(size: Size, scene: &mut Scene, snapshot: &Snapshot, demos: &DemosV
         "the organ plays itself",
     );
     let names = demos::names();
-    let rows = library_rows(size, names.len());
+    let labels = demos::labels();
+    let (rows, roomy) = demo_rows(size, names.len());
     for (n, (r, name)) in rows.iter().zip(&names).enumerate() {
+        // The whole name where it fits, else the piece's short one.
+        let name = if width_of(name, style(12.0, 650.0, look.text)) + 110.0 < r.width {
+            *name
+        } else {
+            labels[n]
+        };
         let playing = demos.playing == Some(n);
         let shape = RoundedRect::new(*r, 8.0);
         if playing {
@@ -191,6 +225,9 @@ fn draw_demos(size: Size, scene: &mut Scene, snapshot: &Snapshot, demos: &DemosV
                 1.0,
             );
         }
+    }
+    if !roomy {
+        return;
     }
     text(
         scene,
@@ -260,7 +297,8 @@ fn wind(source: &Rc<Source>) -> View {
         }
         if let Some(demos) = &s.demos {
             let names = demos::names();
-            return library_rows(size, names.len())
+            return demo_rows(size, names.len())
+                .0
                 .into_iter()
                 .zip(names)
                 .enumerate()
@@ -302,7 +340,7 @@ fn wind(source: &Rc<Source>) -> View {
             return Handled::No;
         }
         if snapshot.demos.is_some() {
-            let rows = library_rows(size, demos::names().len());
+            let (rows, _) = demo_rows(size, demos::names().len());
             let Some(n) = rows.iter().position(|r| r.contains(at)) else {
                 return Handled::No;
             };

@@ -32,6 +32,9 @@ pub enum Action {
     PreviousGeneral,
     /// Retire every stop and coupler.
     Cancel,
+    /// A manual switch: the keyboard it is pressed on plays this division
+    /// from now on; pressed with another switch held, this division too.
+    Manual(u16),
 }
 
 impl Action {
@@ -43,6 +46,7 @@ impl Action {
             Self::NextGeneral => (4, 0),
             Self::PreviousGeneral => (5, 0),
             Self::Cancel => (6, 0),
+            Self::Manual(n) => (7, n),
         };
         (kind << 16) | u32::from(index)
     }
@@ -56,6 +60,7 @@ impl Action {
             4 => Self::NextGeneral,
             5 => Self::PreviousGeneral,
             6 => Self::Cancel,
+            7 => Self::Manual(index),
             _ => return None,
         })
     }

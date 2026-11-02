@@ -22,6 +22,9 @@ pub struct Telemetry {
     voices: AtomicU32,
     /// The demonstration playing: its index plus one, or 0.
     demo: AtomicU32,
+    /// The divisions a keyboard's manual switches send it to: the channel
+    /// in the high half, the divisions as bits in the low; 0 for none.
+    route: AtomicU32,
     /// The render's share of the block's time, smoothed, as `f32` bits.
     load: AtomicU32,
 }
@@ -33,6 +36,7 @@ impl Default for Telemetry {
             held: std::array::from_fn(|_| [AtomicU64::new(0), AtomicU64::new(0)]),
             voices: AtomicU32::new(0),
             demo: AtomicU32::new(0),
+            route: AtomicU32::new(0),
             load: AtomicU32::new(0),
         }
     }
@@ -84,6 +88,20 @@ impl Telemetry {
             0 => None,
             n => Some((n - 1) as u8),
         }
+    }
+
+    /// The keyboard a manual switch was last pressed on, its MIDI channel,
+    /// and the divisions it plays, as bits; `None` before any.
+    pub fn route(&self) -> Option<(u8, u16)> {
+        match self.route.load(Ordering::Relaxed) {
+            0 => None,
+            v => Some(((v >> 16) as u8, (v & 0xFFFF) as u16)),
+        }
+    }
+
+    pub(crate) fn set_route(&self, channel: u8, divisions: u16) {
+        let v = (u32::from(channel & 0x0F) << 16) | u32::from(divisions);
+        self.route.store(v, Ordering::Relaxed);
     }
 
     pub(crate) fn set_demo(&self, demo: Option<u8>) {

@@ -105,7 +105,7 @@ fn a_piece_draws_its_stops_and_plays_by_itself() {
     let mut c = Console::open();
     c.click(Role::Button, "Demos");
     assert!(
-        c.says("Wind").starts_with("Demonstrations: J. S. Bach"),
+        c.says("Wind").starts_with("Demonstrations: J. Pachelbel"),
         "{}",
         c.says("Wind")
     );
@@ -132,7 +132,7 @@ fn a_piece_draws_its_stops_and_plays_by_itself() {
     std::fs::write(dir.join("console-demos@1x.png"), png).unwrap();
 
     // It ends by itself, every key lifted.
-    c.play_for(7.0);
+    c.play_for(17.0);
     assert!(!c.says("Wind").contains("(playing)"), "{}", c.says("Wind"));
     assert!(nothing_held(&c), "{}", c.says("Manuals"));
 }
@@ -166,4 +166,33 @@ fn the_tour_plays_every_stop_alone() {
     let second = c.says("Wind");
     assert_ne!(first, second, "the tour moved on");
     assert_eq!(drawn(&c), 0, "still one stop drawn");
+}
+
+#[test]
+fn a_piece_changes_its_registration_between_verses() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Demos");
+    c.click(
+        Role::Button,
+        "Play Amazing Grace \u{2014} the Voix Humaine, then the Cornet",
+    );
+    let right = c.says("Right jamb");
+    assert!(right.contains("Voix Humaine 8"), "{right}");
+    assert!(!right.contains("Tierce"), "{right}");
+    let params = c.h.plugin_mut().params();
+    assert!(params.tremulant.value(), "the Voix Humaine trembles");
+    // The second verse, 48 beats in: the console's clock moves on, a block
+    // of sound a second is enough to carry the registration.
+    for _ in 0..27 {
+        c.ui.advance(Duration::from_secs(1));
+        c.ui.tick();
+        c.h.render(BLOCK);
+    }
+    let right = c.says("Right jamb");
+    assert!(right.contains("Tierce 1 3/5"), "the cornet: {right}");
+    assert!(right.contains("Nasard 2 2/3"), "{right}");
+    assert!(!right.contains("Voix Humaine"), "{right}");
+    assert!(!params.tremulant.value());
+    let why = c.says("Registration");
+    assert!(why.contains("the Cornet"), "the history names it: {why}");
 }

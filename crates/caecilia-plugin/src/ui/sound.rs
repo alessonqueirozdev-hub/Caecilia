@@ -55,6 +55,11 @@ pub(crate) struct LearnView {
     pub(crate) last: Option<String>,
     /// Each binding: the control, and what it does.
     pub(crate) bindings: Vec<(String, String)>,
+    /// The manual switches: each manual's division, its name, and the key
+    /// that switches to it, if one is learned.
+    pub(crate) switches: Vec<(u16, String, Option<String>)>,
+    /// What the keyboard last switched plays: `Channel 1 plays Récit`.
+    pub(crate) route: Option<String>,
 }
 
 /// What the sound panel shows, read once a frame.
@@ -163,6 +168,10 @@ pub(crate) fn action_name(organ: &caecilia_model::Organ, action: Action) -> Stri
         Action::NextGeneral => "Next general".into(),
         Action::PreviousGeneral => "Previous general".into(),
         Action::Cancel => "Cancel".into(),
+        Action::Manual(n) => organ
+            .divisions()
+            .get(usize::from(n))
+            .map_or_else(|| format!("Manual {n}"), |d| format!("Play on {}", d.name)),
     }
 }
 
@@ -293,6 +302,9 @@ fn tremulant_plan(size: Size) -> TremulantPlan {
 struct MidiPlan {
     learn: Rect,
     forget_all: Rect,
+    /// Each manual's switch, and the one that sets the top B and C.
+    switches: Vec<Rect>,
+    top_keys: Rect,
     /// Whether there is a row of input ports: where an application serves
     /// them.
     ports_row: bool,
@@ -307,22 +319,26 @@ struct MidiPlan {
 /// The ports shown in a row, at most.
 const PORTS_SHOWN: usize = 4;
 
-fn midi_plan(size: Size, count: usize, ports: Option<usize>) -> MidiPlan {
+fn midi_plan(size: Size, count: usize, switches: usize, ports: Option<usize>) -> MidiPlan {
     let ports_row = ports.is_some();
     let ports = match ports {
-        Some(n) if n > 0 => chips(size, ROWS[1], n.min(PORTS_SHOWN)),
+        Some(n) if n > 0 => chips(size, ROWS[2], n.min(PORTS_SHOWN)),
         _ => Vec::new(),
     };
     let note = if ports_row {
-        ROWS[2] + 3.0
+        ROWS[2] + ROW + 6.0
     } else {
-        ROWS[1] + 3.0
+        ROWS[2] + 3.0
     };
+    let mut switches = chips(size, ROWS[1], switches + 1);
+    let top_keys = switches.pop().unwrap_or_default();
     let top = note + 20.0;
     let room = ((size.height - top - 10.0) / 26.0).max(0.0) as usize;
     MidiPlan {
         learn: Rect::new(20.0, ROWS[0], 84.0, ROW),
         forget_all: Rect::new(size.width - 20.0 - 90.0, ROWS[0], 90.0, ROW),
+        switches,
+        top_keys,
         ports_row,
         ports,
         note,
@@ -603,8 +619,18 @@ fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundVi
     let look = snapshot.look;
     let learn = &sound.learn;
     let ports = sound.devices.as_ref().map(|d| d.midi_inputs.len());
-    let plan = midi_plan(size, learn.bindings.len(), ports);
+    let plan = midi_plan(size, learn.bindings.len(), learn.switches.len(), ports);
     chip(scene, snapshot, plan.learn, "Learn", learn.on);
+    label(scene, snapshot, ROWS[1] + 1.0, "Switches");
+    for (r, (_, name, key)) in plan.switches.iter().zip(&learn.switches) {
+        let shown = match key {
+            Some(key) => format!("{name} \u{b7} {key}"),
+            None => format!("{name} \u{b7} learn"),
+        };
+        let waiting = learn.waiting_for.as_deref() == Some(format!("Play on {name}").as_str());
+        chip(scene, snapshot, *r, &shown, waiting);
+    }
+    chip(scene, snapshot, plan.top_keys, "Top B and C", false);
     if !learn.bindings.is_empty() {
         chip(scene, snapshot, plan.forget_all, "Forget all", false);
     }
@@ -621,7 +647,7 @@ fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundVi
         0.0,
     );
     if plan.ports_row {
-        label(scene, snapshot, ROWS[1] + 1.0, "Inputs");
+        label(scene, snapshot, ROWS[2] + 1.0, "Inputs");
         match &sound.devices {
             Some(d) if !d.midi_inputs.is_empty() => {
                 for (r, port) in plan.ports.iter().zip(&d.midi_inputs) {
@@ -633,21 +659,27 @@ fn draw_midi(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundVi
                     scene,
                     "No MIDI input port is connected",
                     style(11.5, 500.0, look.text2),
-                    Point::new(20.0 + LABEL, ROWS[1] + 5.0),
+                    Point::new(20.0 + LABEL, ROWS[2] + 5.0),
                     0.0,
                 );
             }
         }
     }
-    let below = learn.last.clone().unwrap_or_else(|| {
-        if learn.bindings.is_empty() {
-            "Press Learn, then a stop, coupler or piston, then the control to bind to it. \
-             No control learned yet."
-                .into()
-        } else {
-            "Press Learn, then a stop, coupler or piston, then the control to bind to it.".into()
-        }
-    });
+    let below = learn
+        .last
+        .clone()
+        .or_else(|| learn.route.clone())
+        .unwrap_or_else(|| {
+            if learn.bindings.is_empty() {
+                "Press Learn, then a stop, coupler, piston or switch, then the control to bind \
+             to it. No control learned yet."
+                    .into()
+            } else {
+                "Press Learn, then a stop, coupler, piston or switch, then the control to bind \
+             to it."
+                    .into()
+            }
+        });
     text(
         scene,
         &below,
@@ -889,6 +921,20 @@ pub(crate) fn describe(sound: &SoundView) -> String {
                 (true, None) => "MIDI: learning, choose a control on the console".into(),
                 (false, _) => "MIDI".into(),
             };
+            let switches: Vec<String> = learn
+                .switches
+                .iter()
+                .map(|(_, name, key)| match key {
+                    Some(key) => format!("{key} switches to {name}"),
+                    None => format!("no switch to {name}"),
+                })
+                .collect();
+            if !switches.is_empty() {
+                said.push_str(&format!("; {}", switches.join(", ")));
+            }
+            if let Some(route) = &learn.route {
+                said.push_str(&format!("; {route}"));
+            }
             if let Some(devices) = &sound.devices {
                 said.push_str(&format!("; inputs: {}", ports_said(devices)));
             }
@@ -998,9 +1044,18 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
             }
         }
         MIDI => {
+            let learn = &sound.learn;
             let ports = sound.devices.as_ref().map(|d| d.midi_inputs.len());
-            let plan = midi_plan(size, sound.learn.bindings.len(), ports);
-            items.push(button("Learn".into(), Some(sound.learn.on), plan.learn));
+            let plan = midi_plan(size, learn.bindings.len(), learn.switches.len(), ports);
+            items.push(button("Learn".into(), Some(learn.on), plan.learn));
+            for (r, (_, name, _)) in plan.switches.iter().zip(&learn.switches) {
+                items.push(button(format!("Switch to {name}"), None, *r));
+            }
+            items.push(button(
+                "Switches on the top B and C".into(),
+                None,
+                plan.top_keys,
+            ));
             if !sound.learn.bindings.is_empty() {
                 items.push(button("Forget all".into(), None, plan.forget_all));
             }
@@ -1196,10 +1251,17 @@ fn press_tremulant(context: &EditorContext, source: &Source, size: Size, at: Poi
 }
 
 fn press_midi(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pressed {
+    let learn = &sound.learn;
     let ports = sound.devices.as_ref().map(|d| d.midi_inputs.len());
-    let plan = midi_plan(size, sound.learn.bindings.len(), ports);
+    let plan = midi_plan(size, learn.bindings.len(), learn.switches.len(), ports);
     if plan.learn.contains(at) {
-        source.set_learning(!sound.learn.on);
+        source.set_learning(!learn.on);
+        Pressed::Done
+    } else if let Some(i) = plan.switches.iter().position(|r| r.contains(at)) {
+        source.learn_switch(learn.switches[i].0);
+        Pressed::Done
+    } else if plan.top_keys.contains(at) {
+        source.switches_on_top_keys();
         Pressed::Done
     } else if !sound.learn.bindings.is_empty() && plan.forget_all.contains(at) {
         source.forget_controls(None);

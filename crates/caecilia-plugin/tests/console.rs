@@ -238,3 +238,79 @@ fn captured_pistons_and_learned_controls_are_saved_with_the_session() {
     assert_eq!(params.console.general(8).unwrap().0, (1 << 20) | (1 << 21));
     assert_eq!(params.console.bindings(), [binding]);
 }
+
+fn key(h: &mut Harness<Caecilia>, frame: u64, note: u8, on: bool) {
+    let note = NoteRef::new(0, note);
+    h.schedule(
+        frame,
+        if on {
+            EventKind::NoteOn {
+                note,
+                velocity: 1.0,
+            }
+        } else {
+            EventKind::NoteOff {
+                note,
+                velocity: 0.0,
+            }
+        },
+    );
+}
+
+#[test]
+fn manual_switches_send_one_keyboard_to_either_manual_or_both() {
+    let mut h = harness();
+    h.render(256);
+    let ctl = h.plugin_mut().controller();
+    ctl.lock().unwrap().apply(Command::Clear(None));
+    h.render(256);
+    // Only the Récit's Bourdon 8 drawn.
+    h.automate(512, &stop_param_id(19), 1.0);
+    h.render(256);
+    assert_eq!(drawn(&h), [19]);
+    // The Pédale is division 0, the Grand-Orgue 1, the Récit 2.
+    let console = &h.params().console;
+    for (note, division) in [(95, 2), (96, 1)] {
+        assert!(console.bind(Binding {
+            source: Source::Key { channel: 0, note },
+            action: Action::Manual(division),
+        }));
+    }
+    let telemetry = h.plugin_mut().telemetry();
+    let voices = |h: &mut Harness<Caecilia>| h.plugin_mut().engine().unwrap().active_voices();
+
+    // The first channel plays the Grand-Orgue, where nothing is drawn.
+    key(&mut h, 768, 60, true);
+    h.render(256);
+    assert_eq!(voices(&mut h), 0);
+    key(&mut h, 1024, 60, false);
+    h.render(256);
+
+    // The top B switches it to the Récit, and sounds no pipe itself.
+    key(&mut h, 1280, 95, true);
+    key(&mut h, 1300, 95, false);
+    h.render(256);
+    assert_eq!(voices(&mut h), 0, "a switch is not a pipe");
+    assert_eq!(telemetry.route(), Some((0, 1 << 2)));
+    key(&mut h, 1536, 64, true);
+    h.render(256);
+    assert!(voices(&mut h) > 0, "the Récit speaks");
+
+    // The top C, alone, back to the Grand-Orgue; the key held comes up on
+    // the Récit, where it went down.
+    key(&mut h, 1792, 96, true);
+    key(&mut h, 1800, 96, false);
+    h.render(256);
+    assert_eq!(telemetry.route(), Some((0, 1 << 1)));
+    key(&mut h, 2048, 64, false);
+    h.render(256);
+
+    // Both together: both manuals.
+    key(&mut h, 2304, 96, true);
+    key(&mut h, 2310, 95, true);
+    h.render(256);
+    assert_eq!(telemetry.route(), Some((0, (1 << 1) | (1 << 2))));
+    key(&mut h, 2560, 96, false);
+    key(&mut h, 2570, 95, false);
+    h.render(256);
+}
