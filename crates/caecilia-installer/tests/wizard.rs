@@ -4,6 +4,9 @@
 //!
 //! `CAECILIA_INSTALLER_SHOTS=<folder>` saves each page as a PNG there.
 
+// Its pages name Windows' folders, the only system the wizard opens on yet.
+#![cfg(windows)]
+
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

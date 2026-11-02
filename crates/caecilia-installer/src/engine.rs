@@ -86,9 +86,33 @@ fn beside(path: &Path, suffix: &str) -> PathBuf {
     path.with_file_name(name)
 }
 
+/// Tells Linux and macOS whether the file at `path` runs, whatever the
+/// umask of whoever installs. Elsewhere there is nothing to tell.
+#[cfg(unix)]
+fn set_file_mode(path: &Path, executable: bool) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = if executable { 0o755 } else { 0o644 };
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+
+#[cfg(not(unix))]
+fn set_file_mode(_path: &Path, _executable: bool) -> io::Result<()> {
+    Ok(())
+}
+
+/// A new folder everyone can read, whatever the umask of whoever installs.
+#[cfg(unix)]
+fn set_dir_mode(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o755));
+}
+
+#[cfg(not(unix))]
+fn set_dir_mode(_path: &Path) {}
+
 /// Writes `bytes` to `path` whole or not at all: beside it first, then
 /// renamed over it.
-fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let new = beside(path, ".caecilia-tmp");
     let written = File::create(&new).and_then(|mut f| {
         f.write_all(bytes)?;
@@ -176,7 +200,10 @@ impl Transaction {
         }
         for d in missing.into_iter().rev() {
             match fs::create_dir(&d) {
-                Ok(()) => self.dirs.push(d),
+                Ok(()) => {
+                    set_dir_mode(&d);
+                    self.dirs.push(d);
+                }
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists && d.is_dir() => {}
                 Err(e) => return Err(io_err("make the folder", &d)(e)),
             }
@@ -209,7 +236,13 @@ impl Transaction {
     }
 
     /// Writes `bytes` at `dest`, which must then hash to `sha256`.
-    fn place(&mut self, dest: &Path, bytes: &[u8], sha256: Digest) -> Result<(), Error> {
+    fn place(
+        &mut self,
+        dest: &Path,
+        bytes: &[u8],
+        sha256: Digest,
+        executable: bool,
+    ) -> Result<(), Error> {
         if let Some(dir) = dest.parent() {
             self.make_dir(dir)?;
         }
@@ -217,7 +250,8 @@ impl Transaction {
         let write = || -> io::Result<()> {
             let mut file = File::create(&new)?;
             file.write_all(bytes)?;
-            file.sync_all()
+            file.sync_all()?;
+            set_file_mode(&new, executable)
         };
         if let Err(e) = write() {
             let _ = fs::remove_file(&new);
@@ -498,7 +532,12 @@ impl Engine<'_> {
                 step = &f.entry.component;
                 self.log.line("step", step);
             }
-            tx.place(&f.dest, payload.bytes(&f.entry), f.entry.sha256)?;
+            tx.place(
+                &f.dest,
+                payload.bytes(&f.entry),
+                f.entry.sha256,
+                f.entry.executable,
+            )?;
             self.log.line(
                 "file",
                 format_args!(
@@ -514,10 +553,22 @@ impl Engine<'_> {
                 sha256: f.entry.sha256,
             });
         }
+        // Run as an administrator, what went into the person's home stays
+        // theirs, folders first.
+        for f in plan
+            .files
+            .iter()
+            .filter(|f| f.entry.root == crate::payload::Root::Organs)
+        {
+            for d in tx.dirs.iter().filter(|d| f.dest.starts_with(d)) {
+                self.sys.give_to_person(d);
+            }
+            self.sys.give_to_person(&f.dest);
+        }
         self.check_cancel()?;
         self.log.line("step", "uninstaller");
         let sha256 = Digest::of(uninstaller);
-        tx.place(&plan.uninstaller, uninstaller, sha256)?;
+        tx.place(&plan.uninstaller, uninstaller, sha256, true)?;
         self.log.line(
             "file",
             format_args!(
@@ -592,6 +643,7 @@ impl Engine<'_> {
             &plan.program_dir.join(RECORD),
             json.as_bytes(),
             Digest::of(json.as_bytes()),
+            false,
         )?;
         self.sys.register(plan.scope, &plan.entry).map_err(io_err(
             "register in Apps & features",

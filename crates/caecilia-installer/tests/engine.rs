@@ -360,6 +360,7 @@ fn an_upgrade_replaces_files_and_drops_what_the_new_version_has_not() {
     assert!(!places.plugin_dir(Scope::Machine, "CLAP").exists());
 }
 
+#[cfg(windows)]
 #[test]
 fn a_dropped_plugin_a_host_still_holds_is_not_forgotten() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -424,6 +425,7 @@ fn a_dropped_plugin_a_host_still_holds_is_not_forgotten() {
     }
 }
 
+#[cfg(windows)]
 #[test]
 fn a_removal_does_not_forget_a_leftover_a_host_still_holds() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -506,7 +508,10 @@ fn a_removal_started_inside_the_program_folder_still_removes_it() {
     std::env::set_current_dir(was).unwrap();
     assert!(gone.kept.is_empty(), "{:?}", gone.kept);
     assert!(!plan.program_dir.exists());
-    assert_eq!(now, std::env::temp_dir());
+    assert_eq!(
+        now.canonicalize().unwrap(),
+        std::env::temp_dir().canonicalize().unwrap()
+    );
 }
 
 #[test]
@@ -571,6 +576,7 @@ fn an_update_to_another_folder_leaves_nothing_in_the_old_one() {
     assert_eq!(tree(&scratch.0), before, "and the removal leaves nothing");
 }
 
+#[cfg(windows)]
 #[test]
 fn files_in_use_the_record_cannot_note_are_said_kept() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -617,6 +623,7 @@ fn files_in_use_the_record_cannot_note_are_said_kept() {
     );
 }
 
+#[cfg(windows)]
 #[test]
 fn a_purge_that_fails_keeps_the_record_to_try_again() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -658,6 +665,7 @@ fn a_purge_that_fails_keeps_the_record_to_try_again() {
     assert!(sys.installed(Scope::User, "Caecilia").is_none());
 }
 
+#[cfg(windows)]
 #[test]
 fn an_update_run_by_the_old_uninstaller_to_another_folder_empties_the_old_one() {
     let scratch = Scratch::new("moved-running");
@@ -715,6 +723,7 @@ fn an_update_run_by_the_old_uninstaller_to_another_folder_empties_the_old_one() 
     }
 }
 
+#[cfg(windows)]
 #[test]
 fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     let scratch = Scratch::new("inuse");
@@ -774,6 +783,7 @@ fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     assert!(!outcome.record.leftovers[0].path.exists());
 }
 
+#[cfg(windows)]
 #[test]
 fn the_running_uninstaller_leaves_no_folder_behind() {
     let scratch = Scratch::new("selfremove");
@@ -865,6 +875,7 @@ fn an_update_by_someone_else_keeps_the_first_persons_data_folder() {
     );
 }
 
+#[cfg(windows)]
 #[test]
 fn a_shortcut_that_cannot_go_keeps_the_record_to_try_again() {
     use std::os::windows::fs::OpenOptionsExt;

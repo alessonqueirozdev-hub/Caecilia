@@ -11,6 +11,19 @@
 //! | Shortcuts | the Public desktop, the all-users Start menu | the person's own |
 //!
 //! The plugin folders are the ones the VST3 and CLAP specifications name.
+//!
+//! On Linux and macOS ([`Places::for_unix`]):
+//!
+//! | | Linux, everyone | Linux, just me | macOS, everyone | macOS, just me |
+//! |---|---|---|---|---|
+//! | Program | `/opt/Caecilia` | `~/.local/share/Caecilia` | `/Library/Application Support/Caecilia` | `~/Library/Application Support/Caecilia` |
+//! | VST3 | `/usr/lib/vst3` | `~/.vst3` | `/Library/Audio/Plug-Ins/VST3` | `~/Library/Audio/Plug-Ins/VST3` |
+//! | CLAP | `/usr/lib/clap` | `~/.clap` | `/Library/Audio/Plug-Ins/CLAP` | `~/Library/Audio/Plug-Ins/CLAP` |
+//! | Command | `/usr/local/bin/caecilia` | `~/.local/bin/caecilia` | `/usr/local/bin/caecilia` | `~/.local/bin/caecilia` |
+//! | Launcher | `/usr/share/applications` | `~/.local/share/applications` | `/Applications` | `~/Applications` |
+//!
+//! Organs go to `~/.config/caecilia/organs` on both, where the console's
+//! library reads them.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -44,9 +57,41 @@ impl Scope {
     }
 }
 
+/// The system whose conventions the folders follow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flavor {
+    /// Windows.
+    Windows,
+    /// Linux.
+    Linux,
+    /// macOS.
+    Macos,
+}
+
+impl Flavor {
+    /// The system this program was built for.
+    pub fn host() -> Flavor {
+        if cfg!(windows) {
+            Flavor::Windows
+        } else if cfg!(target_os = "macos") {
+            Flavor::Macos
+        } else {
+            Flavor::Linux
+        }
+    }
+}
+
 /// The folders of the system an installation uses.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Places {
+    /// The system they are on.
+    pub flavor: Flavor,
+    /// The person's home folder (Linux and macOS).
+    pub home: PathBuf,
+    /// Where the person's commands go (Linux and macOS).
+    pub user_bin: PathBuf,
+    /// Where everyone's commands go (Linux and macOS).
+    pub common_bin: PathBuf,
     /// `%ProgramFiles%`.
     pub program_files: PathBuf,
     /// `%CommonProgramFiles%`.
@@ -71,6 +116,10 @@ impl Places {
     /// Every folder under `base`, for tests: nothing of the real system.
     pub fn under(base: &Path) -> Places {
         Places {
+            flavor: Flavor::Windows,
+            home: base.join("Home"),
+            user_bin: PathBuf::new(),
+            common_bin: PathBuf::new(),
             program_files: base.join("Program Files"),
             common_files: base.join("Program Files").join("Common Files"),
             user_programs: base.join("LocalAppData").join("Programs"),
@@ -80,6 +129,58 @@ impl Places {
             user_start_menu: base.join("Start Menu").join("Programs"),
             common_start_menu: base.join("ProgramData").join("Start Menu").join("Programs"),
             temp: base.join("Temp"),
+        }
+    }
+
+    /// The folders of Linux or macOS for the person whose home is `home`.
+    pub fn for_unix(flavor: Flavor, home: &Path, temp: &Path) -> Places {
+        let linux = flavor == Flavor::Linux;
+        let library = home.join("Library");
+        Places {
+            flavor,
+            home: home.to_owned(),
+            user_bin: home.join(".local").join("bin"),
+            common_bin: PathBuf::from("/usr/local/bin"),
+            program_files: PathBuf::from(if linux {
+                "/opt"
+            } else {
+                "/Library/Application Support"
+            }),
+            common_files: PathBuf::from(if linux {
+                "/usr/lib"
+            } else {
+                "/Library/Audio/Plug-Ins"
+            }),
+            user_programs: if linux {
+                home.join(".local").join("share")
+            } else {
+                library.join("Application Support")
+            },
+            app_data: home.join(".config"),
+            user_desktop: home.join("Desktop"),
+            // Neither system has a desktop everyone shares.
+            common_desktop: PathBuf::new(),
+            user_start_menu: if linux {
+                home.join(".local").join("share").join("applications")
+            } else {
+                home.join("Applications")
+            },
+            common_start_menu: PathBuf::from(if linux {
+                "/usr/share/applications"
+            } else {
+                "/Applications"
+            }),
+            temp: temp.to_owned(),
+        }
+    }
+
+    /// Where Linux and macOS keep which installations there are, as
+    /// *Apps & features* does on Windows.
+    pub fn entries_dir(&self, scope: Scope) -> PathBuf {
+        match (self.flavor, scope) {
+            (Flavor::Linux, Scope::Machine) => PathBuf::from("/var/lib/caecilia-setup"),
+            (_, Scope::Machine) => self.program_files.join("caecilia-setup"),
+            (_, Scope::User) => self.user_programs.join("caecilia-setup"),
         }
     }
 
@@ -108,22 +209,42 @@ impl Places {
 
     /// The folder hosts scan for plugins of `format` (`VST3`, `CLAP`).
     pub fn plugin_dir(&self, scope: Scope, format: &str) -> PathBuf {
-        match scope {
-            Scope::Machine => self.common_files.join(format),
-            Scope::User => self.user_programs.join("Common").join(format),
+        let lower = format.to_ascii_lowercase();
+        match (self.flavor, scope) {
+            (Flavor::Windows, Scope::Machine) | (Flavor::Macos, Scope::Machine) => {
+                self.common_files.join(format)
+            }
+            (Flavor::Windows, Scope::User) => self.user_programs.join("Common").join(format),
+            (Flavor::Linux, Scope::Machine) => self.common_files.join(lower),
+            (Flavor::Linux, Scope::User) => self.home.join(format!(".{lower}")),
+            (Flavor::Macos, Scope::User) => self
+                .home
+                .join("Library")
+                .join("Audio")
+                .join("Plug-Ins")
+                .join(format),
         }
     }
 
     /// The organs folder of the person installing, which the console's
     /// library reads.
     pub fn organs_dir(&self, product: &str) -> PathBuf {
-        self.app_data.join(product).join("Organs")
+        let organs = if self.flavor == Flavor::Windows {
+            "Organs"
+        } else {
+            "organs"
+        };
+        self.user_data_dir(product).join(organs)
     }
 
     /// The folder of the person's own data for `product`: their organs and
     /// their last session.
     pub fn user_data_dir(&self, product: &str) -> PathBuf {
-        self.app_data.join(product)
+        if self.flavor == Flavor::Windows {
+            self.app_data.join(product)
+        } else {
+            self.app_data.join(product.to_ascii_lowercase())
+        }
     }
 }
 
@@ -307,9 +428,17 @@ pub struct Plan {
 }
 
 /// The name of the application's executable in the payload.
-pub const APP_EXE: &str = "caecilia.exe";
+pub const APP_EXE: &str = if cfg!(windows) {
+    "caecilia.exe"
+} else {
+    "caecilia"
+};
 /// The uninstaller's name in the program folder.
-pub const UNINSTALLER: &str = "uninstall.exe";
+pub const UNINSTALLER: &str = if cfg!(windows) {
+    "uninstall.exe"
+} else {
+    "uninstall"
+};
 /// The icon in the program folder.
 pub const ICON: &str = "caecilia.ico";
 
@@ -337,7 +466,9 @@ impl Plan {
         let data_dir = organs_dir
             .parent()
             .filter(|d| {
-                organs_dir.ends_with("Organs")
+                organs_dir
+                    .file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("organs"))
                     && d.file_name()
                         .is_some_and(|n| n.eq_ignore_ascii_case(product))
             })
@@ -369,17 +500,31 @@ impl Plan {
                 Scope::Machine => (&places.common_desktop, &places.common_start_menu),
                 Scope::User => (&places.user_desktop, &places.user_start_menu),
             };
-            let link = |dir: &Path| Shortcut {
-                link: dir.join(format!("{product}.lnk")),
+            let lower = product.to_ascii_lowercase();
+            let name = match places.flavor {
+                Flavor::Windows => format!("{product}.lnk"),
+                Flavor::Linux => format!("{lower}.desktop"),
+                Flavor::Macos => format!("{product}.command"),
+            };
+            let link = |dir: &Path, name: &str| Shortcut {
+                link: dir.join(name),
                 target: app.clone(),
                 icon: icon.clone(),
                 description: format!("{product}, the pipe organ"),
             };
-            if choices.desktop {
-                shortcuts.push(link(desktop));
+            if choices.desktop && !desktop.as_os_str().is_empty() {
+                shortcuts.push(link(desktop, &name));
             }
             if choices.start_menu {
-                shortcuts.push(link(start));
+                shortcuts.push(link(start, &name));
+            }
+            // The command, on Linux and macOS: it plays in a terminal.
+            let bin = match scope {
+                Scope::Machine => &places.common_bin,
+                Scope::User => &places.user_bin,
+            };
+            if !bin.as_os_str().is_empty() {
+                shortcuts.push(link(bin, &lower));
             }
         }
         let uninstaller = program_dir.join(UNINSTALLER);
@@ -443,6 +588,7 @@ mod tests {
             .unwrap_or_else(|| panic!("{path} is not planned"))
     }
 
+    #[cfg(windows)]
     #[test]
     fn a_machine_installation_goes_where_every_daw_looks() {
         let base = Path::new("T:\\");
@@ -478,6 +624,7 @@ mod tests {
         assert_eq!(plan.entry.location, plan.program_dir);
     }
 
+    #[cfg(windows)]
     #[test]
     fn a_personal_installation_stays_in_the_persons_folders() {
         let base = Path::new("T:\\");
@@ -500,6 +647,7 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn choices_leave_out_components_folders_and_shortcuts() {
         let places = Places::under(Path::new("T:\\"));
@@ -543,6 +691,83 @@ mod tests {
         assert!(Components::parse("").unwrap().is_empty());
     }
 
+    fn unix_places(flavor: Flavor) -> Places {
+        Places::for_unix(flavor, Path::new("/home/ana"), Path::new("/tmp"))
+    }
+
+    fn at(base: &str, parts: &[&str]) -> PathBuf {
+        parts
+            .iter()
+            .fold(PathBuf::from(base), |p, part| p.join(part))
+    }
+
+    #[test]
+    fn linux_installations_go_where_its_hosts_look() {
+        let places = unix_places(Flavor::Linux);
+        let plan = Plan::new(&manifest(), &Choices::defaults(Scope::Machine), &places, 10);
+        assert_eq!(plan.program_dir, at("/opt", &["Caecilia"]));
+        assert_eq!(
+            dest(&plan, "Caecilia.clap"),
+            at("/usr/lib", &["clap", "Caecilia.clap"])
+        );
+        let links: Vec<PathBuf> = plan.shortcuts.iter().map(|s| s.link.clone()).collect();
+        assert_eq!(
+            links,
+            [
+                at("/usr/share/applications", &["caecilia.desktop"]),
+                at("/usr/local/bin", &["caecilia"]),
+            ]
+        );
+        let plan = Plan::new(&manifest(), &Choices::defaults(Scope::User), &places, 10);
+        assert_eq!(
+            plan.program_dir,
+            at("/home/ana", &[".local", "share", "Caecilia"])
+        );
+        assert_eq!(
+            dest(&plan, "Caecilia.clap"),
+            at("/home/ana", &[".clap", "Caecilia.clap"])
+        );
+        assert_eq!(
+            dest(&plan, "caecilia-demo.organ.json"),
+            at(
+                "/home/ana",
+                &[".config", "caecilia", "organs", "caecilia-demo.organ.json"]
+            )
+        );
+        assert_eq!(plan.data_dir, at("/home/ana", &[".config", "caecilia"]));
+        assert_eq!(
+            plan.shortcuts.last().unwrap().link,
+            at("/home/ana", &[".local", "bin", "caecilia"])
+        );
+    }
+
+    #[test]
+    fn macos_installations_go_where_its_hosts_look() {
+        let places = unix_places(Flavor::Macos);
+        let plan = Plan::new(&manifest(), &Choices::defaults(Scope::Machine), &places, 10);
+        assert_eq!(
+            plan.program_dir,
+            at("/Library/Application Support", &["Caecilia"])
+        );
+        assert_eq!(
+            dest(&plan, "Caecilia.clap"),
+            at("/Library/Audio/Plug-Ins", &["CLAP", "Caecilia.clap"])
+        );
+        assert_eq!(
+            plan.shortcuts[0].link,
+            at("/Applications", &["Caecilia.command"])
+        );
+        let plan = Plan::new(&manifest(), &Choices::defaults(Scope::User), &places, 10);
+        assert_eq!(
+            dest(&plan, "Caecilia.clap"),
+            at(
+                "/home/ana",
+                &["Library", "Audio", "Plug-Ins", "CLAP", "Caecilia.clap"]
+            )
+        );
+    }
+
+    #[cfg(windows)]
     #[test]
     fn only_folders_inside_program_files_are_protected() {
         let places = Places::under(Path::new("C:\\"));

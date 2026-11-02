@@ -1,11 +1,12 @@
 //! `caecilia-setup`: Caecilia's installer, and once installed its
 //! uninstaller (the same program, copied into the program folder).
 //!
-//! With no arguments it opens the wizard; `/S` installs without a window;
-//! `--uninstall` removes. See `crate::args` for every switch and
-//! `docs/INSTALLER.md` for the design.
+//! With no arguments it opens the wizard (on Linux and macOS, where there
+//! are no windows yet, it asks the same questions in the terminal); `/S` or
+//! `--silent` installs without asking; `--uninstall` removes. See
+//! `crate::args` for every switch and `docs/INSTALLER.md` for the design.
 
-#![windows_subsystem = "windows"]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 /// The files it installs, embedded by `build.rs` (empty in a development
 /// build, which then says it is damaged).
@@ -20,8 +21,104 @@ fn main() {
 
 #[cfg(not(windows))]
 fn run() -> i32 {
-    eprintln!("The Caecilia installer runs on Windows.");
-    caecilia_installer::exit::FAILED
+    unix_main::run()
+}
+
+#[cfg(not(windows))]
+mod unix_main {
+    use std::io::IsTerminal;
+    use std::path::Path;
+
+    use caecilia_installer::args::{Args, Mode};
+    use caecilia_installer::job::SelfLauncher;
+    use caecilia_installer::payload::Payload;
+    use caecilia_installer::plan::{Flavor, Places};
+    use caecilia_installer::posix::{self, PosixSystem};
+    use caecilia_installer::record::Record;
+    use caecilia_installer::run::{self, Found};
+    use caecilia_installer::text::Lang;
+    use caecilia_installer::ui::Facts;
+    use caecilia_installer::{exit, terminal};
+
+    use super::{LICENCE, PAYLOAD};
+
+    pub fn run() -> i32 {
+        let mut args = match Args::parse(std::env::args().skip(1)) {
+            Ok(args) => args,
+            Err(e) => {
+                eprintln!("{e}");
+                return exit::USAGE;
+            }
+        };
+        run::removes_its_own_folder(&mut args);
+        let lang = args.lang.unwrap_or_else(posix::language);
+        let places = posix::places();
+        if args.engine || args.silent {
+            // With no home the work stops at once, saying so; the system
+            // needs folders all the same.
+            let mut sys = PosixSystem::new(places.clone().unwrap_or_else(|_| {
+                Places::for_unix(Flavor::host(), Path::new("/"), &std::env::temp_dir())
+            }));
+            return run::headless(&args, PAYLOAD, places, posix::is_root(), lang, &mut sys);
+        }
+        let t = lang.text();
+        if !std::io::stdin().is_terminal() {
+            eprintln!("{}", t.term_no_terminal);
+            return exit::USAGE;
+        }
+        let places = match places {
+            Ok(places) => places,
+            Err(e) => {
+                eprintln!("{e}");
+                return exit::FAILED;
+            }
+        };
+        ask(&args, places, lang)
+    }
+
+    fn ask(args: &Args, places: Places, lang: Lang) -> i32 {
+        let manifest = Payload::parse(PAYLOAD)
+            .map(|p| p.manifest)
+            .map_err(|e| e.to_string());
+        let product = manifest
+            .as_ref()
+            .map_or("Caecilia".to_owned(), |m| m.product.clone());
+        let sys = PosixSystem::new(places.clone());
+        let uninstall = args.mode == Mode::Uninstall;
+        let found = match (&args.dir, uninstall) {
+            (Some(dir), true) => Record::load(dir).map(|record| Found {
+                scope: record.scope,
+                record,
+            }),
+            _ => run::find_installed(&sys, &product),
+        };
+        let unreadable = found
+            .is_none()
+            .then(|| run::find_unreadable(&sys, &product))
+            .flatten()
+            .map(|(scope, installed)| (scope, installed.location));
+        let facts = Facts {
+            manifest,
+            places,
+            found,
+            unreadable,
+            uninstall,
+            version_1: false,
+            elevated: posix::is_root(),
+            licence: LICENCE.replace("\r\n", "\n"),
+            self_size: std::env::current_exe()
+                .and_then(std::fs::metadata)
+                .map_or(0, |m| m.len()),
+            log_dir: std::env::temp_dir(),
+            lang,
+        };
+        terminal::run(
+            &facts,
+            &mut SelfLauncher,
+            std::io::stdin().lock(),
+            std::io::stdout().lock(),
+        )
+    }
 }
 
 #[cfg(windows)]
@@ -35,14 +132,12 @@ mod windows_main {
     use std::path::Path;
     use std::process::Command;
     use std::rc::Rc;
-    use std::time::SystemTime;
 
     use caecilia_installer::args::{Args, Mode};
-    use caecilia_installer::job::{self, SelfLauncher};
-    use caecilia_installer::log::{Log, stamp};
+    use caecilia_installer::job::SelfLauncher;
     use caecilia_installer::payload::Payload;
-    use caecilia_installer::record::{RECORD, Record};
-    use caecilia_installer::run::{self, Found, Host};
+    use caecilia_installer::record::Record;
+    use caecilia_installer::run::{self, Found};
     use caecilia_installer::text::{Lang, fill};
     use caecilia_installer::ui::{self, Env, Facts, Wizard};
     use caecilia_installer::win::{self, WinSystem};
@@ -67,17 +162,16 @@ mod windows_main {
             }
         };
         let mut args = args;
-        if args.mode == Mode::Uninstall && args.dir.is_none() {
-            // The uninstaller removes the installation it sits in. It runs
-            // from there: the engine moves it out of the folder, which
-            // Windows allows of a running program, so the folder can go.
-            args.dir = std::env::current_exe()
-                .ok()
-                .and_then(|me| me.parent().map(Path::to_owned))
-                .filter(|dir| dir.join(RECORD).is_file());
-        }
+        run::removes_its_own_folder(&mut args);
         if args.engine || args.silent {
-            headless(&args)
+            run::headless(
+                &args,
+                PAYLOAD,
+                win::places().map_err(|e| e.to_string()),
+                win::is_elevated(),
+                lang(&args),
+                &mut WinSystem,
+            )
         } else {
             gui(&args)
         }
@@ -86,61 +180,6 @@ mod windows_main {
     fn lang(args: &Args) -> Lang {
         args.lang
             .unwrap_or_else(|| Lang::from_langid(win::ui_language()))
-    }
-
-    fn product() -> String {
-        Payload::parse(PAYLOAD).map_or_else(|_| "Caecilia".into(), |p| p.manifest.product)
-    }
-
-    fn headless(args: &Args) -> i32 {
-        let what = if args.mode == Mode::Uninstall {
-            "Uninstall"
-        } else {
-            "Setup"
-        };
-        let product = product();
-        let log_path = args.log.clone().unwrap_or_else(|| {
-            std::env::temp_dir().join(format!("{product}-{what}-{}.log", stamp(SystemTime::now())))
-        });
-        let mut log = Log::to_file(&log_path).unwrap_or_else(|_| Log::in_memory());
-        log.note(format_args!(
-            "{product} {what}, {} run, elevated {}, language {}",
-            if args.engine { "engine" } else { "silent" },
-            win::is_elevated(),
-            lang(args).code()
-        ));
-        let code = match win::places() {
-            Err(e) => {
-                log.error(format_args!("the system's folders are not known: {e}"));
-                exit::FAILED
-            }
-            Ok(places) => {
-                let cancel = job::cancel_file(&log_path);
-                let cancelled = || cancel.exists();
-                let uninstaller = match args.mode {
-                    Mode::Install => std::env::current_exe()
-                        .and_then(std::fs::read)
-                        .unwrap_or_default(),
-                    Mode::Uninstall => Vec::new(),
-                };
-                let mut sys = WinSystem;
-                let mut host = Host {
-                    sys: &mut sys,
-                    places,
-                    elevated: win::is_elevated(),
-                    uninstaller,
-                    cancelled: &cancelled,
-                };
-                let code = match args.mode {
-                    Mode::Install => run::install(args, PAYLOAD, &mut host, &mut log),
-                    Mode::Uninstall => run::uninstall(args, &product, &mut host, &mut log),
-                };
-                let _ = std::fs::remove_file(&cancel);
-                code
-            }
-        };
-        log.line("end", code);
-        code
     }
 
     fn gui(args: &Args) -> i32 {

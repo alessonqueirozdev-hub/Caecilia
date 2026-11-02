@@ -130,6 +130,8 @@ pub struct Entry {
     pub sha256: Digest,
     /// Where its bytes start in the unpacked block.
     pub offset: u64,
+    /// Whether it is a program, which Linux and macOS must be told.
+    pub executable: bool,
 }
 
 /// What the payload says of itself.
@@ -317,6 +319,10 @@ fn manifest_from_json(text: &[u8]) -> Result<Manifest, PayloadError> {
             size: n(e, "size").ok_or(bad.clone())?,
             sha256: digest(e, "sha256").ok_or(bad.clone())?,
             offset: n(e, "offset").ok_or(bad.clone())?,
+            executable: e
+                .get("executable")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         });
     }
     Ok(Manifest {
@@ -358,6 +364,18 @@ impl PayloadBuilder {
     /// Adds `bytes` as `path` under `root`, in `component`. Bytes already
     /// added under another path are stored once.
     pub fn add(&mut self, component: &str, root: Root, path: &str, bytes: &[u8]) {
+        self.add_file(component, root, path, bytes, false);
+    }
+
+    /// As [`add`](Self::add), saying whether the file is a program.
+    pub fn add_file(
+        &mut self,
+        component: &str,
+        root: Root,
+        path: &str,
+        bytes: &[u8],
+        executable: bool,
+    ) {
         let sha256 = Digest::of(bytes);
         let offset = *self.stored.entry(sha256).or_insert_with(|| {
             let at = self.data.len() as u64;
@@ -371,6 +389,7 @@ impl PayloadBuilder {
             size: bytes.len() as u64,
             sha256,
             offset,
+            executable,
         });
     }
 
@@ -403,6 +422,7 @@ impl PayloadBuilder {
                     "size": e.size,
                     "sha256": e.sha256.hex(),
                     "offset": e.offset,
+                    "executable": e.executable,
                 })
             })
             .collect();
