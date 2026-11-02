@@ -25,8 +25,8 @@ CLAP, VST3 and a standalone application.**
   wind and the pipes answer to it. The tremulant shakes the wind, not the
   volume.
 - **Any organ.** An organ is a JSON file of windchests, ranks, divisions, stops
-  and couplers ([docs/ORGAN_FILE.md](docs/ORGAN_FILE.md)). A three-manual
-  French demonstration organ is built in. Organs change live, without a click,
+  and couplers ([docs/ORGAN_FILE.md](docs/ORGAN_FILE.md)). The Caecilia Pipe
+  Organ, French in style, with two manuals and pedal and 32 stops, is built in. Organs change live, without a click,
   from the console's library.
 - **A console that is an organ console.** Drawstop jambs, manuals with key
   slips and general pistons, swell and crescendo shoes, a pedalboard with toe
