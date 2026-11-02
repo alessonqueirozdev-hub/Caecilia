@@ -19,14 +19,14 @@ use super::Shared;
 use super::actions;
 use super::snapshot::name_registration;
 use crate::UiNote;
-use crate::demo::{self, PHRASE, PHRASE_INDEX, Registration};
+use crate::demo::{self, PHRASE_INDEX, Registration, TOUR_NAME, TOUR_SHORT};
 
 /// The rows the console offers: each piece, then the tour.
 pub(crate) fn names() -> Vec<&'static str> {
     demo::demos()
         .iter()
         .map(|d| d.name.as_str())
-        .chain([PHRASE.name])
+        .chain([TOUR_NAME])
         .collect()
 }
 
@@ -35,7 +35,7 @@ pub(crate) fn labels() -> Vec<&'static str> {
     demo::demos()
         .iter()
         .map(|d| d.short.as_str())
-        .chain(["Every stop, one by one"])
+        .chain([TOUR_NAME])
         .collect()
 }
 
@@ -215,7 +215,7 @@ impl Script {
         let began = *self.began.get_or_insert(now);
         let at = now.saturating_sub(began).as_secs_f32();
         while let Some(change) = piece.changes.get(self.next) {
-            if change.beat * piece.beat > at {
+            if change.seconds > at {
                 return true;
             }
             draw_registration(
@@ -273,7 +273,7 @@ impl Tour {
         };
         let mut stops = StopSet::new();
         stops.insert(StopId(self.step as u16));
-        name_registration(&self.named, stops.to_mask(), PHRASE.short);
+        name_registration(&self.named, stops.to_mask(), TOUR_SHORT);
         actions::recall_state(
             &self.context,
             shared,

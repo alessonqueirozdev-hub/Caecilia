@@ -12,6 +12,7 @@
 //! registrations; any other is named after its file and given one in turn.
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use caecilia_model::TonalFamily::{self, Flute, Mixture, Principal, Reed, String as Strings};
 use manguebyte_midi::MidiMessage;
@@ -19,10 +20,21 @@ use manguebyte_midi::file::{Division, MetaEvent, MidiFile, TrackEventKind};
 
 use crate::demo::{Change, Demo, Draw, Event, GREAT, PEDAL, Registration, SWELL, score_of};
 
-/// The folder demonstrations are read from: `CAECILIA_DEMOS` if set (empty
-/// for none), else beside the session. Nothing under `cargo`, whose tests
-/// must not hear what happens to be on this machine.
+static FOLDER: OnceLock<PathBuf> = OnceLock::new();
+
+/// Read the demonstrations from `folder` rather than the usual one: for
+/// tests, before the first instance is made.
+pub fn set_demo_folder_for_new_instances(folder: &Path) {
+    let _ = FOLDER.set(folder.to_owned());
+}
+
+/// The folder demonstrations are read from: the one set, or `CAECILIA_DEMOS`
+/// (empty for none), else beside the session. Nothing under `cargo`, whose
+/// tests must not hear what happens to be on this machine.
 fn folder() -> Option<PathBuf> {
+    if let Some(set) = FOLDER.get() {
+        return Some(set.clone());
+    }
     if let Some(named) = std::env::var_os("CAECILIA_DEMOS") {
         return (!named.is_empty()).then(|| PathBuf::from(named));
     }
@@ -104,7 +116,6 @@ fn load_from(folder: &Path) -> Vec<Demo> {
         demos.push(Demo {
             name,
             short,
-            beat: 1.0,
             changes,
             score: score_of(events),
         });
@@ -333,8 +344,18 @@ const fn whole(
     draws: &'static [Draw],
     couplers: &'static [&'static str],
 ) -> Change {
+    from(0.0, label, draws, couplers)
+}
+
+/// A registration from `seconds` on.
+const fn from(
+    seconds: f32,
+    label: &'static str,
+    draws: &'static [Draw],
+    couplers: &'static [&'static str],
+) -> Change {
     Change {
-        beat: 0.0,
+        seconds,
         label,
         registration: Registration {
             draws,
@@ -410,11 +431,61 @@ const FULL: &[Change] = &[whole(
 const PRINCIPALS: &[Change] = &[whole("Principals", &[GREAT_PRINCIPALS, PEDAL_FIRM], &[])];
 const FOUNDATIONS: &[Change] = &[whole("Foundations", &[GREAT_FOUNDATIONS, PEDAL_SOFT], &[])];
 const FLUTES: &[Change] = &[whole("Flutes", &[GREAT_FLUTES, PEDAL_SOFT], &[])];
-const TOCCATA: &[Change] = &[whole(
-    "Organo pleno",
-    &[GREAT_FULL, SWELL_PLENUM, PEDAL_FULL],
-    &[],
-)];
+// Each change where the file falls silent between sections.
+const TOCCATA: &[Change] = &[
+    whole(
+        "Toccata, organo pleno",
+        &[GREAT_FULL, SWELL_PLENUM, PEDAL_FULL],
+        &[],
+    ),
+    from(
+        68.7,
+        "Fugue, the plenum",
+        &[GREAT_PLENUM, SWELL_PLENUM, PEDAL_FIRM],
+        &[],
+    ),
+    from(
+        463.8,
+        "Coda, organo pleno",
+        &[GREAT_FULL, SWELL_PLENUM, PEDAL_FULL],
+        &[],
+    ),
+];
+const PRELUDE_FUGUE_C: &[Change] = &[
+    whole("Prelude, the plenum", &[GREAT_PLENUM, PEDAL_FIRM], &[]),
+    from(
+        174.3,
+        "Fugue, principals",
+        &[GREAT_PRINCIPALS, PEDAL_FIRM],
+        &[],
+    ),
+];
+const PRELUDE_FUGUE_F: &[Change] = &[
+    whole(
+        "Prelude, full organ",
+        &[GREAT_FULL, SWELL_PLENUM, PEDAL_FULL],
+        COUPLED,
+    ),
+    from(
+        95.7,
+        "Fugue, principals",
+        &[GREAT_PRINCIPALS, PEDAL_FIRM],
+        &[],
+    ),
+];
+const PRELUDE_FUGUE_G: &[Change] = &[
+    whole("Prelude, the plenum", &[GREAT_PLENUM, PEDAL_FIRM], &[]),
+    from(97.1, "Fugue, flutes", &[GREAT_FLUTES, PEDAL_SOFT], &[]),
+];
+const PRELUDE_FUGUE_G_MINOR: &[Change] = &[
+    whole("Prelude, principals", &[GREAT_PRINCIPALS, PEDAL_FIRM], &[]),
+    from(
+        101.6,
+        "Fugue, foundations",
+        &[GREAT_FOUNDATIONS, PEDAL_SOFT],
+        &[],
+    ),
+];
 const TRIO_ALLEGRO: &[Change] = &[whole(
     "Trio: principal and cornet",
     &[
@@ -496,7 +567,7 @@ const KNOWN: &[Known] = &[
         "prefug1",
         "Prelude and Fugue in C major, BWV 553",
         "Prelude, Fugue in C",
-        PLENUM,
+        PRELUDE_FUGUE_C,
     ),
     known(
         "prefug2",
@@ -514,19 +585,19 @@ const KNOWN: &[Known] = &[
         "prefug4",
         "Prelude and Fugue in F major, BWV 556",
         "Prelude, Fugue in F",
-        FULL,
+        PRELUDE_FUGUE_F,
     ),
     known(
         "prefug5",
         "Prelude and Fugue in G major, BWV 557",
         "Prelude, Fugue in G",
-        PLENUM,
+        PRELUDE_FUGUE_G,
     ),
     known(
         "prefug6",
         "Prelude and Fugue in G minor, BWV 558",
         "Prelude, Fugue in G minor",
-        PRINCIPALS,
+        PRELUDE_FUGUE_G_MINOR,
     ),
     known(
         "prefug7",

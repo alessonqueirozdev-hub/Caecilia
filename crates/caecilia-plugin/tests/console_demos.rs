@@ -5,6 +5,9 @@
 //! its stops, plays on its own (the keys lighting as they go), ends by
 //! itself or when pressed again; the tour plays every stop alone.
 
+#[path = "fixture/mod.rs"]
+mod fixture;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -33,6 +36,7 @@ struct Console {
 
 impl Console {
     fn open() -> Console {
+        fixture::demos();
         let mut h = Harness::<Caecilia>::new(48000.0, BLOCK);
         h.render(BLOCK);
         let spec = h
@@ -98,14 +102,15 @@ fn nothing_held(c: &Console) -> bool {
     manuals.matches(" held").count() == manuals.matches("nothing held").count()
 }
 
-const TOCCATA: &str = "Play J. S. Bach \u{2014} Toccata in D minor, BWV 565 (opening)";
+const TOCCATA: &str = "Play Toccata and Fugue in D minor, BWV 565";
 
 #[test]
 fn a_piece_draws_its_stops_and_plays_by_itself() {
     let mut c = Console::open();
     c.click(Role::Button, "Demos");
     assert!(
-        c.says("Wind").starts_with("Demonstrations: J. Pachelbel"),
+        c.says("Wind")
+            .starts_with("Demonstrations: Toccata and Fugue"),
         "{}",
         c.says("Wind")
     );
@@ -120,7 +125,7 @@ fn a_piece_draws_its_stops_and_plays_by_itself() {
     assert!(why.contains("Toccata"), "the history names it: {why}");
     assert!(
         c.says("Wind")
-            .contains("Toccata in D minor, BWV 565 (opening) (playing)")
+            .contains("Toccata and Fugue in D minor, BWV 565 (playing)")
     );
     // It sounds, and the keys under it go down.
     let peak = c.play_for(0.3);
@@ -132,7 +137,7 @@ fn a_piece_draws_its_stops_and_plays_by_itself() {
     std::fs::write(dir.join("console-demos@1x.png"), png).unwrap();
 
     // It ends by itself, every key lifted.
-    c.play_for(17.0);
+    c.play_for(5.0);
     assert!(!c.says("Wind").contains("(playing)"), "{}", c.says("Wind"));
     assert!(nothing_held(&c), "{}", c.says("Manuals"));
 }
@@ -142,7 +147,7 @@ fn pressing_a_piece_again_stops_it() {
     let mut c = Console::open();
     c.click(Role::Button, "Demos");
     c.click(Role::Button, TOCCATA);
-    c.play_for(4.0);
+    c.play_for(0.5);
     c.click(Role::Button, TOCCATA);
     c.play_for(0.1);
     assert!(!c.says("Wind").contains("(playing)"), "{}", c.says("Wind"));
@@ -153,6 +158,13 @@ fn pressing_a_piece_again_stops_it() {
 fn the_tour_plays_every_stop_alone() {
     let mut c = Console::open();
     c.click(Role::Button, "Demos");
+    while c
+        .ui
+        .find(Role::Button, "Play Every stop, one by one")
+        .is_none()
+    {
+        c.click(Role::Button, "Next pieces");
+    }
     c.click(Role::Button, "Play Every stop, one by one");
     c.play_for(0.5);
     let first = c.says("Wind");
@@ -169,30 +181,44 @@ fn the_tour_plays_every_stop_alone() {
 }
 
 #[test]
-fn a_piece_changes_its_registration_between_verses() {
+fn a_piece_changes_its_registration_between_sections() {
     let mut c = Console::open();
     c.click(Role::Button, "Demos");
-    c.click(
-        Role::Button,
-        "Play Amazing Grace \u{2014} the Voix Humaine, then the Cornet",
-    );
-    let right = c.says("Right jamb");
-    assert!(right.contains("Voix Humaine 8"), "{right}");
-    assert!(!right.contains("Tierce"), "{right}");
-    let params = c.h.plugin_mut().params();
-    assert!(params.tremulant.value(), "the Voix Humaine trembles");
-    // The second verse, 48 beats in: the console's clock moves on, a block
-    // of sound a second is enough to carry the registration.
-    for _ in 0..27 {
+    c.click(Role::Button, "Play Prelude and Fugue in F major, BWV 556");
+    let left = c.says("Left jamb");
+    assert!(left.contains("Trompette 8"), "the full organ: {left}");
+    // The fugue, 96 seconds in: the console's clock moves on, a block of
+    // sound now and then enough to carry the registration.
+    for _ in 0..97 {
         c.ui.advance(Duration::from_secs(1));
         c.ui.tick();
         c.h.render(BLOCK);
     }
-    let right = c.says("Right jamb");
-    assert!(right.contains("Tierce 1 3/5"), "the cornet: {right}");
-    assert!(right.contains("Nasard 2 2/3"), "{right}");
-    assert!(!right.contains("Voix Humaine"), "{right}");
-    assert!(!params.tremulant.value());
+    let left = c.says("Left jamb");
+    assert!(left.contains("Prestant 4"), "the principals: {left}");
+    assert!(!left.contains("Trompette 8"), "{left}");
     let why = c.says("Registration");
-    assert!(why.contains("the Cornet"), "the history names it: {why}");
+    assert!(
+        why.contains("Fugue, principals"),
+        "the history names it: {why}"
+    );
+}
+
+#[test]
+fn a_long_list_comes_in_pages() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Demos");
+    let last = "Play Every stop, one by one";
+    let mut turned = 0;
+    while c.ui.find(Role::Button, last).is_none() {
+        c.click(Role::Button, "Next pieces");
+        turned += 1;
+        assert!(turned < 10, "the tour is on some page");
+    }
+    assert!(turned > 0, "the list is longer than a page");
+    assert!(c.ui.find(Role::Button, TOCCATA).is_none());
+    for _ in 0..turned {
+        c.click(Role::Button, "Previous pieces");
+    }
+    assert!(c.ui.find(Role::Button, TOCCATA).is_some());
 }

@@ -32,6 +32,7 @@ mod console;
 mod controller;
 mod demo;
 mod demo_files;
+pub use demo_files::set_demo_folder_for_new_instances;
 mod devices;
 mod params;
 mod sound;
@@ -139,7 +140,7 @@ pub(crate) enum UiNote {
     /// A key or pedal played: its MIDI channel, its key, and whether it went
     /// down.
     Key { channel: u8, key: u8, on: bool },
-    /// Play a demonstration (see [`demo::demo`]), its parts on `channels`
+    /// Play a demonstration (see [`demo::score`]), its parts on `channels`
     /// and every key moved by `shift` semitones.
     Play {
         piece: u8,

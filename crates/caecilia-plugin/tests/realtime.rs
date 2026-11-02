@@ -5,6 +5,9 @@
 
 #![allow(unsafe_code)]
 
+#[path = "fixture/mod.rs"]
+mod fixture;
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
@@ -281,6 +284,7 @@ fn changing_the_organ_never_allocates_nor_frees() {
 
 #[test]
 fn a_demonstration_never_allocates() {
+    fixture::demos();
     let mut plugin = Caecilia::new();
     let spec = ProcessSpec {
         sample_rate: 48000.0,
