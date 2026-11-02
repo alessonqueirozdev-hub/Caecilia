@@ -8,7 +8,7 @@ use caecilia_model::{
     mixture_series_index,
 };
 use caecilia_wind::{WindResponseCurve, WindSnapshot};
-use manguebyte_dsp::PartialBank as Kernel;
+use manguebyte_dsp::{PartialAir, PartialAttack, PartialBank as Kernel, PipeVoicing, WindJitter};
 
 use crate::math::{
     Phasor, TABLES, cents_to_ratio_approx, db_to_linear, equal_power_pan, fast_sine_turns, hash32,
@@ -49,6 +49,14 @@ const RELEASE_T60_FACTOR: f32 = 1.4;
 /// Time constant of the slow per-partial pitch drift, in seconds (not blocks,
 /// so the character does not depend on the host's buffer size).
 const DRIFT_TAU_SECONDS: f32 = 0.15;
+
+/// The highest harmonic given air: the noise of the ones above is lost under
+/// their neighbours', and each costs as much as the rest of a partial.
+const MAX_AIR_HARMONIC: f32 = 16.0;
+
+/// How long the envelope takes under a pipe that speaks by its partials'
+/// own attacks: only enough to keep the first sample from stepping.
+const VOICED_ENVELOPE_SECONDS: f32 = 0.002;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Partial {
@@ -191,6 +199,11 @@ pub struct PartialBank {
     /// Exponential release: the envelope already carries its shaping.
     released_shaped: bool,
     release_time: f64,
+    /// How the pipe speaks and breathes, for a bank voiced partial by partial;
+    /// it then takes the place of the bloom, the stagger and the glide.
+    voicing: Option<PipeVoicing>,
+    /// Notes sounded, so that no two are the same note twice.
+    notes: u32,
 }
 
 impl PartialBank {
@@ -255,6 +268,8 @@ impl PartialBank {
             release_mul: 1.0,
             released_shaped: false,
             release_time: 0.0,
+            voicing: None,
+            notes: 0,
         };
         b.set_envelope_times(b.attack_seconds, b.release_seconds);
         b
@@ -427,10 +442,19 @@ impl PartialBank {
         self.note_time = 0.0;
         // Per-voice salt, so two voices of one pitch (a unison coupler, the same
         // key on two divisions) are independent and sum at +3 dB, not +6.
-        let salt = u32::from(pipe.rank).wrapping_mul(2_654_435_761)
+        let mut salt = u32::from(pipe.rank).wrapping_mul(2_654_435_761)
             ^ u32::from(pipe.note).wrapping_mul(40_503)
             ^ u32::from(pipe.division).wrapping_mul(2_246_822_519)
             ^ 0x85EB_CA6B;
+        if let Some(voicing) = self.voicing {
+            // A pipe never speaks the same way twice: its phases and its noise
+            // differ with each note, so a repeated key is not a repeated sample.
+            self.notes = self.notes.wrapping_add(1);
+            salt ^= self.notes.wrapping_mul(0x9E37_79B1);
+            self.kernel
+                .set_voicing_seed(u64::from(salt) | (u64::from(self.notes) << 32));
+            self.kernel.set_wind_jitter(voicing.jitter);
+        }
         // An organ is velocity-flat: a pipe speaks at its one voiced loudness.
         self.velocity_gain = 1.0;
         let retrigger = self.stage != Stage::Idle;
@@ -451,8 +475,22 @@ impl PartialBank {
             stretch = (1.0 - self.curve.attack(dev)).clamp(0.5, 2.0);
         }
         let lerp = |lo: f32, hi: f32| lo + (hi - lo) * height;
+        let attack_seconds =
+            stretch * lerp(self.speech.attack_at_c2_sec, self.speech.attack_at_c7_sec);
+        // A voicing is written for the middle of the compass: a long pipe takes
+        // longer to speak than that, a short one less, as this rank's speech says.
+        let middle = 0.5 * (self.speech.attack_at_c2_sec + self.speech.attack_at_c7_sec);
+        let speech_scale = if middle > 0.0 {
+            (attack_seconds / middle).clamp(0.5, 2.5)
+        } else {
+            1.0
+        };
         self.set_envelope_times(
-            stretch * lerp(self.speech.attack_at_c2_sec, self.speech.attack_at_c7_sec),
+            if self.voicing.is_some() {
+                VOICED_ENVELOPE_SECONDS
+            } else {
+                attack_seconds
+            },
             lerp(self.speech.release_at_c2_sec, self.speech.release_at_c7_sec),
         );
 
@@ -500,6 +538,22 @@ impl PartialBank {
                 p.log_sounding += scale.log2();
             }
             let freq = f0 * f64::from(p.sounding_ratio);
+
+            if let Some(voicing) = &self.voicing {
+                let harmonic = p.log_harmonic.exp2();
+                let air = if harmonic <= MAX_AIR_HARMONIC {
+                    voicing.air(harmonic, freq)
+                } else {
+                    PartialAir::OFF
+                };
+                self.kernel.set_air(i, air);
+                let attack = scaled(voicing.attack(harmonic, self.sample_rate), speech_scale);
+                if retrigger {
+                    self.kernel.restart_attack(i, &attack);
+                } else {
+                    self.kernel.start_attack(i, &attack);
+                }
+            }
 
             let oct = (log_f0_over_120 + p.log_sounding) * (1.0 / BLOOM_OCTAVE_SPAN);
             p.bloom_seconds = 0.008 * stretch + bloom_span * oct.clamp(0.0, 1.0);
@@ -628,6 +682,19 @@ impl PartialBank {
         self.release_mul = (1.0e-3f64.ln() / (t60 * self.sample_rate)).exp() as f32;
     }
 
+    /// Voice it partial by partial: each partial's air and attack, and the
+    /// wind's unsteadiness, from `voicing`, from the next note on. `None` goes
+    /// back to the bank's own bloom, stagger and glide, with no air.
+    pub fn set_voicing(&mut self, voicing: Option<PipeVoicing>) {
+        if voicing.is_none() && self.voicing.is_some() {
+            self.kernel.set_wind_jitter(WindJitter::OFF);
+            for i in 0..self.count {
+                self.kernel.set_air(i, PartialAir::OFF);
+            }
+        }
+        self.voicing = voicing;
+    }
+
     /// Update the wind, drift and speech every `frames` frames rather than
     /// once per block (0, 1.x's behaviour). A tremulant read once per host
     /// buffer is sampled four times a cycle at 2048 frames: the instrument
@@ -697,8 +764,12 @@ impl PartialBank {
         let wind_tilting = wind_tilt_db.abs() > 0.001;
 
         // A labial pipe starts a touch flat and pulls up to pitch as it speaks.
+        let voiced = self.voicing.is_some();
         let mut glide_ratio = 1.0f32;
-        if self.note_time < f64::from(self.glide_seconds) && self.live.attack_glide_cents != 0.0 {
+        if !voiced
+            && self.note_time < f64::from(self.glide_seconds)
+            && self.live.attack_glide_cents != 0.0
+        {
             let frac = self.note_time as f32 / self.glide_seconds;
             glide_ratio =
                 cents_to_ratio_approx(self.live.attack_glide_cents * (1.0 - smoothstep01(frac)));
@@ -736,7 +807,11 @@ impl PartialBank {
 
             let onset = p.onset_seconds.min(MAX_ONSET_SECONDS);
             let dt = note_time - f64::from(onset);
-            let bloom = smoothstep01(dt as f32 / p.bloom_seconds);
+            let bloom = if voiced {
+                1.0
+            } else {
+                smoothstep01(dt as f32 / p.bloom_seconds)
+            };
 
             // Two transcendentals per partial per BLOCK. 2 pi stays an f32 on
             // purpose: it is what 1.x rotated by.
@@ -881,6 +956,19 @@ impl PartialBank {
                 break;
             }
         }
+    }
+}
+
+/// `attack` taking `scale` times as long.
+fn scaled(attack: PartialAttack, scale: f32) -> PartialAttack {
+    let frames = |n: u32| (n as f32 * scale) as u32;
+    PartialAttack {
+        delay_frames: frames(attack.delay_frames),
+        rise_frames: frames(attack.rise_frames),
+        settle_frames: frames(attack.settle_frames),
+        breath_frames: frames(attack.breath_frames),
+        pitch_frames: frames(attack.pitch_frames),
+        ..attack
     }
 }
 

@@ -208,6 +208,7 @@ impl Pool {
                                 let mut voice = AdditiveVoice::new(sample_rate, calibration);
                                 if layout.is_some() {
                                     voice.set_stereo_spread(0.0);
+                                    voice.set_voiced(true);
                                 }
                                 voice
                             },

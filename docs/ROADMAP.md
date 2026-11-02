@@ -16,8 +16,9 @@ a real organ is not.
 
 - [x] **Space:** each pipe speaks from its own place on the windchest, with the
   room's first reflections. It needs ears on it: tell us how it sounds.
-- [ ] **Air and attack:** the breath of a flue pipe, each partial's own attack, wind
-  jitter. *The blocks are coming from Manguebyte.*
+- [x] **Air and attack:** the breath of a flue pipe, each partial's own attack, wind
+  jitter, and no note the same twice. Its values are judgements that want setting
+  by ear.
 - [ ] **Per-pipe voicing:** level, detune, brightness, air and chiff for every pipe,
   saved with the organ.
 - [ ] **Division boxes:** each division's own EQ, a small box reverb, and how much of

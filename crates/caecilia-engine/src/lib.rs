@@ -293,8 +293,9 @@ impl OrganEngine {
     }
 
     /// An engine as [`with_config`](Self::with_config) makes one, in which
-    /// every pipe stands in its own place in the case, and the room answers
-    /// with its first reflections (see [`set_room`](Self::set_room)).
+    /// every pipe stands in its own place in the case, the room answers with
+    /// its first reflections (see [`set_room`](Self::set_room)), and pipes speak
+    /// and breathe partial by partial.
     pub fn with_space(
         organ: &Organ,
         sample_rate: f64,

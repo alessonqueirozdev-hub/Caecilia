@@ -183,3 +183,63 @@ fn every_organ_can_be_placed() {
         assert!(x.l.iter().chain(&x.r).all(|v| v.is_finite()));
     }
 }
+
+/// The energy of `x` at `hz`.
+fn at_frequency(x: &[f32], hz: f64) -> f64 {
+    let w = std::f64::consts::TAU * hz / SR;
+    let (mut re, mut im) = (0.0, 0.0);
+    for (n, v) in x.iter().enumerate() {
+        let window = 0.5 - 0.5 * (std::f64::consts::TAU * n as f64 / x.len() as f64).cos();
+        let v = f64::from(*v) * window;
+        re += v * (w * n as f64).cos();
+        im += v * (w * n as f64).sin();
+    }
+    (re * re + im * im) / x.len() as f64
+}
+
+#[test]
+fn a_pipe_has_air_between_its_harmonics() {
+    let organ = caecilia_organ();
+    let between = |placed: bool| {
+        let mut e = engine(&organ, placed, MONTRE);
+        e.set_room(PLATE);
+        let d = great(&organ);
+        let x = key(&mut e, d, 69, 1.5, 0.0);
+        let from = (0.5 * SR) as usize;
+        // Halfway between A 440 and its octave.
+        at_frequency(&x.l[from..], 660.0) + at_frequency(&x.r[from..], 660.0)
+    };
+    let (dry, voiced) = (between(false), between(true));
+    assert!(voiced > dry * 4.0, "{voiced} vs {dry}");
+}
+
+#[test]
+fn a_repeated_key_is_not_a_repeated_sample() {
+    let organ = caecilia_organ();
+    let mut e = engine(&organ, true, MONTRE);
+    e.set_room(PLATE);
+    let d = great(&organ);
+    let first = key(&mut e, d, 60, 0.3, 1.0);
+    let second = key(&mut e, d, 60, 0.3, 1.0);
+    let span = 0..(0.3 * SR) as usize;
+    let difference: f64 = first.l[span.clone()]
+        .iter()
+        .zip(&second.l[span.clone()])
+        .map(|(a, b)| f64::from(a - b) * f64::from(a - b))
+        .sum();
+    assert!(difference > energy(&first.l[span]) * 0.1, "{difference}");
+}
+
+#[test]
+fn a_pipe_comes_up_to_speech_rather_than_starting_at_full_level() {
+    let organ = caecilia_organ();
+    let mut e = engine(&organ, true, MONTRE);
+    e.set_room(PLATE);
+    let d = great(&organ);
+    let x = key(&mut e, d, 60, 0.5, 0.0);
+    let ms = |t: f64| (t * SR / 1000.0) as usize;
+    let early = energy(&x.l[..ms(8.0)]) / ms(8.0) as f64;
+    let steady = energy(&x.l[ms(200.0)..ms(400.0)]) / ms(200.0) as f64;
+    assert!(early < steady * 0.5, "{early} vs {steady}");
+    assert!(early > 0.0, "it has begun to speak");
+}

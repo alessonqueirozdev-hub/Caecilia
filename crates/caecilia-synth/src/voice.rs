@@ -5,6 +5,7 @@
 
 use caecilia_model::{Calibration, MAX_PARTIALS, PipeId, RankVoicing, StopId, TonalFamily};
 use caecilia_wind::{WindSnapshot, response_for};
+use manguebyte_dsp::{PipeVoicing, WindJitter};
 
 use crate::bank::{Liveliness, PartialBank, ReleaseStyle};
 
@@ -43,6 +44,62 @@ pub fn liveliness_for(family: TonalFamily) -> Liveliness {
     }
 }
 
+/// How each family speaks and breathes, voiced partial by partial. The flue
+/// principal is Manguebyte's starting point; the others are judgements made from
+/// it, each moved the way its pipes differ, and all of it wants setting by ear:
+/// a flute is breathier and softer in its speech, a string slower and narrow, a
+/// reed prompt with hardly any air, a mixture quick and high.
+pub fn pipe_voicing(family: TonalFamily) -> PipeVoicing {
+    let principal = PipeVoicing::FLUE_PRINCIPAL;
+    match family {
+        TonalFamily::Flute => PipeVoicing {
+            air_db: -32.0,
+            air_top_db: -14.0,
+            rise_seconds: 0.036,
+            overshoot: 0.12,
+            breath: 0.3,
+            breath_seconds: 0.05,
+            ..principal
+        },
+        TonalFamily::String => PipeVoicing {
+            air_db: -42.0,
+            rise_seconds: 0.055,
+            rise_per_octave: 0.7,
+            lag_seconds: 0.006,
+            overshoot: 0.2,
+            breath: 0.12,
+            breath_bandwidth_hz: 400.0,
+            pitch_cents: -4.0,
+            ..principal
+        },
+        TonalFamily::Reed => PipeVoicing {
+            air_db: -52.0,
+            air_top_db: -32.0,
+            rise_seconds: 0.012,
+            rise_per_octave: 0.85,
+            lag_seconds: 0.001,
+            overshoot: 0.35,
+            settle_ratio: 1.5,
+            breath: 0.05,
+            pitch_cents: -10.0,
+            pitch_seconds: 0.02,
+            jitter: WindJitter {
+                cents: 0.8,
+                db: 0.05,
+                rate_hz: 6.0,
+            },
+            ..principal
+        },
+        TonalFamily::Mixture => PipeVoicing {
+            air_db: -40.0,
+            rise_seconds: 0.02,
+            breath: 0.15,
+            ..principal
+        },
+        _ => principal,
+    }
+}
+
 /// One voice of the pool. It becomes a rank with [`adopt_rank`](Self::adopt_rank)
 /// and sounds a pipe of it with [`note_on`](Self::note_on).
 #[derive(Clone, Debug)]
@@ -53,6 +110,7 @@ pub struct AdditiveVoice {
     family: TonalFamily,
     per_family_liveliness: bool,
     calibration: Calibration,
+    voiced: bool,
 }
 
 impl AdditiveVoice {
@@ -78,12 +136,20 @@ impl AdditiveVoice {
             family: TonalFamily::Principal,
             per_family_liveliness: v2,
             calibration,
+            voiced: false,
         }
     }
 
     /// Give each rank its own family's character instead of 1.x's single one.
     pub fn set_per_family_liveliness(&mut self, on: bool) {
         self.per_family_liveliness = on;
+    }
+
+    /// Have it speak and breathe partial by partial, as its family does, from
+    /// the next rank it becomes on: air, each partial's attack, the wind's
+    /// unsteadiness, and no note the same twice.
+    pub fn set_voiced(&mut self, on: bool) {
+        self.voiced = on;
     }
 
     /// How far its partials spread across the stereo image; 0 makes the voice
@@ -106,6 +172,8 @@ impl AdditiveVoice {
         curve.attack_per_deviation *= k;
         self.bank.set_wind_coupling(v.chest, curve);
         self.bank.set_speech_profile(v.speech);
+        self.bank
+            .set_voicing(self.voiced.then(|| pipe_voicing(v.family)));
         if self.per_family_liveliness {
             self.bank.set_liveliness(liveliness_for(v.family));
         }
