@@ -241,6 +241,10 @@ pub(crate) struct ModelsView {
     pub(crate) assigning: bool,
     /// The model waiting for its key.
     pub(crate) waiting: Option<String>,
+    /// The models the sustain pedal alternates.
+    pub(crate) pedal: (Option<usize>, Option<usize>),
+    /// Whether a press chooses a model for the sustain pedal.
+    pub(crate) choosing_pedal: bool,
 }
 
 /// Remember that `mask` is the registration `name` drew, the last few only.
@@ -417,6 +421,7 @@ pub(crate) struct Source {
     /// Whether the demonstrations are open.
     demos: Cell<bool>,
     models: Cell<bool>,
+    choosing_pedal: Cell<bool>,
     model_page: Cell<usize>,
     demo_page: Cell<usize>,
     /// Whether the sound panel is open, and on which page.
@@ -462,6 +467,7 @@ impl Source {
             library: RefCell::new(None),
             demos: Cell::new(false),
             models: Cell::new(false),
+            choosing_pedal: Cell::new(false),
             model_page: Cell::new(0),
             demo_page: Cell::new(0),
             sound: Cell::new(false),
@@ -524,14 +530,42 @@ impl Source {
         self.refresh();
     }
 
+    /// Start choosing the two models the sustain pedal alternates; pressed
+    /// again, the pedal goes back to sustaining.
+    pub(crate) fn press_pedal_models(&self) {
+        let console = &self.shared.params.console;
+        if self.choosing_pedal.get() || console.pedal_choice() != (None, None) {
+            self.choosing_pedal.set(false);
+            console.set_pedal_choice(None, None);
+        } else {
+            self.set_learning(false);
+            self.choosing_pedal.set(true);
+        }
+        self.refresh();
+    }
+
     /// Have the models wait for keys, or draw again.
     pub(crate) fn assign_model_keys(&self, on: bool) {
+        self.choosing_pedal.set(false);
         self.set_learning(on);
         self.refresh();
     }
 
     /// Press model `n`: wait for its key, or draw it.
     pub(crate) fn press_model(&self, n: usize) {
+        if self.choosing_pedal.get() {
+            let console = &self.shared.params.console;
+            match console.pedal_choice() {
+                (Some(first), _) if first != n => {
+                    console.set_pedal_choice(Some(first), Some(n));
+                    self.choosing_pedal.set(false);
+                }
+                (Some(_), _) => {}
+                _ => console.set_pedal_choice(Some(n), None),
+            }
+            self.refresh();
+            return;
+        }
         if !self.learn(crate::console::Action::Model(n as u16)) {
             if let Ok(mut notes) = self.shared.notes.lock() {
                 let _ = notes.push(crate::UiNote::Model(n as u16));
@@ -1054,6 +1088,8 @@ impl Source {
                 }),
                 assigning: learn.on,
                 waiting: learn.waiting_for,
+                pedal: console.pedal_choice(),
+                choosing_pedal: self.choosing_pedal.get(),
             }
         });
 

@@ -152,6 +152,9 @@ pub struct ConsoleMemory {
     /// the manuals it plays in the low half of the other, its tremulant above.
     model_stops: [AtomicU64; crate::models::MODELS],
     model_rest: [AtomicU32; crate::models::MODELS],
+    /// The models the sustain pedal alternates, each its number plus one in
+    /// a half of this; 0 for none.
+    pedal_models: AtomicU32,
 }
 
 impl Default for ConsoleMemory {
@@ -164,6 +167,7 @@ impl Default for ConsoleMemory {
             armed: AtomicU32::new(0),
             model_stops: std::array::from_fn(|_| AtomicU64::new(0)),
             model_rest: std::array::from_fn(|_| AtomicU32::new(0)),
+            pedal_models: AtomicU32::new(0),
         }
     }
 }
@@ -201,6 +205,45 @@ impl ConsoleMemory {
             self.model_stops[n].store(stops, Ordering::Relaxed);
             let rest = u32::from(manuals) | u32::from(tremulant) << 16;
             self.model_rest[n].store(rest, Ordering::Relaxed);
+        }
+    }
+
+    /// The models chosen for the sustain pedal, the first and the second.
+    pub fn pedal_choice(&self) -> (Option<usize>, Option<usize>) {
+        let v = self.pedal_models.load(Ordering::Relaxed);
+        let half = |h: u32| (h != 0).then(|| h as usize - 1);
+        (half(v & 0xFFFF), half(v >> 16))
+    }
+
+    /// The two models each press of the sustain pedal alternates, once both
+    /// are chosen; the pedal then sustains nothing.
+    pub fn pedal_pair(&self) -> Option<(usize, usize)> {
+        match self.pedal_choice() {
+            (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        }
+    }
+
+    /// Choose the models for the sustain pedal.
+    pub fn set_pedal_choice(&self, first: Option<usize>, second: Option<usize>) {
+        let half = |n: Option<usize>| n.map_or(0, |n| n as u32 + 1);
+        self.pedal_models
+            .store(half(first) | half(second) << 16, Ordering::Relaxed);
+    }
+
+    /// The choice for the sustain pedal as text, for saving.
+    pub fn pedal_text(&self) -> String {
+        self.pedal_models.load(Ordering::Relaxed).to_string()
+    }
+
+    /// Restore the choice for the sustain pedal.
+    pub fn load_pedal(&self, text: &str) -> bool {
+        match text.trim().parse() {
+            Ok(v) => {
+                self.pedal_models.store(v, Ordering::Relaxed);
+                true
+            }
+            Err(_) => false,
         }
     }
 

@@ -845,8 +845,20 @@ impl Plugin for Caecilia {
                         channel,
                         number: controller,
                     };
-                    // Swell and sustain stay what they are unless learning took them.
-                    self.console_takes(source, rising);
+                    // Swell and sustain stay what they are unless learning took
+                    // them, or the sustain pedal is alternating two models.
+                    let taken = self.console_takes(source, rising);
+                    if !taken && controller == 64 && rising {
+                        if let Some((a, b)) = self.params.console.pedal_pair() {
+                            let on_first = self
+                                .params
+                                .console
+                                .model(a)
+                                .is_some_and(|m| m.0 == self.params.stop_mask());
+                            let next = if on_first { b } else { a };
+                            self.apply_model(next, Some(channel));
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -975,6 +987,7 @@ impl Plugin for Caecilia {
                     });
                     match controller {
                         _ if learned.is_some() => None,
+                        64 if self.params.console.pedal_pair().is_some() => None,
                         11 => Some(Command::Expression {
                             division: channel_division(channel),
                             position: f32::from(value) / 127.0,

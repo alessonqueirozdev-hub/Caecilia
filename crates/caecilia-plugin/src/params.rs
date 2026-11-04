@@ -353,6 +353,7 @@ impl ParamSet for CaeciliaParams {
         section("console", if self.console_day() { "day" } else { "night" });
         section("generals", &self.console.generals_text());
         section("midi-learn", &self.console.bindings_text());
+        section("pedal-models", &self.console.pedal_text());
     }
 
     fn load_extra(&self, name: &str, text: &str) -> bool {
@@ -367,6 +368,7 @@ impl ParamSet for CaeciliaParams {
             }
             "generals" => self.console.load_generals(text),
             "midi-learn" => self.console.load_bindings(text) || text.trim().is_empty(),
+            "pedal-models" => self.console.load_pedal(text),
             _ => false,
         }
     }

@@ -65,7 +65,11 @@ struct DemoPlan {
 }
 
 fn demo_plan(size: Size, count: usize, page: usize) -> DemoPlan {
-    let top = 44.0;
+    rows_plan(size, count, page, 44.0)
+}
+
+/// The rows from `top` down.
+fn rows_plan(size: Size, count: usize, page: usize, top: f32) -> DemoPlan {
     const COLUMNS: usize = 2;
     let across = (((size.height - top - 6.0) / LIBRARY_ROW).max(1.0)) as usize;
     let holds = (across * COLUMNS).max(1);
@@ -96,7 +100,38 @@ fn demo_plan(size: Size, count: usize, page: usize) -> DemoPlan {
 
 /// The button that has models wait for keys.
 fn assign_rect(size: Size) -> Rect {
-    Rect::new(size.width - 20.0 - 96.0, 10.0, 96.0, 22.0)
+    Rect::new(size.width - 20.0 - 90.0, 10.0, 90.0, 22.0)
+}
+
+/// The button that chooses the models the sustain pedal alternates.
+fn pedal_rect(size: Size) -> Rect {
+    Rect::new(size.width - 20.0 - 90.0 - 6.0 - 106.0, 10.0, 106.0, 22.0)
+}
+
+/// What the Models panel asks of the player just now, on a line of its own.
+fn models_hint(models: &ModelsView) -> Option<String> {
+    if models.choosing_pedal {
+        return Some(match models.pedal.0 {
+            None => "Choose the first model for the sustain pedal".into(),
+            Some(_) => "Now the second: each press alternates between them".into(),
+        });
+    }
+    if !models.assigning {
+        return None;
+    }
+    Some(match &models.waiting {
+        Some(what) => format!("Press the key or pedal for {what}"),
+        None => "Choose a model, then press the key that will choose it".into(),
+    })
+}
+
+fn models_plan(size: Size, models: &ModelsView) -> DemoPlan {
+    let top = if models_hint(models).is_some() {
+        58.0
+    } else {
+        44.0
+    };
+    rows_plan(size, models.rows.len(), models.page, top)
 }
 
 fn draw_models(size: Size, scene: &mut Scene, snapshot: &Snapshot, models: &ModelsView) {
@@ -108,7 +143,7 @@ fn draw_models(size: Size, scene: &mut Scene, snapshot: &Snapshot, models: &Mode
         Point::new(20.0, 13.0),
         0.0,
     );
-    let plan = demo_plan(size, models.rows.len(), models.page);
+    let plan = models_plan(size, models);
     if plan.pages > 1 {
         for (r, left) in [(plan.previous, true), (plan.next, false)] {
             scene.fill(RoundedRect::new(r, 8.0), look.edge.with_alpha(0x60));
@@ -129,21 +164,23 @@ fn draw_models(size: Size, scene: &mut Scene, snapshot: &Snapshot, models: &Mode
             0.5,
         );
     }
-    let assign = assign_rect(size);
-    sound::chip(scene, snapshot, assign, "Assign keys", models.assigning);
-    if models.assigning {
-        let saying = match &models.waiting {
-            Some(what) => format!("Press the key for {what}"),
-            None => "Choose a model".to_string(),
-        };
+    sound::chip(
+        scene,
+        snapshot,
+        assign_rect(size),
+        "Assign keys",
+        models.assigning,
+    );
+    let pedal_on = models.choosing_pedal || models.pedal != (None, None);
+    sound::chip(scene, snapshot, pedal_rect(size), "Sustain pedal", pedal_on);
+    if let Some(hint) = models_hint(models) {
         let s = style(11.0, 600.0, look.accent);
-        let left = plan.next.right() + 8.0;
         text(
             scene,
-            &sound::fit(&saying, s, assign.x - 8.0 - left),
+            &sound::fit(&hint, s, size.width - 40.0),
             s,
-            Point::new(assign.x - 8.0, 15.0),
-            1.0,
+            Point::new(20.0, 38.0),
+            0.0,
         );
     }
     for (n, r) in &plan.rows {
@@ -157,10 +194,20 @@ fn draw_models(size: Size, scene: &mut Scene, snapshot: &Snapshot, models: &Mode
             scene.fill(shape, look.edge.with_alpha(0x60));
         }
         let mut room = r.width - 20.0;
-        if let Some(key) = key {
+        let mut right = r.right() - 10.0;
+        let pedal_mark = if models.pedal.0 == Some(*n) {
+            Some("Pedal 1")
+        } else if models.pedal.1 == Some(*n) {
+            Some("Pedal 2")
+        } else {
+            None
+        };
+        for mark in [key.as_deref(), pedal_mark].into_iter().flatten() {
             let s = style(11.0, 600.0, look.accent);
-            room -= width_of(key, s) + 10.0;
-            text(scene, key, s, Point::new(r.right() - 10.0, r.y + 5.0), 1.0);
+            let w = width_of(mark, s) + 10.0;
+            room -= w;
+            text(scene, mark, s, Point::new(right, r.y + 5.0), 1.0);
+            right -= w;
         }
         let s = style(12.0, if on { 650.0 } else { 500.0 }, look.text);
         text(
@@ -357,6 +404,12 @@ fn wind(source: &Rc<Source>) -> View {
                     if let Some(key) = key {
                         said.push_str(&format!(" on {key}"));
                     }
+                    if models.pedal.0 == Some(n) {
+                        said.push_str(" (pedal 1)");
+                    }
+                    if models.pedal.1 == Some(n) {
+                        said.push_str(" (pedal 2)");
+                    }
                     if models.current == Some(n) {
                         said.push_str(" (drawn)");
                     }
@@ -411,7 +464,7 @@ fn wind(source: &Rc<Source>) -> View {
             return sound::items(sound, size);
         }
         if let Some(models) = &s.models {
-            let plan = demo_plan(size, models.rows.len(), models.page);
+            let plan = models_plan(size, models);
             let mut items: Vec<Item> = plan
                 .rows
                 .iter()
@@ -427,6 +480,12 @@ fn wind(source: &Rc<Source>) -> View {
                 name: "Assign keys".into(),
                 checked: Some(models.assigning),
                 rect: assign_rect(size),
+            });
+            items.push(Item {
+                role: Role::Button,
+                name: "Sustain pedal".into(),
+                checked: Some(models.choosing_pedal || models.pedal != (None, None)),
+                rect: pedal_rect(size),
             });
             if plan.pages > 1 {
                 for (name, rect) in [
@@ -501,9 +560,13 @@ fn wind(source: &Rc<Source>) -> View {
             return Handled::No;
         }
         if let Some(view) = &snapshot.models {
-            let plan = demo_plan(size, view.rows.len(), view.page);
+            let plan = models_plan(size, view);
             if assign_rect(size).contains(at) {
                 here.assign_model_keys(!view.assigning);
+                return Handled::Yes;
+            }
+            if pedal_rect(size).contains(at) {
+                here.press_pedal_models();
                 return Handled::Yes;
             }
             if plan.pages > 1 && plan.previous.contains(at) {

@@ -377,3 +377,60 @@ fn a_key_of_the_keyboard_chooses_a_model() {
         "a key that chooses is not a pipe"
     );
 }
+
+#[test]
+fn the_sustain_pedal_alternates_two_models() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Models");
+    c.click(Role::Button, "Sustain pedal");
+    c.click(Role::Button, "Model Récit: flutes");
+    c.click(Role::Button, "Model Grand-Orgue: plenum");
+    let said = c.says("Wind");
+    assert!(said.contains("Récit: flutes (pedal 1)"), "{said}");
+    assert!(said.contains("Grand-Orgue: plenum (pedal 2)"), "{said}");
+    // Pressing a model after choosing draws it again, as usual.
+    let pedal = |c: &mut Console, down: bool| {
+        let at = c.h.position();
+        c.h.schedule(
+            at,
+            EventKind::Midi(MidiMessage::ControlChange {
+                channel: 0,
+                controller: 64,
+                value: if down { 127 } else { 0 },
+            }),
+        );
+        c.settle();
+    };
+    let has = |c: &mut Console, name: &str| drawn_names(c).iter().any(|n| n == name);
+
+    pedal(&mut c, true);
+    assert!(
+        has(&mut c, "Flûte octaviante 4"),
+        "the first press, the first model"
+    );
+    pedal(&mut c, false);
+    assert!(
+        has(&mut c, "Flûte octaviante 4"),
+        "lifting it changes nothing"
+    );
+    pedal(&mut c, true);
+    pedal(&mut c, false);
+    assert!(
+        has(&mut c, "Fourniture IV"),
+        "the second press, the second model"
+    );
+    assert!(!has(&mut c, "Flûte octaviante 4"));
+    pedal(&mut c, true);
+    pedal(&mut c, false);
+    assert!(has(&mut c, "Flûte octaviante 4"), "and back");
+    let telemetry = c.h.plugin_mut().telemetry();
+    assert_eq!(telemetry.route(), Some((0, 1 << 2)), "the keyboard follows");
+
+    // Pressed again, the pedal goes back to sustaining.
+    c.click(Role::Button, "Sustain pedal");
+    assert!(!c.says("Wind").contains("(pedal 1)"), "{}", c.says("Wind"));
+    let before = c.h.plugin_mut().params().stop_mask();
+    pedal(&mut c, true);
+    pedal(&mut c, false);
+    assert_eq!(c.h.plugin_mut().params().stop_mask(), before);
+}
