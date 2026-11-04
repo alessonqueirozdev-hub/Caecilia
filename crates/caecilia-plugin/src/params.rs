@@ -248,9 +248,17 @@ impl CaeciliaParams {
     /// as it is.
     fn restore_organ(&self, text: &str) {
         let wanted = text.trim();
+        if let Some(name) = wanted.strip_prefix(BUILT_IN_PREFIX) {
+            if self.organ.path().is_some() || self.organ.organ().name != name {
+                if let Some(organ) = caecilia_model::built_in_organ(name) {
+                    let _ = self.take_organ(organ, None, false);
+                }
+            }
+            return;
+        }
         let path = (!wanted.is_empty()).then(|| PathBuf::from(wanted));
         let same = match (&path, self.organ.path()) {
-            (None, None) => true,
+            (None, None) => self.organ.organ().name == caecilia_model::BUILT_IN_ORGANS[0].0,
             (Some(p), Some(playing)) => std::path::absolute(p).is_ok_and(|p| p == playing),
             _ => false,
         };
@@ -299,6 +307,10 @@ impl CaeciliaParams {
 }
 
 /// The factory generals in the first pistons, the rest empty.
+/// How the session names an organ the instrument carries, where any other is
+/// its file's path.
+const BUILT_IN_PREFIX: &str = "built-in:";
+
 /// What each registration model does on `organ`.
 fn set_models(console: &ConsoleMemory, organ: &Organ) {
     for (n, model) in crate::models::TABLE.iter().enumerate() {
@@ -346,10 +358,19 @@ impl ParamSet for CaeciliaParams {
         // The organ first: restoring it resets the pistons the next section
         // fills.
         let path = self.organ.path();
-        section(
-            "organ",
-            &path.map_or_else(String::new, |p| p.display().to_string()),
-        );
+        let organ = match path {
+            Some(p) => p.display().to_string(),
+            // One the instrument carries, by name; the first is the default.
+            None => {
+                let playing = self.organ.organ();
+                if playing.name == caecilia_model::BUILT_IN_ORGANS[0].0 {
+                    String::new()
+                } else {
+                    format!("{BUILT_IN_PREFIX}{}", playing.name)
+                }
+            }
+        };
+        section("organ", &organ);
         section("console", if self.console_day() { "day" } else { "night" });
         section("generals", &self.console.generals_text());
         section("midi-learn", &self.console.bindings_text());

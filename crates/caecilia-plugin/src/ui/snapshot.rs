@@ -233,9 +233,11 @@ pub(crate) struct DemosView {
 pub(crate) struct ModelsView {
     /// The page of the list showing.
     pub(crate) page: usize,
-    /// Each model's name, and the key that chooses it.
+    /// The models this organ has, by their number.
+    pub(crate) numbers: Vec<usize>,
+    /// Each one's name, and the key that chooses it.
     pub(crate) rows: Vec<(String, Option<String>)>,
-    /// The model whose stops are what's drawn, if one is.
+    /// The row whose stops are what's drawn, if one is.
     pub(crate) current: Option<usize>,
     /// Whether a press binds a key rather than drawing the model.
     pub(crate) assigning: bool,
@@ -1045,7 +1047,12 @@ impl Source {
             .map(|(entries, message)| LibraryView {
                 entries: entries
                     .iter()
-                    .map(|e| (e.name.clone(), e.path == playing))
+                    .map(|e| {
+                        // One the instrument carries has no file, only its name.
+                        let on = e.path == playing
+                            && (e.path.is_some() || e.name == self.organ.borrow().name);
+                        (e.name.clone(), on)
+                    })
                     .collect(),
                 message: message.clone(),
                 folder: organs_folder().map_or_else(String::new, |f| f.display().to_string()),
@@ -1066,8 +1073,11 @@ impl Source {
             let bindings = console.bindings();
             let drawn = self.shared.params.stop_mask();
             let learn = self.learn_view(organ);
-            let rows = (0..crate::models::MODELS)
-                .map(|n| {
+            let numbers = crate::models::offered(console);
+            let row_of = |n: usize| numbers.iter().position(|m| *m == n);
+            let rows = numbers
+                .iter()
+                .map(|&n| {
                     let key = bindings
                         .iter()
                         .find(|b| b.action == crate::console::Action::Model(n as u16))
@@ -1081,15 +1091,19 @@ impl Source {
             ModelsView {
                 page: self.model_page.get(),
                 rows,
-                current: (0..crate::models::MODELS).find(|n| {
+                current: numbers.iter().position(|n| {
                     console
                         .model(*n)
                         .is_some_and(|m| m.0 == drawn && drawn != 0)
                 }),
                 assigning: learn.on,
                 waiting: learn.waiting_for,
-                pedal: console.pedal_choice(),
+                pedal: {
+                    let (first, second) = console.pedal_choice();
+                    (first.and_then(row_of), second.and_then(row_of))
+                },
                 choosing_pedal: self.choosing_pedal.get(),
+                numbers: numbers.clone(),
             }
         });
 

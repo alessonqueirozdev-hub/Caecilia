@@ -494,7 +494,7 @@ impl Widget for SelectorLine {
         if self.text.is_empty() && !self.focused {
             text(
                 scene,
-                "a selector: div:recit & family:string",
+                "a selector: family:flute & pitch:8",
                 style(12.5, 450.0, look.muted),
                 Point::new(x, y),
                 0.0,

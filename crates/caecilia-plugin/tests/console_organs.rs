@@ -193,6 +193,73 @@ fn an_organ_file_with_an_error_says_so_and_changes_nothing() {
 }
 
 #[test]
+fn the_instrument_carries_several_organs_and_the_session_remembers_which() {
+    let plain = Harness::<Caecilia>::new(48000.0, 256).save_state();
+    let mut c = Console::open(Harness::<Caecilia>::new(48000.0, 256));
+    c.click(Role::Button, "Organs");
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-library@1x.png"), png).unwrap();
+    for name in [
+        "German Baroque Organ",
+        "French Romantic Organ",
+        "Chapel Organ",
+    ] {
+        c.click(Role::Button, &format!("Organ {name}"));
+        c.settle();
+        assert_eq!(c.h.plugin_mut().organ().name, name);
+        if c.find(Role::Button, &format!("Organ {name}")).is_none() {
+            c.click(Role::Button, "Organs");
+        }
+    }
+    c.click(Role::Button, "Organ French Romantic Organ");
+    c.settle();
+    assert_eq!(c.h.plugin_mut().organ().manuals().len(), 4);
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-french@1x.png"), png).unwrap();
+    let state = c.h.save_state();
+    let mut other = Harness::<Caecilia>::new(48000.0, 256);
+    other.load_state(&state).unwrap();
+    other.render(256);
+    other.render(256);
+    assert_eq!(other.plugin_mut().organ().name, "French Romantic Organ");
+    // And a session on the Caecilia organ goes back to it.
+    other.load_state(&plain).unwrap();
+    other.render(4800);
+    assert_eq!(other.plugin_mut().organ().name, "Caecilia Pipe Organ");
+}
+
+#[test]
+fn the_models_offered_are_those_of_the_organ_playing_and_draw_their_stops() {
+    let mut c = Console::open(Harness::<Caecilia>::new(48000.0, 256));
+    c.h.plugin_mut()
+        .params()
+        .use_organ(caecilia_model::chapel_organ())
+        .unwrap();
+    c.settle();
+    c.click(Role::Button, "Models");
+    assert!(c.find(Role::Button, "Model Manual: oboe").is_some());
+    assert!(c.find(Role::Button, "Model Grand-Orgue: plenum").is_none());
+    assert!(c.find(Role::Button, "Model Manual: trumpet").is_none());
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-chapel@1x.png"), png).unwrap();
+    // The row pressed is the model it says, though others before it are gone.
+    c.click(Role::Button, "Model Manual: oboe");
+    let names = c.get(Role::Button, "Model Manual: oboe");
+    assert_eq!(names.node.state.checked, Some(true));
+    let organ = c.h.plugin_mut().organ();
+    let oboe = organ
+        .stops()
+        .iter()
+        .position(|s| s.name == "Oboe 8")
+        .unwrap();
+    assert_ne!(c.h.plugin_mut().params().stop_mask() & (1 << oboe), 0);
+}
+
+#[test]
 fn the_day_s_light_is_chosen_and_the_session_keeps_it() {
     let mut c = Console::open(Harness::<Caecilia>::new(48000.0, 256));
     assert!(c.says("Title").ends_with("night's light"));

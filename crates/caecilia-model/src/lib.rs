@@ -15,6 +15,7 @@ mod file;
 mod footage;
 mod ids;
 mod organ;
+mod organs;
 pub mod recipes;
 mod spectrum;
 mod voicing;
@@ -34,6 +35,10 @@ pub use ids::{
 pub use organ::{
     Coupler, Division, DivisionKind, Manual, Organ, Rank, RankCharacter, RecipeOverride, Stop,
     Windchest,
+};
+pub use organs::{
+    BUILT_IN_ORGANS, BuiltInOrgan, built_in_organ, chapel_organ, french_romantic_organ,
+    german_baroque_organ, italian_renaissance_organ,
 };
 pub use spectrum::{
     FormantPeak, MAX_FORMANTS, MIXTURE_SERIES, PartialTrack, SpectralModel, SpeechProfile,

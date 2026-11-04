@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 
-//! The organs the console offers: the demonstration organ, and every
+//! The organs the console offers: those the instrument carries, and every
 //! `.organ.json` in the organs folder and beside the organ playing.
 //!
 //! The organs folder is `CAECILIA_ORGANS` if it is set, else
@@ -9,7 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
-/// An organ to choose: its name, and its file (none for the built-in one).
+/// An organ to choose: its name, and its file (none for one the instrument
+/// carries).
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Entry {
     pub(crate) name: String,
@@ -47,7 +48,22 @@ fn name_of(path: &Path) -> String {
     file.get(..cut).unwrap_or(file).to_string()
 }
 
-/// The organs to offer, the demonstration organ first, then by name.
+/// The file the installer leaves in the organs folder, to copy and edit.
+const INSTALLED_EXAMPLE: &str = "caecilia-pipe-organ.organ.json";
+
+/// Whether `path` is that file as it was left: the organ first in the list.
+fn is_untouched_example(path: &Path) -> bool {
+    path.file_name().is_some_and(|n| n == INSTALLED_EXAMPLE)
+        && std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| caecilia_model::read_organ(&text, None).ok())
+            .is_some_and(|read| {
+                caecilia_model::write_organ(&read.organ)
+                    == caecilia_model::write_organ(&caecilia_model::caecilia_organ())
+            })
+}
+
+/// The organs to offer, those the instrument carries first, then by name.
 pub(crate) fn scan(playing: Option<&Path>) -> Vec<Entry> {
     let mut folders: Vec<PathBuf> = organs_folder().into_iter().collect();
     if let Some(dir) = playing.and_then(Path::parent) {
@@ -60,19 +76,44 @@ pub(crate) fn scan(playing: Option<&Path>) -> Vec<Entry> {
         };
         for entry in read.flatten() {
             let path = std::path::absolute(entry.path()).unwrap_or_else(|_| entry.path());
-            if is_organ_file(&path) && !files.contains(&path) {
+            let hidden = is_untouched_example(&path) && playing != Some(path.as_path());
+            if is_organ_file(&path) && !hidden && !files.contains(&path) {
                 files.push(path);
             }
         }
     }
     files.sort_by_key(|p| name_of(p).to_lowercase());
-    let mut entries = vec![Entry {
-        name: "Caecilia Pipe Organ".into(),
-        path: None,
-    }];
+    let mut entries: Vec<Entry> = caecilia_model::BUILT_IN_ORGANS
+        .iter()
+        .map(|(name, _)| Entry {
+            name: (*name).into(),
+            path: None,
+        })
+        .collect();
     entries.extend(files.into_iter().map(|path| Entry {
         name: name_of(&path),
         path: Some(path),
     }));
     entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_installed_example_is_not_a_second_caecilia_organ_until_edited() {
+        let shipped = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples")
+            .join(INSTALLED_EXAMPLE);
+        assert!(is_untouched_example(&shipped));
+
+        let dir = std::env::temp_dir().join(format!("caecilia-library-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let edited = dir.join(INSTALLED_EXAMPLE);
+        let text = std::fs::read_to_string(&shipped).unwrap();
+        std::fs::write(&edited, text.replacen("Montre 16", "Montre 16 bis", 1)).unwrap();
+        assert!(!is_untouched_example(&edited));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

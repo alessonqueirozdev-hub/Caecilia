@@ -580,7 +580,7 @@ fn wind(source: &Rc<Source>) -> View {
             let Some((n, _)) = plan.rows.iter().find(|(_, r)| r.contains(at)) else {
                 return Handled::No;
             };
-            here.press_model(*n);
+            here.press_model(view.numbers[*n]);
             return Handled::Yes;
         }
         if let Some(view) = &snapshot.demos {

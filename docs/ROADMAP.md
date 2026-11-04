@@ -56,10 +56,14 @@ what they need.
 
 ## Then: the organs
 
-- [ ] Three manuals and pedal, and larger specifications
+- [x] Three manuals and pedal: the console lays out what the organ has
+- [ ] Larger specifications
 - [ ] Monophonic couplers, bass and treble
 - [ ] Expression pedals assignable stop by stop, and a crescendo pedal you can program
-- [ ] A library of organs: German Baroque, French Romantic, historical and modern
+- [x] The first organs of a library: German Baroque, French Romantic, Italian
+  Renaissance and a small chapel organ, each a style rather than a copy of any
+  instrument. The specifications are ours to improve, and they want an organist's ears.
+- [ ] More of them, historical and modern
 - [ ] Routing to several outputs
 
 *Help wanted:* anyone who can write an [organ file](ORGAN_FILE.md).
