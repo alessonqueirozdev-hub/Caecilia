@@ -44,8 +44,9 @@ people who know pipe acoustics.
 
 ## Then: the console
 
-- [ ] A resizable console that scales to any window
-- [ ] A compact mode for half a screen, beside a score open in another program
+- [x] A resizable console that scales to any window
+- [x] A compact mode for half a screen, beside a score open in another program. It
+  has only run without a real window so far: tell us how it behaves on your screen.
 - [ ] An output level meter
 - [ ] A plenum button
 - [ ] The interface in Portuguese, English, Spanish and German

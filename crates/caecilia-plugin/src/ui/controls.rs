@@ -17,10 +17,12 @@ use manguebyte_gfx::{
 };
 use manguebyte_plugin::editor::Gesture;
 use manguebyte_ui::access::Role;
-use manguebyte_ui::{Button, Event, Handled, IntoView, View};
+use manguebyte_ui::{Button, Event, EventCx, Handled, IntoView, View};
 
+use super::Shared;
 use super::actions;
 use super::live::{Item, live};
+use super::look::Look;
 use super::paint::{
     PistonKind, StopFace, arrow, drawstop, jamb, piston, plate, polygon, shoe, style, tablet, text,
     vertical, width_of,
@@ -50,7 +52,7 @@ pub(crate) const PEDALS: f32 = 124.0;
 const STOP_REACH: f32 = 36.0;
 const PISTON_REACH: f32 = 16.0;
 
-fn pressed(event: &Event) -> bool {
+pub(crate) fn pressed(event: &Event) -> bool {
     matches!(
         event,
         Event::PointerDown {
@@ -77,7 +79,7 @@ fn near(a: Point, b: Point, r: f32) -> bool {
 
 /// What a jamb control does.
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum JambControl {
+pub(crate) enum JambControl {
     Stop(usize),
     Coupler(usize),
     Tremulant,
@@ -112,6 +114,14 @@ fn short(name: &str) -> String {
             format!("{cut}.")
         }
         other => other.into(),
+    }
+}
+
+/// A coupler's name as a tablet has room for it.
+pub(crate) fn coupler_label(name: &str) -> String {
+    match name.split_once('/') {
+        Some((from, to)) => format!("{} / {}", short(from), short(to)),
+        None => name.to_string(),
     }
 }
 
@@ -165,13 +175,7 @@ fn jamb_plan(size: Size, snapshot: &Snapshot, right: bool) -> JambPlan {
             .couplers()
             .iter()
             .enumerate()
-            .map(|(n, c)| {
-                let line = match c.name.split_once('/') {
-                    Some((from, to)) => format!("{} / {}", short(from), short(to)),
-                    None => c.name.clone(),
-                };
-                (JambControl::Coupler(n), line)
-            })
+            .map(|(n, c)| (JambControl::Coupler(n), coupler_label(&c.name)))
             .collect();
         if layout.tremulant {
             list.push((JambControl::Tremulant, "Tremulant".into()));
@@ -253,11 +257,22 @@ fn jamb_items(snapshot: &Snapshot, size: Size, right: bool) -> Vec<Item> {
     items
 }
 
+/// A press of a stop, a coupler or the tremulant: learned, or done.
+pub(crate) fn jamb_press(cx: &mut EventCx<'_>, source: &Source, control: JambControl) {
+    let shared = source.shared();
+    match control {
+        JambControl::Stop(n) if source.learn(Action::ToggleStop(n as u16)) => {}
+        JambControl::Coupler(n) if source.learn(Action::ToggleCoupler(n as u16)) => {}
+        JambControl::Stop(n) => actions::toggle_stop(cx.context(), shared, n),
+        JambControl::Coupler(n) => actions::toggle_coupler(cx.context(), shared, n),
+        JambControl::Tremulant => actions::toggle_tremulant(cx.context(), shared),
+    }
+}
+
 /// A jamb: its sections, and on the right the couplers and tremulant. A
 /// click draws or retires.
 pub(crate) fn jamb_view(source: &Rc<Source>, right: bool) -> View {
     let name = if right { "Right jamb" } else { "Left jamb" };
-    let shared = source.shared().clone();
     let pointing = Rc::clone(source);
     let learner = Rc::clone(source);
     live(
@@ -319,14 +334,10 @@ pub(crate) fn jamb_view(source: &Rc<Source>, right: bool) -> View {
             return Handled::No;
         }
         let plan = jamb_plan(size, snapshot, right);
-        match jamb_hit(&plan, at) {
-            Some(JambControl::Stop(n)) if learner.learn(Action::ToggleStop(n as u16)) => {}
-            Some(JambControl::Coupler(n)) if learner.learn(Action::ToggleCoupler(n as u16)) => {}
-            Some(JambControl::Stop(n)) => actions::toggle_stop(cx.context(), &shared, n),
-            Some(JambControl::Coupler(n)) => actions::toggle_coupler(cx.context(), &shared, n),
-            Some(JambControl::Tremulant) => actions::toggle_tremulant(cx.context(), &shared),
-            None => return Handled::No,
-        }
+        let Some(control) = jamb_hit(&plan, at) else {
+            return Handled::No;
+        };
+        jamb_press(cx, &learner, control);
         Handled::Yes
     })
     .width(JAMB)
@@ -337,7 +348,7 @@ pub(crate) fn jamb_view(source: &Rc<Source>, right: bool) -> View {
 
 /// What a piston in the key slip does.
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum SlipControl {
+pub(crate) enum SlipControl {
     General(usize),
     Previous,
     Next,
@@ -385,7 +396,7 @@ fn slip_plan(size: Size) -> SlipPlan {
     }
 }
 
-fn slip_name(control: SlipControl) -> String {
+pub(crate) fn slip_name(control: SlipControl) -> String {
     match control {
         SlipControl::General(n) => format!("General {}", n + 1),
         SlipControl::Previous => "Previous general".into(),
@@ -396,7 +407,7 @@ fn slip_name(control: SlipControl) -> String {
 }
 
 /// What a general piston does: recall it, or store in it with Set pressed.
-fn general_pressed(cx: &mut manguebyte_ui::EventCx<'_>, source: &Source, n: usize) {
+fn general_pressed(cx: &mut EventCx<'_>, source: &Source, n: usize) {
     if source.learn(Action::General(n as u16)) {
         return;
     }
@@ -411,6 +422,62 @@ fn general_pressed(cx: &mut manguebyte_ui::EventCx<'_>, source: &Source, n: usiz
 /// The key slip's height.
 pub(crate) const SLIP: f32 = 58.0;
 
+/// A piston at `c`, of radius `r`, as what it does and what it holds show it.
+pub(crate) fn draw_slip_control(
+    scene: &mut Scene,
+    snapshot: &Snapshot,
+    control: SlipControl,
+    c: Point,
+    r: f32,
+) {
+    let look = snapshot.look;
+    let current = snapshot.general;
+    let under = |scene: &mut Scene, label: &str, color: Color| {
+        text(
+            scene,
+            label,
+            style(9.5, 650.0, color),
+            Point::new(c.x, c.y + r + 4.0),
+            0.5,
+        );
+    };
+    match control {
+        SlipControl::General(n) => {
+            let kind = if n < 8 {
+                PistonKind::Ivory
+            } else {
+                PistonKind::Ebony
+            };
+            let lit = current == Some(n);
+            let label = format!("{}", n + 1);
+            piston(scene, &look, c, r, &label, kind, lit);
+            let tag = if n < 8 {
+                FACTORY_GENERALS.get(n).map_or("", |g| g.tag)
+            } else if snapshot.generals_set[n] {
+                "set"
+            } else {
+                ""
+            };
+            let color = if lit { look.accent } else { look.text2 };
+            under(scene, tag, color);
+        }
+        SlipControl::Previous | SlipControl::Next => {
+            piston(scene, &look, c, r, "", PistonKind::Ebony, false);
+            arrow(scene, c, control == SlipControl::Next, look.ivory);
+        }
+        SlipControl::Cancel => {
+            piston(scene, &look, c, r, "0", PistonKind::Ivory, false);
+            under(scene, "cancel", look.text2);
+        }
+        SlipControl::Set => {
+            let armed = snapshot.set_armed;
+            piston(scene, &look, c, r, "S", PistonKind::Set, armed);
+            let color = if armed { look.accent } else { look.text2 };
+            under(scene, if armed { "choose" } else { "set" }, color);
+        }
+    }
+}
+
 /// The key slip: the general pistons, the sequencer's display and arrows,
 /// cancel and set, drawn in a strip `size` large.
 pub(crate) fn draw_slip(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
@@ -424,52 +491,8 @@ pub(crate) fn draw_slip(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
     scene.fill(RoundedRect::new(rect, 6.0), vertical(rect, &wood));
     scene.fill(Rect::new(rect.x, rect.y, rect.width, 1.0), look.sheen);
     let current = snapshot.general;
-    let under = |scene: &mut Scene, c: Point, label: &str, color: Color| {
-        text(
-            scene,
-            label,
-            style(9.5, 650.0, color),
-            Point::new(c.x, c.y + 17.0),
-            0.5,
-        );
-    };
     for (control, c) in &plan.pistons {
-        let c = *c;
-        match *control {
-            SlipControl::General(n) => {
-                let kind = if n < 8 {
-                    PistonKind::Ivory
-                } else {
-                    PistonKind::Ebony
-                };
-                let lit = current == Some(n);
-                let label = format!("{}", n + 1);
-                piston(scene, &look, c, SLIP_RADIUS, &label, kind, lit);
-                let tag = if n < 8 {
-                    FACTORY_GENERALS.get(n).map_or("", |g| g.tag)
-                } else if snapshot.generals_set[n] {
-                    "set"
-                } else {
-                    ""
-                };
-                let color = if lit { look.accent } else { look.text2 };
-                under(scene, c, tag, color);
-            }
-            SlipControl::Previous | SlipControl::Next => {
-                piston(scene, &look, c, SLIP_RADIUS, "", PistonKind::Ebony, false);
-                arrow(scene, c, *control == SlipControl::Next, look.ivory);
-            }
-            SlipControl::Cancel => {
-                piston(scene, &look, c, SLIP_RADIUS, "0", PistonKind::Ivory, false);
-                under(scene, c, "cancel", look.text2);
-            }
-            SlipControl::Set => {
-                let armed = snapshot.set_armed;
-                piston(scene, &look, c, SLIP_RADIUS, "S", PistonKind::Set, armed);
-                let color = if armed { look.accent } else { look.text2 };
-                under(scene, c, if armed { "choose" } else { "set" }, color);
-            }
-        }
+        draw_slip_control(scene, snapshot, *control, *c, SLIP_RADIUS);
     }
     // The sequencer's display.
     let display = plan.display;
@@ -539,12 +562,7 @@ pub(crate) fn slip_items(size: Size) -> Vec<Item> {
 }
 
 /// A press at `at` in the key slip.
-pub(crate) fn slip_press(
-    cx: &mut manguebyte_ui::EventCx<'_>,
-    source: &Source,
-    at: Point,
-    size: Size,
-) -> Handled {
+pub(crate) fn slip_press(cx: &mut EventCx<'_>, source: &Source, at: Point, size: Size) -> Handled {
     let plan = slip_plan(size);
     let Some((control, _)) = plan
         .pistons
@@ -553,8 +571,14 @@ pub(crate) fn slip_press(
     else {
         return Handled::No;
     };
+    slip_act(cx, source, *control);
+    Handled::Yes
+}
+
+/// What a press of a piston does.
+pub(crate) fn slip_act(cx: &mut EventCx<'_>, source: &Source, control: SlipControl) {
     let shared = source.shared();
-    match *control {
+    match control {
         SlipControl::General(n) => general_pressed(cx, source, n),
         SlipControl::Previous if source.learn(Action::PreviousGeneral) => {}
         SlipControl::Next if source.learn(Action::NextGeneral) => {}
@@ -564,7 +588,6 @@ pub(crate) fn slip_press(
         SlipControl::Cancel => actions::cancel(cx.context(), shared),
         SlipControl::Set => source.arm_set(!source.set_armed()),
     }
-    Handled::Yes
 }
 
 // ---------------------------------------------------------------- shoes
@@ -589,11 +612,73 @@ enum ShoeDrag {
     Crescendo(usize),
 }
 
-/// Left of the pedalboard: the swell shoe and the crescendo. Dragged up
+/// The step the crescendo stands at, and what to say of it.
+pub(crate) fn crescendo_reading(snapshot: &Snapshot) -> (usize, String) {
+    match snapshot.general {
+        Some(n) if n < 8 => (
+            n + 1,
+            format!(
+                "{} \u{b7} {}",
+                n + 1,
+                FACTORY_GENERALS.get(n).map_or("", |g| g.tag)
+            ),
+        ),
+        _ => (0, "\u{2013}".to_string()),
+    }
+}
+
+/// What the pointer does to the swell and the crescendo: where they are, how far
+/// outside its rectangle each answers, and where along one the pointer is. Moved
 /// they open; the crescendo recalls the factory generals on its way.
+pub(crate) fn expression_input(
+    shared: Shared,
+    rects: fn(Size) -> [Rect; 2],
+    reach: fn(Rect) -> Rect,
+    along: fn(Rect, Point) -> f32,
+) -> impl FnMut(&mut EventCx<'_>, &Event, Point, Size, &Snapshot) -> Handled {
+    let mut drag: Option<ShoeDrag> = None;
+    move |cx, event, at, size, _snapshot| {
+        let [a, b] = rects(size);
+        if pressed(event) {
+            if reach(a).contains(at) {
+                let mut gesture = actions::swell_gesture(cx.context(), &shared);
+                gesture.set(f64::from(along(a, at)));
+                drag = Some(ShoeDrag::Swell(gesture));
+            } else if reach(b).contains(at) {
+                drag = Some(ShoeDrag::Crescendo(0));
+            } else {
+                return Handled::No;
+            }
+            cx.capture_pointer();
+        }
+        match drag.as_mut() {
+            Some(ShoeDrag::Swell(gesture)) if at.y.is_finite() => {
+                gesture.set(f64::from(along(a, at)));
+            }
+            Some(ShoeDrag::Crescendo(step)) if at.y.is_finite() => {
+                let now = (along(b, at) * 8.0).round() as usize;
+                if now != *step && now > 0 {
+                    actions::recall(cx.context(), &shared, now - 1);
+                }
+                *step = now;
+            }
+            Some(_) => {}
+            None => return Handled::No,
+        }
+        if released(event) {
+            if let Some(ShoeDrag::Swell(gesture)) = drag.take() {
+                gesture.end();
+            }
+            drag = None;
+            cx.release_pointer();
+        }
+        Handled::Yes
+    }
+}
+
+/// Left of the pedalboard: the swell shoe and the crescendo, dragged up.
 pub(crate) fn shoes(source: &Rc<Source>) -> View {
     let shared = source.shared().clone();
-    let mut drag: Option<ShoeDrag> = None;
     live(
         "Shoes",
         Size::new(PLATE, PEDALS),
@@ -602,15 +687,7 @@ pub(crate) fn shoes(source: &Rc<Source>) -> View {
         |size, scene, snapshot| {
             let look = snapshot.look;
             let swell = snapshot.swell.clamp(0.0, 1.0);
-            let (step, tag) = match snapshot.general {
-                Some(n) if n < 8 => (n + 1, FACTORY_GENERALS.get(n).map_or("", |g| g.tag)),
-                _ => (0, ""),
-            };
-            let crescendo = if step == 0 {
-                "\u{2013}".to_string()
-            } else {
-                format!("{step} \u{b7} {tag}")
-            };
+            let (step, crescendo) = crescendo_reading(snapshot);
             let [a, b] = shoe_rects(size);
             let swell_value = format!("{:.0} %", swell * 100.0);
             shoe(scene, &look, a, swell, &snapshot.layout.swell, &swell_value);
@@ -634,45 +711,13 @@ pub(crate) fn shoes(source: &Rc<Source>) -> View {
             },
         ]
     })
-    .input(move |cx, event, at, size, _snapshot| {
-        let [a, b] = shoe_rects(size);
+    .input(expression_input(
+        shared,
+        shoe_rects,
         // The level bar beside a shoe takes the pointer too.
-        let reach = |r: Rect| Rect::new(r.x - 4.0, r.y, r.width + 20.0, r.height);
-        if pressed(event) {
-            if reach(a).contains(at) {
-                let mut gesture = actions::swell_gesture(cx.context(), &shared);
-                gesture.set(f64::from(shoe_position(a, at)));
-                drag = Some(ShoeDrag::Swell(gesture));
-            } else if reach(b).contains(at) {
-                drag = Some(ShoeDrag::Crescendo(0));
-            } else {
-                return Handled::No;
-            }
-            cx.capture_pointer();
-        }
-        match drag.as_mut() {
-            Some(ShoeDrag::Swell(gesture)) if at.y.is_finite() => {
-                gesture.set(f64::from(shoe_position(a, at)));
-            }
-            Some(ShoeDrag::Crescendo(step)) if at.y.is_finite() => {
-                let now = (shoe_position(b, at) * 8.0).round() as usize;
-                if now != *step && now > 0 {
-                    actions::recall(cx.context(), &shared, now - 1);
-                }
-                *step = now;
-            }
-            Some(_) => {}
-            None => return Handled::No,
-        }
-        if released(event) {
-            if let Some(ShoeDrag::Swell(gesture)) = drag.take() {
-                gesture.end();
-            }
-            drag = None;
-            cx.release_pointer();
-        }
-        Handled::Yes
-    })
+        |r| Rect::new(r.x - 4.0, r.y, r.width + 20.0, r.height),
+        shoe_position,
+    ))
     .width(PLATE)
     .height(PEDALS)
     .into_view()
@@ -1039,7 +1084,7 @@ fn draw_pedalboard(size: Size, scene: &mut Scene, snapshot: &Snapshot, low: u8, 
 
 /// The status bar's buttons.
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum StatusButton {
+pub(crate) enum StatusButton {
     Undo,
     Redo,
     Light,
@@ -1059,8 +1104,16 @@ const STATUS_BUTTONS: [StatusButton; 7] = [
     StatusButton::Organ,
 ];
 
+/// What the compact console's status bar keeps; the rest are in Settings.
+const COMPACT_BUTTONS: [StatusButton; 4] = [
+    StatusButton::Undo,
+    StatusButton::Models,
+    StatusButton::Organ,
+    StatusButton::Sound,
+];
+
 /// A status button's label: the light it would change to, for Light.
-fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
+pub(crate) fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
     match button {
         StatusButton::Undo => "Undo",
         StatusButton::Redo => "Redo",
@@ -1074,7 +1127,7 @@ fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
 }
 
 /// Whether a status button's panel is open, which lights it.
-fn status_open(button: StatusButton, snapshot: &Snapshot) -> Option<bool> {
+pub(crate) fn status_open(button: StatusButton, snapshot: &Snapshot) -> Option<bool> {
     match button {
         StatusButton::Sound => Some(snapshot.sound.is_some()),
         StatusButton::Models => Some(snapshot.models.is_some()),
@@ -1087,15 +1140,35 @@ fn status_open(button: StatusButton, snapshot: &Snapshot) -> Option<bool> {
 /// A status chip: where, what, and the colour of its dot if it has one.
 type Chip = (Rect, String, Option<Color>);
 
-/// Where the chips and buttons go, right to left from the end.
-fn status_plan(size: Size, snapshot: &Snapshot) -> (Vec<Chip>, Vec<(StatusButton, Rect)>) {
+/// Where the chips and buttons go, right to left from the end: in the full
+/// console all of them, in the compact one those it keeps and the load.
+fn status_plan(
+    size: Size,
+    snapshot: &Snapshot,
+    full: bool,
+) -> (Vec<Chip>, Vec<(StatusButton, Rect)>) {
     let look = snapshot.look;
     let s = style(12.5, 500.0, look.text);
     let y = (size.height - 30.0) / 2.0;
     let mut x = size.width;
     let mut buttons = Vec::new();
-    for button in STATUS_BUTTONS.iter().rev() {
-        let w = width_of(status_label(*button, snapshot), s) + 32.0;
+    let list: &[StatusButton] = if full {
+        &STATUS_BUTTONS
+    } else {
+        &COMPACT_BUTTONS
+    };
+    // Tighter, if that's what it takes for them all to be there.
+    let labels: f32 = list
+        .iter()
+        .map(|b| width_of(status_label(*b, snapshot), s) + 10.0)
+        .sum();
+    let pad = if labels + 32.0 * list.len() as f32 > size.width {
+        16.0
+    } else {
+        32.0
+    };
+    for button in list.iter().rev() {
+        let w = width_of(status_label(*button, snapshot), s) + pad;
         x -= w;
         buttons.push((*button, Rect::new(x, y, w, 30.0)));
         x -= 10.0;
@@ -1108,19 +1181,19 @@ fn status_plan(size: Size, snapshot: &Snapshot) -> (Vec<Chip>, Vec<(StatusButton
     };
     // Each chip as wide as what it can ever say, so a number changing moves
     // nothing; the least needed go first when there is no room for them all.
-    let chips_in = [
-        (
-            snapshot.cpu.clone(),
-            None,
-            width_of("CPU 100 % \u{b7} 000 voices", s),
-        ),
-        (wind.0, Some(wind.1), width_of("Wind under load", s)),
-        (
+    let mut chips_in = vec![(
+        snapshot.cpu.clone(),
+        None,
+        width_of("CPU 100 % \u{b7} 000 voices", s),
+    )];
+    if full {
+        chips_in.push((wind.0, Some(wind.1), width_of("Wind under load", s)));
+        chips_in.push((
             snapshot.tuning.clone(),
             Some(look.accent),
             width_of(&snapshot.tuning, s),
-        ),
-    ];
+        ));
+    }
     let width =
         |c: &(String, Option<Color>, f32)| c.2 + 32.0 + if c.1.is_some() { 14.0 } else { 0.0 };
     let mut kept = chips_in.len();
@@ -1148,10 +1221,59 @@ fn status_plan(size: Size, snapshot: &Snapshot) -> (Vec<Chip>, Vec<(StatusButton
     (chips, buttons)
 }
 
+/// A status button, lit when what it opens is open.
+pub(crate) fn status_button(scene: &mut Scene, look: &Look, r: Rect, label: &str, primary: bool) {
+    let shape = RoundedRect::new(r, 15.0);
+    if primary {
+        let stops = [
+            Stop::new(0.0, look.brass_light),
+            Stop::new(1.0, look.accent),
+        ];
+        scene.shadow(shape, Shadow::glow(10.0, look.accent.with_alpha(0x60)));
+        scene.fill(shape, vertical(r, &stops));
+    } else {
+        scene.fill(shape, status_face(look));
+        scene.stroke(shape, Stroke::new(1.0), look.edge);
+    }
+    let ink = if primary { look.plate_ink } else { look.text };
+    text(
+        scene,
+        label,
+        style(12.5, 600.0, ink),
+        Point::new(r.center().x, r.y + 7.0),
+        0.5,
+    );
+}
+
+fn status_face(look: &Look) -> Color {
+    if look.night {
+        Color::hex(0x2A2019)
+    } else {
+        Color::hex(0xFBF6EC)
+    }
+}
+
+/// What a press of a status button does.
+pub(crate) fn status_press(cx: &mut EventCx<'_>, source: &Source, button: StatusButton) {
+    let shared = source.shared();
+    match button {
+        StatusButton::Undo => actions::undo(cx.context(), shared),
+        StatusButton::Redo => actions::redo(cx.context(), shared),
+        StatusButton::Light => {
+            let params = &shared.params;
+            params.set_console_day(!params.console_day());
+            source.refresh();
+        }
+        StatusButton::Sound => source.toggle_sound(),
+        StatusButton::Models => source.toggle_models(),
+        StatusButton::Demos => source.toggle_demos(),
+        StatusButton::Organ => source.toggle_library(),
+    }
+}
+
 /// The status chips (the tuning, the wind, the load) and the buttons:
 /// undo and redo through the history, and the organ.
-pub(crate) fn status(source: &Rc<Source>) -> View {
-    let shared = source.shared().clone();
+pub(crate) fn status(source: &Rc<Source>, full: bool) -> View {
     let here = Rc::clone(source);
     live(
         "Status",
@@ -1165,15 +1287,11 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
                 ^ (u64::from(s.sound.is_some()) << 2)
                 ^ (u64::from(s.models.is_some()) << 3)
         },
-        |size, scene, snapshot| {
+        move |size, scene, snapshot| {
             let look = snapshot.look;
             let s = style(12.5, 500.0, look.text);
-            let (chips, buttons) = status_plan(size, snapshot);
-            let face = if look.night {
-                Color::hex(0x2A2019)
-            } else {
-                Color::hex(0xFBF6EC)
-            };
+            let (chips, buttons) = status_plan(size, snapshot, full);
+            let face = status_face(&look);
             for (r, label, dot) in &chips {
                 let shape = RoundedRect::new(*r, 15.0);
                 scene.fill(shape, face);
@@ -1191,67 +1309,44 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
                 text(scene, label, s, Point::new(tx, r.y + 7.0), 0.0);
             }
             for (button, r) in &buttons {
-                let label = status_label(*button, snapshot);
-                let shape = RoundedRect::new(*r, 15.0);
-                let primary = status_open(*button, snapshot) == Some(true);
-                if primary {
-                    let stops = [
-                        Stop::new(0.0, look.brass_light),
-                        Stop::new(1.0, look.accent),
-                    ];
-                    scene.shadow(shape, Shadow::glow(10.0, look.accent.with_alpha(0x60)));
-                    scene.fill(shape, vertical(*r, &stops));
-                } else {
-                    scene.fill(shape, face);
-                    scene.stroke(shape, Stroke::new(1.0), look.edge);
-                }
-                let ink = if primary { look.plate_ink } else { look.text };
-                text(
+                status_button(
                     scene,
-                    label,
-                    style(12.5, 600.0, ink),
-                    Point::new(r.center().x, r.y + 7.0),
-                    0.5,
+                    &look,
+                    *r,
+                    status_label(*button, snapshot),
+                    status_open(*button, snapshot) == Some(true),
                 );
             }
         },
     )
-    .items(|s, size| {
-        let (_, buttons) = status_plan(size, s);
-        buttons
-            .into_iter()
-            .map(|(button, rect)| Item {
-                role: Role::Button,
-                name: status_label(button, s).to_string(),
-                checked: status_open(button, s),
-                rect,
-            })
-            .collect()
+    .items(if full {
+        |s, size| status_items(s, size, true)
+    } else {
+        |s, size| status_items(s, size, false)
     })
     .input(move |cx, event, at, size, snapshot| {
         if !pressed(event) {
             return Handled::No;
         }
-        let (_, buttons) = status_plan(size, snapshot);
-        match buttons
-            .iter()
-            .find(|(_, r)| r.contains(at))
-            .map(|(b, _)| *b)
-        {
-            Some(StatusButton::Undo) => actions::undo(cx.context(), &shared),
-            Some(StatusButton::Redo) => actions::redo(cx.context(), &shared),
-            Some(StatusButton::Light) => {
-                let params = &here.shared().params;
-                params.set_console_day(!params.console_day());
-                here.refresh();
-            }
-            Some(StatusButton::Sound) => here.toggle_sound(),
-            Some(StatusButton::Models) => here.toggle_models(),
-            Some(StatusButton::Demos) => here.toggle_demos(),
-            Some(StatusButton::Organ) => here.toggle_library(),
-            None => return Handled::No,
-        }
+        let (_, buttons) = status_plan(size, snapshot, full);
+        let Some((button, _)) = buttons.iter().find(|(_, r)| r.contains(at)) else {
+            return Handled::No;
+        };
+        status_press(cx, &here, *button);
         Handled::Yes
     })
     .into_view()
+}
+
+fn status_items(s: &Snapshot, size: Size, full: bool) -> Vec<Item> {
+    let (_, buttons) = status_plan(size, s, full);
+    buttons
+        .into_iter()
+        .map(|(button, rect)| Item {
+            role: Role::Button,
+            name: status_label(button, s).to_string(),
+            checked: status_open(button, s),
+            rect,
+        })
+        .collect()
 }

@@ -199,36 +199,39 @@ fn the_audio_page_comes_when_the_devices_are_served_after_the_console_opens() {
     caecilia_plugin::stop_serving_devices();
 }
 
-/// Every control of every page lies inside the desk, even in a short
-/// window.
+/// Every control of every page lies inside the desk: with the console zoomed
+/// to a short window, and in the smallest window, where the compact console has
+/// the least width and height to give them.
 #[test]
 fn every_page_fits_the_desk_of_a_short_window() {
     let _asked = serve();
     let mut c = Console::open();
-    c.ui.window().resize(manguebyte_window::PhysicalSize {
-        width: 1600,
-        height: 800,
-    });
-    c.settle();
     c.click(Role::Button, "Settings");
-    let wind = c.find(Role::Group, "Wind").expect("the desk");
-    let desk = wind.bounds;
-    assert!(desk.height < 130.0, "a short desk: {desk:?}");
-    for page in ["Sound", "EQ", "Tuning", "Tremulant", "MIDI", "Audio"] {
-        c.click(Role::Button, &format!("Page {page}"));
-        let controls: Vec<AccessEntry> =
-            c.ui.access_tree()
-                .into_iter()
-                .filter(|e| e.id == wind.id && e.item.is_some())
-                .collect();
-        assert!(controls.len() > 3, "{page}: {controls:?}");
-        for e in &controls {
-            assert!(
-                e.bounds.y >= desk.y && e.bounds.bottom() <= desk.bottom() + 0.5,
-                "{page}: {} at {:?} leaves the desk {desk:?}",
-                e.node.name,
-                e.bounds
-            );
+    for (width, height) in [(1600, 800), (768, 830), (520, 520)] {
+        c.ui.window()
+            .resize(manguebyte_window::PhysicalSize { width, height });
+        c.settle();
+        let wind = c.find(Role::Group, "Wind").expect("the desk");
+        let desk = wind.bounds;
+        for page in ["Sound", "EQ", "Tuning", "Tremulant", "MIDI", "Audio"] {
+            c.click(Role::Button, &format!("Page {page}"));
+            let controls: Vec<AccessEntry> =
+                c.ui.access_tree()
+                    .into_iter()
+                    .filter(|e| e.id == wind.id && e.item.is_some())
+                    .collect();
+            assert!(controls.len() > 3, "{page}: {controls:?}");
+            for e in &controls {
+                assert!(
+                    e.bounds.x >= desk.x
+                        && e.bounds.right() <= desk.right() + 0.5
+                        && e.bounds.y >= desk.y
+                        && e.bounds.bottom() <= desk.bottom() + 0.5,
+                    "{width}x{height}, {page}: {} at {:?} leaves the desk {desk:?}",
+                    e.node.name,
+                    e.bounds
+                );
+            }
         }
     }
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");

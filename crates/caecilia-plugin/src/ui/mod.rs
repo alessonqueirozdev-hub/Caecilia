@@ -9,7 +9,9 @@
 //! manuals with the general pistons in the key slip, the swell and
 //! crescendo shoes, the pedalboard and the toe studs. It is laid out from
 //! the organ the instance plays, and shows what plays: the stops drawn,
-//! the general recalled, every key held, each chest's wind.
+//! the general recalled, every key held, each chest's wind. It is zoomed to
+//! fit any window of about its shape; in one much smaller, as at half a screen
+//! beside a score, [`compact`] takes its place at its real size.
 //!
 //! Everything it shows it reads once a frame from the parameters, the
 //! registration controller and the audio thread's [`Telemetry`]; a part is
@@ -17,6 +19,7 @@
 
 mod actions;
 mod bench;
+mod compact;
 mod controls;
 mod demos;
 mod library;
@@ -31,7 +34,8 @@ mod sound;
 use std::sync::{Arc, Mutex};
 
 use manguebyte_gui::Editor;
-use manguebyte_plugin::editor::HostSize;
+use manguebyte_plugin::editor::{HostSize, Resize};
+use manguebyte_ui::responsive;
 
 use manguebyte_core::spsc::Producer;
 
@@ -48,6 +52,15 @@ pub(crate) fn demo_channels(organ: &caecilia_model::Organ) -> [u8; 3] {
 /// The console's size at scale 1, in logical pixels.
 pub const EDITOR_SIZE: HostSize = HostSize::new(1600, 980);
 
+/// The window can get this small, narrower and shorter than half of a small
+/// screen, and this large.
+const SMALLEST_WINDOW: HostSize = HostSize::new(520, 520);
+const LARGEST_WINDOW: HostSize = HostSize::new(7680, 4320);
+
+/// How small the full console could be zoomed. The compact one takes its place
+/// well before that, at [`compact::BELOW`].
+const SMALLEST_ZOOM: f32 = 0.5;
+
 /// What the console shares with the instance: handles, never the instance.
 #[derive(Clone)]
 pub(crate) struct Shared {
@@ -62,7 +75,19 @@ pub(crate) struct Shared {
 pub(crate) fn editor(shared: Shared) -> Editor {
     Editor::new(EDITOR_SIZE, move || {
         let source = snapshot::Source::new(shared.clone());
-        parts::screen(&source)
+        responsive((
+            parts::screen(&source),
+            compact::screen(&source, false),
+            compact::screen(&source, true),
+        ))
+        .below(compact::BELOW)
+        .below(compact::SHORT_BELOW)
     })
     .with_theme(look::theme(&look::NIGHT))
+    .with_resize(Resize::Free {
+        min: SMALLEST_WINDOW,
+        max: LARGEST_WINDOW,
+    })
+    .with_zoom_to_fit(SMALLEST_ZOOM)
+    .with_real_size_below(compact::BELOW)
 }

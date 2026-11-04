@@ -380,7 +380,7 @@ fn draw_demos(size: Size, scene: &mut Scene, snapshot: &Snapshot, demos: &DemosV
 
 /// The wind: a gauge for each chest; or, while the library is open, the
 /// organs to choose from.
-fn wind(source: &Rc<Source>) -> View {
+pub(crate) fn wind(source: &Rc<Source>) -> View {
     let here = Rc::clone(source);
     let mut drag: Option<sound::Drag> = None;
     live(
@@ -672,8 +672,55 @@ fn title(source: &Rc<Source>) -> View {
     .into_view()
 }
 
+/// The mark and the organ playing, in the compact console.
+pub(crate) fn compact_title(source: &Rc<Source>) -> View {
+    live(
+        "Title",
+        Size::new(190.0, 40.0),
+        source,
+        |_| 0,
+        |size, scene, snapshot| {
+            let look = snapshot.look;
+            let top = (size.height - 34.0) / 2.0;
+            MARK.with(|mark| {
+                if let Some(mark) = mark {
+                    scene.image(
+                        mark,
+                        Rect::new(0.0, top - 2.0, 36.0, 36.0),
+                        Sampling::Bilinear,
+                    );
+                }
+            });
+            text(
+                scene,
+                "Caecilia",
+                style(15.0, 650.0, look.text),
+                Point::new(42.0, top - 1.0),
+                0.0,
+            );
+            let s = style(11.0, 450.0, look.text2);
+            text(
+                scene,
+                &sound::fit(&snapshot.organ.name, s, size.width - 42.0),
+                s,
+                Point::new(42.0, top + 18.0),
+                0.0,
+            );
+        },
+    )
+    .describe(|s| {
+        format!(
+            "{}, in the {}'s light",
+            s.organ.name,
+            if s.look.night { "night" } else { "day" }
+        )
+    })
+    .width(190.0)
+    .into_view()
+}
+
 /// Behind it all: the room, and a warm light over the music desk.
-fn backdrop(source: &Rc<Source>) -> View {
+pub(crate) fn backdrop(source: &Rc<Source>) -> View {
     live(
         "",
         Size::new(1.0, 1.0),
@@ -705,7 +752,7 @@ fn backdrop(source: &Rc<Source>) -> View {
 
 /// Nothing to see: keeps the frames coming, so the wind moves and the
 /// console follows the organ.
-struct Ticker;
+pub(crate) struct Ticker;
 
 impl Widget for Ticker {
     fn access(&self, _cx: &AccessCx<'_>) -> AccessNode {
@@ -723,9 +770,14 @@ impl Widget for Ticker {
     }
 }
 
+/// Something to keep the frames coming, for a screen to hold.
+pub(crate) fn ticker() -> Ticker {
+    Ticker
+}
+
 /// The console.
 pub(crate) fn screen(source: &Rc<Source>) -> View {
-    let top = row((title(source), Ticker, status(source).flex(1.0)))
+    let top = row((title(source), Ticker, status(source, true).flex(1.0)))
         .spacing(12.0)
         .align(Align::Center);
     let middle = column((registration(source), wind(source)))

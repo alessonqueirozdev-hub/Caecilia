@@ -32,9 +32,20 @@ const PA_PER_MM: f32 = 9.806_65;
 
 /// A run of drawstops under one plate.
 pub(crate) struct Section {
+    /// The division's name as it's written, and as the plate engraves it.
+    pub(crate) name: String,
     pub(crate) title: String,
     pub(crate) note: String,
     pub(crate) stops: Vec<usize>,
+}
+
+/// The two models the sustain pedal alternates, by name.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PedalView {
+    pub(crate) first: String,
+    pub(crate) second: String,
+    /// Which of the two is drawn, 0 or 1, if either.
+    pub(crate) on: Option<u8>,
 }
 
 /// A keyboard: a manual or the pedalboard.
@@ -108,6 +119,7 @@ impl Layout {
                 None => channel,
             };
             Section {
+                name: name.to_string(),
                 title: name.to_uppercase(),
                 note,
                 stops: organ
@@ -285,6 +297,10 @@ pub(crate) struct Snapshot {
     pub(crate) tuning: String,
     pub(crate) wind_steady: bool,
     pub(crate) cpu: String,
+    /// What a keyboard switched to another manual now plays.
+    pub(crate) route: Option<String>,
+    /// The models the sustain pedal alternates, once both are chosen.
+    pub(crate) pedal: Option<PedalView>,
     /// The organ library, while it is open.
     pub(crate) library: Option<LibraryView>,
     /// The demonstrations, while they are open.
@@ -532,6 +548,37 @@ impl Source {
         self.refresh();
     }
 
+    /// What a keyboard switched to another manual now plays.
+    fn route_text(&self, organ: &Organ) -> Option<String> {
+        self.shared.telemetry.route().map(|(channel, divisions)| {
+            let names: Vec<&str> = organ
+                .divisions()
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| divisions & (1 << i) != 0)
+                .map(|(_, d)| d.name.as_str())
+                .collect();
+            format!("Channel {} plays {}", channel + 1, names.join(" + "))
+        })
+    }
+
+    /// The models the sustain pedal alternates, and which is drawn.
+    fn pedal_view(&self, organ: &Organ) -> Option<PedalView> {
+        let console = &self.shared.params.console;
+        let (a, b) = console.pedal_pair()?;
+        let drawn = self.shared.params.stop_mask();
+        let on = [a, b].iter().position(|n| {
+            console
+                .model(*n)
+                .is_some_and(|m| m.0 == drawn && drawn != 0)
+        });
+        Some(PedalView {
+            first: crate::models::label(organ, a),
+            second: crate::models::label(organ, b),
+            on: on.map(|n| n as u8),
+        })
+    }
+
     /// Start choosing the two models the sustain pedal alternates; pressed
     /// again, the pedal goes back to sustaining.
     pub(crate) fn press_pedal_models(&self) {
@@ -773,16 +820,7 @@ impl Source {
                 (i as u16, d.name.clone(), key)
             })
             .collect();
-        let route = self.shared.telemetry.route().map(|(channel, divisions)| {
-            let names: Vec<&str> = organ
-                .divisions()
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| divisions & (1 << i) != 0)
-                .map(|(_, d)| d.name.as_str())
-                .collect();
-            format!("Channel {} plays {}", channel + 1, names.join(" + "))
-        });
+        let route = self.route_text(organ);
         LearnView {
             on: self.learning.get(),
             waiting_for: armed.map(|a| sound_page::action_name(organ, a)),
@@ -1117,7 +1155,11 @@ impl Source {
             )
         });
 
+        let route = self.route_text(organ);
+        let pedal = self.pedal_view(organ);
         Snapshot {
+            route,
+            pedal,
             library,
             demos,
             models,
