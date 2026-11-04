@@ -17,6 +17,9 @@ pub const GENERALS: usize = 16;
 /// MIDI-learned controls the console can hold.
 pub const LEARN_SLOTS: usize = 64;
 
+/// The bit of an action's index that says a model rather than a manual.
+const MODEL_FLAG: u16 = 0x8000;
+
 /// What a learned control does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -35,6 +38,9 @@ pub enum Action {
     /// A manual switch: the keyboard it is pressed on plays this division
     /// from now on; pressed with another switch held, this division too.
     Manual(u16),
+    /// A registration model: its stops, and a keyboard on its own plays the
+    /// manuals they stand on.
+    Model(u16),
 }
 
 impl Action {
@@ -47,6 +53,9 @@ impl Action {
             Self::PreviousGeneral => (5, 0),
             Self::Cancel => (6, 0),
             Self::Manual(n) => (7, n),
+            // One kind with the manuals, so that saved sessions keep theirs:
+            // the three bits of a kind are all taken.
+            Self::Model(n) => (7, n | MODEL_FLAG),
         };
         (kind << 16) | u32::from(index)
     }
@@ -60,6 +69,7 @@ impl Action {
             4 => Self::NextGeneral,
             5 => Self::PreviousGeneral,
             6 => Self::Cancel,
+            7 if index & MODEL_FLAG != 0 => Self::Model(index & !MODEL_FLAG),
             7 => Self::Manual(index),
             _ => return None,
         })
@@ -138,6 +148,10 @@ pub struct ConsoleMemory {
     current_general: AtomicU32,
     learn: [AtomicU32; LEARN_SLOTS],
     armed: AtomicU32,
+    /// What each registration model does on the organ playing: its stops, and
+    /// the manuals it plays in the low half of the other, its tremulant above.
+    model_stops: [AtomicU64; crate::models::MODELS],
+    model_rest: [AtomicU32; crate::models::MODELS],
 }
 
 impl Default for ConsoleMemory {
@@ -148,6 +162,8 @@ impl Default for ConsoleMemory {
             current_general: AtomicU32::new(u32::MAX),
             learn: std::array::from_fn(|_| AtomicU32::new(0)),
             armed: AtomicU32::new(0),
+            model_stops: std::array::from_fn(|_| AtomicU64::new(0)),
+            model_rest: std::array::from_fn(|_| AtomicU32::new(0)),
         }
     }
 }
@@ -166,6 +182,25 @@ impl ConsoleMemory {
         if n < GENERALS {
             self.general_stops[n].store(stops, Ordering::Relaxed);
             self.general_couplers[n].store(couplers, Ordering::Relaxed);
+        }
+    }
+
+    /// What model `n` does on the organ playing: its stops, the manuals a
+    /// keyboard on its own then plays, and its tremulant.
+    pub fn model(&self, n: usize) -> Option<(u64, u16, bool)> {
+        let rest = self.model_rest.get(n)?.load(Ordering::Relaxed);
+        Some((
+            self.model_stops[n].load(Ordering::Relaxed),
+            rest as u16,
+            rest >> 16 != 0,
+        ))
+    }
+
+    pub(crate) fn set_model(&self, n: usize, stops: u64, manuals: u16, tremulant: bool) {
+        if n < crate::models::MODELS {
+            self.model_stops[n].store(stops, Ordering::Relaxed);
+            let rest = u32::from(manuals) | u32::from(tremulant) << 16;
+            self.model_rest[n].store(rest, Ordering::Relaxed);
         }
     }
 

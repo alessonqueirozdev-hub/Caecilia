@@ -276,3 +276,104 @@ fn the_midi_page_sets_the_manual_switches() {
     let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
     std::fs::write(dir.join("console-switches@1x.png"), png).unwrap();
 }
+
+/// The stops the host-visible parameters say are drawn, by name.
+fn drawn_names(c: &mut Console) -> Vec<String> {
+    let mask = c.h.plugin_mut().params().stop_mask();
+    c.h.plugin_mut()
+        .organ()
+        .stops()
+        .iter()
+        .filter(|s| mask & (1 << s.id.0) != 0)
+        .map(|s| s.name.clone())
+        .collect()
+}
+
+#[test]
+fn a_model_draws_its_stops_and_sends_the_keyboard_to_its_manual() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Models");
+    c.click(Role::Button, "Model Récit: flutes");
+    let names = drawn_names(&mut c);
+    assert!(names.iter().any(|n| n == "Flûte octaviante 4"), "{names:?}");
+    assert!(!names.iter().any(|n| n == "Montre 8"), "{names:?}");
+    // Récit is division 2.
+    let telemetry = c.h.plugin_mut().telemetry();
+    assert_eq!(telemetry.route(), Some((0, 1 << 2)));
+    assert!(
+        c.says("Wind").contains("Récit: flutes (drawn)"),
+        "{}",
+        c.says("Wind")
+    );
+
+    c.click(Role::Button, "Model Grand-Orgue: plenum");
+    assert!(drawn_names(&mut c).iter().any(|n| n == "Fourniture IV"));
+    assert_eq!(telemetry.route(), Some((0, 1 << 1)));
+    assert!(!c.h.plugin_mut().params().tremulant.value());
+
+    c.click(Role::Button, "Model Récit: strings");
+    assert!(
+        c.h.plugin_mut().params().tremulant.value(),
+        "the strings tremble"
+    );
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-models@1x.png"), png).unwrap();
+}
+
+#[test]
+fn a_key_of_the_keyboard_chooses_a_model() {
+    let mut c = Console::open();
+    c.click(Role::Button, "Models");
+    c.click(Role::Button, "Assign keys");
+    c.click(Role::Button, "Model Récit: flutes");
+    assert!(
+        c.says("Wind").contains("press the key for Récit: flutes"),
+        "{}",
+        c.says("Wind")
+    );
+    let note = manguebyte_dsp::event::NoteRef::new(0, 94);
+    let key = |c: &mut Console, frame: u64, on: bool| {
+        c.h.schedule(
+            frame,
+            if on {
+                manguebyte_dsp::event::EventKind::NoteOn {
+                    note,
+                    velocity: 1.0,
+                }
+            } else {
+                manguebyte_dsp::event::EventKind::NoteOff {
+                    note,
+                    velocity: 0.0,
+                }
+            },
+        );
+    };
+    let at = c.h.position();
+    key(&mut c, at + 10, true);
+    key(&mut c, at + 20, false);
+    c.settle();
+    assert!(
+        c.says("Wind").contains("Récit: flutes on Bb6"),
+        "{}",
+        c.says("Wind")
+    );
+
+    // Another model, then the key: it comes back.
+    c.click(Role::Button, "Assign keys");
+    c.click(Role::Button, "Model Grand-Orgue: plenum");
+    assert!(drawn_names(&mut c).iter().any(|n| n == "Fourniture IV"));
+    let at = c.h.position();
+    key(&mut c, at + 10, true);
+    key(&mut c, at + 20, false);
+    c.settle();
+    let names = drawn_names(&mut c);
+    assert!(names.iter().any(|n| n == "Flûte octaviante 4"), "{names:?}");
+    assert!(!names.iter().any(|n| n == "Fourniture IV"), "{names:?}");
+    assert_eq!(
+        c.h.plugin_mut().engine().unwrap().active_voices(),
+        0,
+        "a key that chooses is not a pipe"
+    );
+}

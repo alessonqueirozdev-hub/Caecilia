@@ -129,6 +129,7 @@ impl CaeciliaParams {
             .collect();
         let console = ConsoleMemory::default();
         set_factory_generals(&console, &organ);
+        set_models(&console, &organ);
         let (organ, audio) = OrganSlot::new(organ, path);
         let params = Self {
             level: FloatParam::new("level", "Level", FloatRange::linear(-40.0, 6.0), 0.0)
@@ -219,6 +220,7 @@ impl CaeciliaParams {
         });
         let generals = ConsoleMemory::default();
         set_factory_generals(&generals, &organ);
+        set_models(&self.console, &organ);
         let stop_names: Vec<String> = (0..self.stops.len())
             .map(|n| stop_name(&organ, n))
             .collect();
@@ -297,6 +299,14 @@ impl CaeciliaParams {
 }
 
 /// The factory generals in the first pistons, the rest empty.
+/// What each registration model does on `organ`.
+fn set_models(console: &ConsoleMemory, organ: &Organ) {
+    for (n, model) in crate::models::TABLE.iter().enumerate() {
+        let (stops, manuals) = crate::models::resolve(organ, n);
+        console.set_model(n, stops, manuals, model.tremulant);
+    }
+}
+
 fn set_factory_generals(console: &ConsoleMemory, organ: &Organ) {
     for n in 0..GENERALS {
         console.set_general(n, 0, 0);

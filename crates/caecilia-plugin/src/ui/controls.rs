@@ -1044,15 +1044,17 @@ enum StatusButton {
     Redo,
     Light,
     Sound,
+    Models,
     Demos,
     Organ,
 }
 
-const STATUS_BUTTONS: [StatusButton; 6] = [
+const STATUS_BUTTONS: [StatusButton; 7] = [
     StatusButton::Undo,
     StatusButton::Redo,
     StatusButton::Light,
     StatusButton::Sound,
+    StatusButton::Models,
     StatusButton::Demos,
     StatusButton::Organ,
 ];
@@ -1065,6 +1067,7 @@ fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
         StatusButton::Light if snapshot.look.night => "Day mode",
         StatusButton::Light => "Night mode",
         StatusButton::Sound => "Settings",
+        StatusButton::Models => "Models",
         StatusButton::Demos => "Demos",
         StatusButton::Organ => "Organs",
     }
@@ -1074,6 +1077,7 @@ fn status_label(button: StatusButton, snapshot: &Snapshot) -> &'static str {
 fn status_open(button: StatusButton, snapshot: &Snapshot) -> Option<bool> {
     match button {
         StatusButton::Sound => Some(snapshot.sound.is_some()),
+        StatusButton::Models => Some(snapshot.models.is_some()),
         StatusButton::Demos => Some(snapshot.demos.is_some()),
         StatusButton::Organ => Some(snapshot.library.is_some()),
         _ => None,
@@ -1159,6 +1163,7 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
                 ^ u64::from(s.library.is_some())
                 ^ (u64::from(s.demos.is_some()) << 1)
                 ^ (u64::from(s.sound.is_some()) << 2)
+                ^ (u64::from(s.models.is_some()) << 3)
         },
         |size, scene, snapshot| {
             let look = snapshot.look;
@@ -1241,6 +1246,7 @@ pub(crate) fn status(source: &Rc<Source>) -> View {
                 here.refresh();
             }
             Some(StatusButton::Sound) => here.toggle_sound(),
+            Some(StatusButton::Models) => here.toggle_models(),
             Some(StatusButton::Demos) => here.toggle_demos(),
             Some(StatusButton::Organ) => here.toggle_library(),
             None => return Handled::No,

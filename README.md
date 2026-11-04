@@ -58,6 +58,9 @@ too**.
 - **Registration that thinks.** A selector language (`div:recit & family:string`)
   draws stops by their nature, undo and redo walk the history, and every stop can
   say why it is drawn.
+- **Models, one press away.** Ready-made sounds, from a Récit oboe to a Baroque
+  organ to the tutti, each drawing its stops and sending your keyboard to the right
+  manual. Any key of your keyboard can choose one.
 - **Plays without a keyboard.** Bach demonstrations draw their own stops and play
   themselves, and a tour sounds every stop alone. With one MIDI keyboard, keys you
   choose switch between the manuals or play both.

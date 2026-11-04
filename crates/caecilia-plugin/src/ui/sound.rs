@@ -183,6 +183,7 @@ pub(crate) fn action_name(organ: &caecilia_model::Organ, action: Action) -> Stri
         Action::NextGeneral => "Next general".into(),
         Action::PreviousGeneral => "Previous general".into(),
         Action::Cancel => "Cancel".into(),
+        Action::Model(n) => crate::models::label(organ, usize::from(n)),
         Action::Manual(n) => organ
             .divisions()
             .get(usize::from(n))
@@ -541,7 +542,7 @@ fn slider(scene: &mut Scene, snapshot: &Snapshot, r: Rect, name: &str, at: f32, 
 }
 
 /// `name`, cut to fit `width`.
-fn fit(name: &str, s: TextStyle, width: f32) -> String {
+pub(crate) fn fit(name: &str, s: TextStyle, width: f32) -> String {
     let mut out = name.to_string();
     while width_of(&out, s) > width && out.chars().count() > 4 {
         let kept: String = out.trim_end_matches('\u{2026}').chars().collect();
@@ -552,7 +553,7 @@ fn fit(name: &str, s: TextStyle, width: f32) -> String {
 }
 
 /// A chip, lit when `on`; its name cut if it must be.
-fn chip(scene: &mut Scene, snapshot: &Snapshot, r: Rect, name: &str, on: bool) {
+pub(crate) fn chip(scene: &mut Scene, snapshot: &Snapshot, r: Rect, name: &str, on: bool) {
     let look = snapshot.look;
     let shape = RoundedRect::new(r, r.height / 2.0);
     if on {

@@ -228,6 +228,21 @@ pub(crate) struct DemosView {
     pub(crate) tour: Option<String>,
 }
 
+/// What the registration models show.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct ModelsView {
+    /// The page of the list showing.
+    pub(crate) page: usize,
+    /// Each model's name, and the key that chooses it.
+    pub(crate) rows: Vec<(String, Option<String>)>,
+    /// The model whose stops are what's drawn, if one is.
+    pub(crate) current: Option<usize>,
+    /// Whether a press binds a key rather than drawing the model.
+    pub(crate) assigning: bool,
+    /// The model waiting for its key.
+    pub(crate) waiting: Option<String>,
+}
+
 /// Remember that `mask` is the registration `name` drew, the last few only.
 pub(crate) fn name_registration(named: &RefCell<Vec<(u64, String)>>, mask: u64, name: &str) {
     let mut named = named.borrow_mut();
@@ -268,6 +283,7 @@ pub(crate) struct Snapshot {
     pub(crate) library: Option<LibraryView>,
     /// The demonstrations, while they are open.
     pub(crate) demos: Option<DemosView>,
+    pub(crate) models: Option<ModelsView>,
     /// The sound panel, while it is open.
     pub(crate) sound: Option<SoundView>,
 }
@@ -307,6 +323,7 @@ impl Snapshot {
         hash_of(|h| {
             self.library.hash(h);
             self.demos.hash(h);
+            self.models.hash(h);
             self.sound.hash(h);
             for c in &self.chests {
                 c.now_mm.to_bits().hash(h);
@@ -399,6 +416,8 @@ pub(crate) struct Source {
     library: RefCell<Option<(Vec<Entry>, Option<String>)>>,
     /// Whether the demonstrations are open.
     demos: Cell<bool>,
+    models: Cell<bool>,
+    model_page: Cell<usize>,
     demo_page: Cell<usize>,
     /// Whether the sound panel is open, and on which page.
     sound: Cell<bool>,
@@ -430,7 +449,7 @@ impl Source {
         let organ = shared.params.organ.organ();
         let layout = Rc::new(Layout::of(&organ));
         let generation = shared.params.organ.generation();
-        Rc::new(Source {
+        let source = Rc::new(Source {
             shared,
             organ: RefCell::new(organ),
             layout: RefCell::new(layout),
@@ -442,6 +461,8 @@ impl Source {
             focus: Cell::new(None),
             library: RefCell::new(None),
             demos: Cell::new(false),
+            models: Cell::new(false),
+            model_page: Cell::new(0),
             demo_page: Cell::new(0),
             sound: Cell::new(false),
             page: Cell::new(0),
@@ -455,7 +476,12 @@ impl Source {
             tour: RefCell::new(None),
             script: RefCell::new(None),
             named: Rc::default(),
-        })
+        });
+        {
+            let organ = source.organ();
+            source.name_models(&organ);
+        }
+        source
     }
 
     pub(crate) fn shared(&self) -> &Shared {
@@ -476,8 +502,41 @@ impl Source {
     pub(crate) fn toggle_demos(&self) {
         self.demos.set(!self.demos.get());
         self.sound.set(false);
+        self.models.set(false);
         self.set_learning(false);
         *self.library.borrow_mut() = None;
+        self.refresh();
+    }
+
+    /// Open the registration models, or close them; the others close.
+    pub(crate) fn toggle_models(&self) {
+        self.models.set(!self.models.get());
+        self.sound.set(false);
+        self.demos.set(false);
+        self.set_learning(false);
+        *self.library.borrow_mut() = None;
+        self.refresh();
+    }
+
+    /// Show page `n` of the models.
+    pub(crate) fn model_page(&self, n: usize) {
+        self.model_page.set(n);
+        self.refresh();
+    }
+
+    /// Have the models wait for keys, or draw again.
+    pub(crate) fn assign_model_keys(&self, on: bool) {
+        self.set_learning(on);
+        self.refresh();
+    }
+
+    /// Press model `n`: wait for its key, or draw it.
+    pub(crate) fn press_model(&self, n: usize) {
+        if !self.learn(crate::console::Action::Model(n as u16)) {
+            if let Ok(mut notes) = self.shared.notes.lock() {
+                let _ = notes.push(crate::UiNote::Model(n as u16));
+            }
+        }
         self.refresh();
     }
 
@@ -712,6 +771,7 @@ impl Source {
         self.sound.set(!self.sound.get());
         self.set_learning(false);
         self.demos.set(false);
+        self.models.set(false);
         *self.library.borrow_mut() = None;
         self.refresh();
     }
@@ -719,6 +779,7 @@ impl Source {
     /// Open the organ library, looking for organs now, or close it.
     pub(crate) fn toggle_library(&self) {
         self.demos.set(false);
+        self.models.set(false);
         self.sound.set(false);
         self.set_learning(false);
         let open = self.library_open();
@@ -783,6 +844,14 @@ impl Source {
 
     /// Follow the organ the slot holds, if it changed: another organ, laid
     /// out again, its wind's past forgotten.
+    /// Let the history call each model by its name on `organ`.
+    fn name_models(&self, organ: &Organ) {
+        for n in 0..crate::models::MODELS {
+            let (mask, _) = crate::models::resolve(organ, n);
+            name_registration(&self.named, mask, &crate::models::label(organ, n));
+        }
+    }
+
     fn follow_organ(&self) {
         let slot = &self.shared.params.organ;
         let generation = slot.generation();
@@ -791,6 +860,7 @@ impl Source {
         }
         let organ = slot.organ();
         *self.layout.borrow_mut() = Rc::new(Layout::of(&organ));
+        self.name_models(&organ);
         *self.organ.borrow_mut() = organ;
         self.traces.borrow_mut().clear();
         self.generation.set(generation);
@@ -951,6 +1021,36 @@ impl Source {
             }),
         });
 
+        let models = self.models.get().then(|| {
+            let console = &self.shared.params.console;
+            let bindings = console.bindings();
+            let drawn = self.shared.params.stop_mask();
+            let learn = self.learn_view(organ);
+            let rows = (0..crate::models::MODELS)
+                .map(|n| {
+                    let key = bindings
+                        .iter()
+                        .find(|b| b.action == crate::console::Action::Model(n as u16))
+                        .map(|b| match b.source {
+                            crate::console::Source::Key { note, .. } => note_name(note),
+                            other => sound_page::control_name(other),
+                        });
+                    (crate::models::label(organ, n), key)
+                })
+                .collect();
+            ModelsView {
+                page: self.model_page.get(),
+                rows,
+                current: (0..crate::models::MODELS).find(|n| {
+                    console
+                        .model(*n)
+                        .is_some_and(|m| m.0 == drawn && drawn != 0)
+                }),
+                assigning: learn.on,
+                waiting: learn.waiting_for,
+            }
+        });
+
         let sound = self.sound.get().then(|| {
             SoundView::read(
                 self,
@@ -964,6 +1064,7 @@ impl Source {
         Snapshot {
             library,
             demos,
+            models,
             sound,
             look: self.look(),
             organ: Arc::clone(organ),
@@ -1101,7 +1202,7 @@ fn why_for(
         Reason::SnapshotRecall => match label_of(explained.node).as_str() {
             l if l.starts_with("General") => format!("drawn by {l}"),
             "Opening" => "drawn as the organ opened".to_string(),
-            l if named.iter().any(|(_, n)| n == l) => format!("drawn for the {l} demonstration"),
+            l if named.iter().any(|(_, n)| n == l) => format!("drawn for {l}"),
             _ => "drawn from the host".to_string(),
         },
     };

@@ -24,7 +24,7 @@ use super::demos::{self, tour_row};
 use super::live::{Item, live};
 use super::paint::{arrow, gauge, heading, panel, polygon, style, text, width_of};
 use super::registration::registration;
-use super::snapshot::{DemosView, Snapshot, Source};
+use super::snapshot::{DemosView, ModelsView, Snapshot, Source};
 use super::sound;
 
 thread_local! {
@@ -94,6 +94,85 @@ fn demo_plan(size: Size, count: usize, page: usize) -> DemoPlan {
     }
 }
 
+/// The button that has models wait for keys.
+fn assign_rect(size: Size) -> Rect {
+    Rect::new(size.width - 20.0 - 96.0, 10.0, 96.0, 22.0)
+}
+
+fn draw_models(size: Size, scene: &mut Scene, snapshot: &Snapshot, models: &ModelsView) {
+    let look = snapshot.look;
+    text(
+        scene,
+        "Models",
+        style(13.0, 650.0, look.text),
+        Point::new(20.0, 13.0),
+        0.0,
+    );
+    let plan = demo_plan(size, models.rows.len(), models.page);
+    if plan.pages > 1 {
+        for (r, left) in [(plan.previous, true), (plan.next, false)] {
+            scene.fill(RoundedRect::new(r, 8.0), look.edge.with_alpha(0x60));
+            let c = r.center();
+            let d = if left { -1.0 } else { 1.0 };
+            let mark = polygon(&[
+                Point::new(c.x - 2.5 * d, c.y - 5.0),
+                Point::new(c.x + 3.5 * d, c.y),
+                Point::new(c.x - 2.5 * d, c.y + 5.0),
+            ]);
+            scene.fill(&mark, look.text);
+        }
+        text(
+            scene,
+            &format!("{} / {}", plan.page + 1, plan.pages),
+            style(11.5, 500.0, look.text2),
+            Point::new((plan.previous.right() + plan.next.x) / 2.0, 16.0),
+            0.5,
+        );
+    }
+    let assign = assign_rect(size);
+    sound::chip(scene, snapshot, assign, "Assign keys", models.assigning);
+    if models.assigning {
+        let saying = match &models.waiting {
+            Some(what) => format!("Press the key for {what}"),
+            None => "Choose a model".to_string(),
+        };
+        let s = style(11.0, 600.0, look.accent);
+        let left = plan.next.right() + 8.0;
+        text(
+            scene,
+            &sound::fit(&saying, s, assign.x - 8.0 - left),
+            s,
+            Point::new(assign.x - 8.0, 15.0),
+            1.0,
+        );
+    }
+    for (n, r) in &plan.rows {
+        let (name, key) = &models.rows[*n];
+        let on = models.current == Some(*n);
+        let shape = RoundedRect::new(*r, 8.0);
+        if on {
+            scene.fill(shape, look.accent.with_alpha(0x2A));
+            scene.stroke(shape, Stroke::new(1.0), look.accent);
+        } else {
+            scene.fill(shape, look.edge.with_alpha(0x60));
+        }
+        let mut room = r.width - 20.0;
+        if let Some(key) = key {
+            let s = style(11.0, 600.0, look.accent);
+            room -= width_of(key, s) + 10.0;
+            text(scene, key, s, Point::new(r.right() - 10.0, r.y + 5.0), 1.0);
+        }
+        let s = style(12.0, if on { 650.0 } else { 500.0 }, look.text);
+        text(
+            scene,
+            &sound::fit(name, s, room),
+            s,
+            Point::new(r.x + 10.0, r.y + 4.0),
+            0.0,
+        );
+    }
+}
+
 fn draw_wind(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
     let look = snapshot.look;
     let rect = Rect::new(0.0, 0.0, size.width, size.height);
@@ -104,6 +183,10 @@ fn draw_wind(size: Size, scene: &mut Scene, snapshot: &Snapshot) {
     }
     if let Some(demos) = &snapshot.demos {
         draw_demos(size, scene, snapshot, demos);
+        return;
+    }
+    if let Some(models) = &snapshot.models {
+        draw_models(size, scene, snapshot, models);
         return;
     }
     if let Some(library) = &snapshot.library {
@@ -264,6 +347,28 @@ fn wind(source: &Rc<Source>) -> View {
         if let Some(sound) = &s.sound {
             return sound::describe(sound);
         }
+        if let Some(models) = &s.models {
+            let rows: Vec<String> = models
+                .rows
+                .iter()
+                .enumerate()
+                .map(|(n, (name, key))| {
+                    let mut said = name.clone();
+                    if let Some(key) = key {
+                        said.push_str(&format!(" on {key}"));
+                    }
+                    if models.current == Some(n) {
+                        said.push_str(" (drawn)");
+                    }
+                    said
+                })
+                .collect();
+            let mut said = format!("Models: {}", rows.join(", "));
+            if let Some(what) = &models.waiting {
+                said.push_str(&format!("; press the key for {what}"));
+            }
+            return said;
+        }
         if let Some(demos) = &s.demos {
             let rows: Vec<String> = demos::names()
                 .iter()
@@ -304,6 +409,39 @@ fn wind(source: &Rc<Source>) -> View {
     .items(|s, size| {
         if let Some(sound) = &s.sound {
             return sound::items(sound, size);
+        }
+        if let Some(models) = &s.models {
+            let plan = demo_plan(size, models.rows.len(), models.page);
+            let mut items: Vec<Item> = plan
+                .rows
+                .iter()
+                .map(|(n, rect)| Item {
+                    role: Role::Button,
+                    name: format!("Model {}", models.rows[*n].0),
+                    checked: Some(models.current == Some(*n)),
+                    rect: *rect,
+                })
+                .collect();
+            items.push(Item {
+                role: Role::Button,
+                name: "Assign keys".into(),
+                checked: Some(models.assigning),
+                rect: assign_rect(size),
+            });
+            if plan.pages > 1 {
+                for (name, rect) in [
+                    ("Previous models", plan.previous),
+                    ("Next models", plan.next),
+                ] {
+                    items.push(Item {
+                        role: Role::Button,
+                        name: name.into(),
+                        checked: None,
+                        rect,
+                    });
+                }
+            }
+            return items;
         }
         if let Some(demos) = &s.demos {
             let names = demos::names();
@@ -361,6 +499,26 @@ fn wind(source: &Rc<Source>) -> View {
         }
         if !matches!(event, Event::PointerDown { .. }) {
             return Handled::No;
+        }
+        if let Some(view) = &snapshot.models {
+            let plan = demo_plan(size, view.rows.len(), view.page);
+            if assign_rect(size).contains(at) {
+                here.assign_model_keys(!view.assigning);
+                return Handled::Yes;
+            }
+            if plan.pages > 1 && plan.previous.contains(at) {
+                here.model_page(plan.page.saturating_sub(1));
+                return Handled::Yes;
+            }
+            if plan.pages > 1 && plan.next.contains(at) {
+                here.model_page(plan.page + 1);
+                return Handled::Yes;
+            }
+            let Some((n, _)) = plan.rows.iter().find(|(_, r)| r.contains(at)) else {
+                return Handled::No;
+            };
+            here.press_model(*n);
+            return Handled::Yes;
         }
         if let Some(view) = &snapshot.demos {
             let plan = demo_plan(size, demos::names().len(), view.page);

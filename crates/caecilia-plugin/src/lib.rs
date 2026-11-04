@@ -33,6 +33,7 @@ mod controller;
 mod demo;
 mod demo_files;
 mod devices;
+mod models;
 mod params;
 mod sound;
 mod switch;
@@ -148,6 +149,8 @@ pub(crate) enum UiNote {
     },
     /// Stop the demonstration.
     Stop,
+    /// Draw a registration model.
+    Model(u16),
 }
 
 /// Orders `events` by offset, keeping the order of those on one sample:
@@ -202,6 +205,11 @@ pub struct Caecilia {
     /// The divisions each held key went down on, so it comes up there
     /// whatever was switched since.
     sounding: [[u16; 128]; 16],
+    /// The channels keys have come from, as bits, and the last of them: a
+    /// model sends a keyboard on its own to its manuals, and leaves a console
+    /// of several keyboards as it is.
+    channels_played: u16,
+    last_channel: u8,
     /// Each controller's last value, for firing learned controls on the press.
     controller_values: [[u8; 128]; 16],
     /// Who changed the registration this block, if the console did.
@@ -332,7 +340,7 @@ impl Caecilia {
                 self.origin.get_or_insert(Origin::Control);
             }
             // Taken where the key's channel is known (`console_takes`).
-            Action::Manual(_) => {}
+            Action::Manual(_) | Action::Model(_) => {}
         }
     }
 
@@ -354,6 +362,15 @@ impl Caecilia {
                             self.switch_manual(channel, None, division);
                         }
                     }
+                }
+                true
+            }
+            Some(Action::Model(n)) => {
+                if pressed {
+                    let channel = match source {
+                        Source::Key { channel, .. } | Source::Controller { channel, .. } => channel,
+                    };
+                    self.apply_model(usize::from(n), Some(channel));
                 }
                 true
             }
@@ -469,6 +486,24 @@ impl Caecilia {
                 Command::NoteOff { division, note }
             };
             self.push(offset, command);
+        }
+    }
+
+    /// Draw model `n`. A keyboard on its own goes to the manuals it drew stops on.
+    fn apply_model(&mut self, n: usize, channel: Option<u8>) {
+        let Some((stops, manuals, tremulant)) = self.params.console.model(n) else {
+            return;
+        };
+        if stops == 0 {
+            return;
+        }
+        self.set_masks(stops, 0);
+        self.params.tremulant.set(tremulant);
+        self.origin.get_or_insert(Origin::Control);
+        if manuals != 0 && self.channels_played.count_ones() <= 1 {
+            let channel = channel.unwrap_or(self.last_channel) & 0x0F;
+            self.routes[usize::from(channel)] = manuals;
+            self.telemetry.set_route(channel, manuals);
         }
     }
 
@@ -701,6 +736,8 @@ impl Plugin for Caecilia {
             switches_held: [0; 16],
             routes: [0; 16],
             sounding: [[0; 128]; 16],
+            channels_played: 0,
+            last_channel: 0,
             controller_values: [[0; 128]; 16],
             origin: None,
             temperaments: temperament_tables(),
@@ -881,6 +918,7 @@ impl Plugin for Caecilia {
                     });
                     self.demo = demo;
                 }
+                UiNote::Model(n) => self.apply_model(usize::from(n), None),
                 UiNote::Stop => {
                     let mut demo = std::mem::replace(&mut self.demo, demo::Player::new());
                     demo.stop(|at, c, k, on| self.play_key(at, c, k, on));
@@ -898,6 +936,8 @@ impl Plugin for Caecilia {
                     let key = note.key & 0x7F;
                     let bit = 1u128 << key;
                     if self.swallowed[c] & bit == 0 {
+                        self.channels_played |= 1 << c;
+                        self.last_channel = c as u8;
                         self.held[c] |= bit;
                         // Every division the keyboard is switched to.
                         let divisions = self.route(c);
