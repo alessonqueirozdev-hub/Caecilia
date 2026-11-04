@@ -1019,6 +1019,7 @@ impl Plugin for Caecilia {
                 .set_pressure(i, engine.wind().pressure_at(chest.id, 0));
         }
         self.telemetry.set_voices(engine.active_voices());
+        self.telemetry.set_late(engine.missed_jobs());
         self.engine = Some(engine);
         self.fade_out(buffer);
 

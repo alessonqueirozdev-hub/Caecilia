@@ -107,9 +107,10 @@ impl Inner {
 }
 
 /// An engine for `organ`, as the plugin plays one: every core but the audio
-/// thread's renders voices, and a worker may hold a job for at most half the
-/// block before the audio thread gives up on it (a late group is a block of
-/// silence for its voices, a late callback a click for everything).
+/// thread's renders voices, and a worker may hold a job for at most three
+/// quarters of the block before the audio thread gives up on it (a late group
+/// is a block of silence for its voices, a late callback a click for
+/// everything; what follows the voices takes far less than the rest).
 pub(crate) fn build_engine(organ: &Organ, sample_rate: f64, max_block: usize) -> OrganEngine {
     let block = std::time::Duration::from_secs_f64(max_block as f64 / sample_rate.max(1.0));
     OrganEngine::with_space(
@@ -118,7 +119,7 @@ pub(crate) fn build_engine(organ: &Organ, sample_rate: f64, max_block: usize) ->
         max_block,
         DEFAULT_POLYPHONY,
         Calibration::V2,
-        PoolConfig::all_cores().wait_limit(block / 2),
+        PoolConfig::all_cores().wait_limit(block * 3 / 4),
     )
 }
 

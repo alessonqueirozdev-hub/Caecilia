@@ -243,3 +243,116 @@ fn a_pipe_comes_up_to_speech_rather_than_starting_at_full_level() {
     assert!(early < steady * 0.5, "{early} vs {steady}");
     assert!(early > 0.0, "it has begun to speak");
 }
+
+/// The sharpest corner in the sound, either channel: what a click makes and a
+/// partial below a few kilohertz doesn't.
+fn largest_step(x: &Render, from: usize, to: usize) -> f32 {
+    [&x.l, &x.r]
+        .iter()
+        .flat_map(|c| (from..to).map(move |i| (c[i] - 2.0 * c[i - 1] + c[i - 2]).abs()))
+        .fold(0.0, f32::max)
+}
+
+#[test]
+fn a_key_repeated_while_its_pipe_dies_away_does_not_click() {
+    let organ = caecilia_organ();
+    let mut e = engine(&organ, true, MONTRE);
+    e.set_room(PLATE);
+    let d = great(&organ);
+    // Down, up, and down again while the first note's release still sounds,
+    // the same pipe twice at once.
+    let (up, again) = (blocks_for(0.4), blocks_for(0.45));
+    let total = blocks_for(1.2);
+    let x = run(
+        &mut e,
+        total,
+        |b| {
+            if b == 0 {
+                // One pipe in each of the pool's eight groups, so the repeat
+                // lands in the group the dying note is in.
+                [60u8, 62, 64, 65, 67, 69, 71, 72]
+                    .map(|note| Command::NoteOn { division: d, note })
+                    .to_vec()
+            } else if b == again {
+                vec![Command::NoteOn {
+                    division: d,
+                    note: 60,
+                }]
+            } else if b == up {
+                vec![Command::NoteOff {
+                    division: d,
+                    note: 60,
+                }]
+            } else {
+                Vec::new()
+            }
+        },
+        |_, _| {},
+    );
+    // What a plain note moves by, against what the repeat does.
+    let steady = largest_step(&x, BLOCK * blocks_for(0.2), BLOCK * up);
+    let repeat = largest_step(&x, BLOCK * up, BLOCK * blocks_for(0.8));
+    assert!(
+        repeat < steady * 2.0,
+        "the repeat turns by {repeat} where a held chord turns by {steady}"
+    );
+}
+
+#[test]
+fn a_passage_of_repeated_notes_and_chords_has_no_corners_standing_out() {
+    let organ = caecilia_organ();
+    let stops = &[
+        ("Grand-Orgue", "Montre 8"),
+        ("Grand-Orgue", "Prestant 4"),
+        ("Grand-Orgue", "Bourdon 8"),
+    ];
+    let mut e = engine(&organ, true, stops);
+    e.set_room(PLATE);
+    let d = great(&organ);
+    // A passage with repeated keys and overlapping chords, every 90 ms.
+    let steps: [&[u8]; 8] = [
+        &[60, 64, 67],
+        &[60, 65, 69],
+        &[60, 64, 67],
+        &[59, 62, 67],
+        &[60, 64, 67],
+        &[62, 65, 69],
+        &[60],
+        &[60, 64, 67, 72],
+    ];
+    let every = blocks_for(0.09);
+    let total = every * steps.len() * 4;
+    let x = run(
+        &mut e,
+        total,
+        |b| {
+            if b % every != 0 {
+                return Vec::new();
+            }
+            let i = b / every;
+            let mut commands = Vec::new();
+            if i > 0 {
+                for note in steps[(i - 1) % steps.len()] {
+                    commands.push(Command::NoteOff {
+                        division: d,
+                        note: *note,
+                    });
+                }
+            }
+            for note in steps[i % steps.len()] {
+                commands.push(Command::NoteOn {
+                    division: d,
+                    note: *note,
+                });
+            }
+            commands
+        },
+        |_, _| {},
+    );
+    let mut corners: Vec<f32> = (1..total)
+        .map(|b| largest_step(&x, b * BLOCK, (b + 1) * BLOCK))
+        .collect();
+    corners.sort_by(f32::total_cmp);
+    let (typical, worst) = (corners[corners.len() / 2], corners[corners.len() - 1]);
+    assert!(worst < typical * 3.0, "{worst} vs typically {typical}");
+}

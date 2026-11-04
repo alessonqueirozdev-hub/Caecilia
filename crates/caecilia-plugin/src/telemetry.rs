@@ -20,6 +20,8 @@ pub struct Telemetry {
     /// Keys held on each MIDI channel, low and high halves.
     held: [[AtomicU64; 2]; 16],
     voices: AtomicU32,
+    /// Render jobs that came too late for their block, since the start.
+    late: AtomicU32,
     /// The demonstration playing: its index plus one, or 0.
     demo: AtomicU32,
     /// The divisions a keyboard's manual switches send it to: the channel
@@ -35,6 +37,7 @@ impl Default for Telemetry {
             pressure: std::array::from_fn(|_| AtomicU32::new(0)),
             held: std::array::from_fn(|_| [AtomicU64::new(0), AtomicU64::new(0)]),
             voices: AtomicU32::new(0),
+            late: AtomicU32::new(0),
             demo: AtomicU32::new(0),
             route: AtomicU32::new(0),
             load: AtomicU32::new(0),
@@ -55,6 +58,18 @@ impl Telemetry {
         self.held.get(channel).map_or(0, |[lo, hi]| {
             u128::from(lo.load(Ordering::Relaxed)) | u128::from(hi.load(Ordering::Relaxed)) << 64
         })
+    }
+
+    /// Render jobs that came too late for their block since the start: each
+    /// is a block of silence for some voices, heard as a click. They say the
+    /// machine couldn't keep up.
+    pub fn late(&self) -> u32 {
+        self.late.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn set_late(&self, jobs: u64) {
+        self.late
+            .store(u32::try_from(jobs).unwrap_or(u32::MAX), Ordering::Relaxed);
     }
 
     /// Voices sounding.

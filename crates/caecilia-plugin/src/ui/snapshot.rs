@@ -991,11 +991,17 @@ impl Source {
                 params.pitch.value()
             )
         };
-        let cpu = format!(
-            "CPU {:.0} % \u{b7} {} voices",
-            (telemetry.load() * 100.0).max(0.0),
-            telemetry.voices()
-        );
+        let cpu = match telemetry.late() {
+            0 => format!(
+                "CPU {:.0} % \u{b7} {} voices",
+                (telemetry.load() * 100.0).max(0.0),
+                telemetry.voices()
+            ),
+            late => format!(
+                "CPU {:.0} % \u{b7} {late} late",
+                (telemetry.load() * 100.0).max(0.0)
+            ),
+        };
 
         let playing = params.organ.path();
         let library = self

@@ -115,6 +115,14 @@ impl Job for VoiceGroup {
                 self.reclaim(i);
             }
         }
+        let chests = self.chests;
+        let chest_of = |s: &Slot| {
+            if s.chest.index() < chests {
+                s.chest.index()
+            } else {
+                0
+            }
+        };
         for s in self.slots.iter_mut().filter(|s| s.active) {
             let (start, inc) = self
                 .expr
@@ -122,35 +130,49 @@ impl Job for VoiceGroup {
                 .copied()
                 .unwrap_or((1.0, 0.0));
             s.voice.set_expression(start, inc);
-            let c = if s.chest.index() < self.chests {
-                s.chest.index()
-            } else {
-                0
-            };
-            match (&mut self.space, s.place) {
+        }
+        // Slots rendered this slice, as bits: a group holds at most GROUP_SIZE.
+        let mut rendered = 0u64;
+        for i in 0..self.slots.len() {
+            if !self.slots[i].active || rendered & (1 << i) != 0 {
+                continue;
+            }
+            let c = chest_of(&self.slots[i]);
+            match (&mut self.space, self.slots[i].place) {
                 (Some(space), Some(place)) if c < space.chests.len() => {
-                    // One point in space: both sides the same, at equal power.
-                    space.left[..n].fill(0.0);
-                    space.right[..n].fill(0.0);
-                    s.voice.render_add(
-                        &mut space.left[..n],
-                        &mut space.right[..n],
-                        Some(&self.wind),
-                        self.offset,
-                    );
-                    for ((o, l), r) in space.point[..n]
-                        .iter_mut()
-                        .zip(&space.left[..n])
-                        .zip(&space.right[..n])
-                    {
-                        *o = (l + r) * std::f32::consts::FRAC_1_SQRT_2;
+                    // One pipe is one signal in its windchest, whose memory is
+                    // the pipe's: a note repeated while the last still dies away
+                    // is two voices of it, summed before they go in.
+                    space.point[..n].fill(0.0);
+                    for j in i..self.slots.len() {
+                        let s = &mut self.slots[j];
+                        if !s.active || s.place != Some(place) || chest_of(s) != c {
+                            continue;
+                        }
+                        rendered |= 1 << j;
+                        // One point in space: both sides the same, at equal power.
+                        space.left[..n].fill(0.0);
+                        space.right[..n].fill(0.0);
+                        s.voice.render_add(
+                            &mut space.left[..n],
+                            &mut space.right[..n],
+                            Some(&self.wind),
+                            self.offset,
+                        );
+                        for ((o, l), r) in space.point[..n]
+                            .iter_mut()
+                            .zip(&space.left[..n])
+                            .zip(&space.right[..n])
+                        {
+                            *o += (l + r) * std::f32::consts::FRAC_1_SQRT_2;
+                        }
                     }
                     space.chests[c].add(place, &space.point[..n]);
                     for (o, x) in space.mono[c][..n].iter_mut().zip(&space.point[..n]) {
                         *o += x;
                     }
                 }
-                _ => s.voice.render_add(
+                _ => self.slots[i].voice.render_add(
                     &mut self.bus_l[c][..n],
                     &mut self.bus_r[c][..n],
                     Some(&self.wind),
