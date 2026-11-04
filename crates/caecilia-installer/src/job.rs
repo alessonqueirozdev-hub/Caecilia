@@ -1,5 +1,6 @@
 //! The work the window starts: the installer run again as an engine, as an
-//! administrator for everyone on the PC, followed through its log.
+//! administrator for everyone on the PC (through `sudo` on Linux and macOS),
+//! followed through its log.
 //!
 //! The window itself never runs elevated, so that what it opens at the end
 //! (the application) runs as the person and not as an administrator.
@@ -60,6 +61,16 @@ impl Launcher for SelfLauncher {
                 Err(crate::win::ElevateError::Declined) => Err(StartError::Declined),
                 Err(crate::win::ElevateError::Other(e)) => Err(StartError::Failed(e.to_string())),
             };
+        }
+        // It asks for the password on the terminal this program runs in.
+        #[cfg(unix)]
+        if elevate && !crate::posix::is_root() {
+            return std::process::Command::new("sudo")
+                .arg(exe)
+                .args(args)
+                .spawn()
+                .map(|c| Box::new(c) as Box<dyn Running>)
+                .map_err(|e| StartError::Failed(e.to_string()));
         }
         let _ = elevate;
         std::process::Command::new(exe)

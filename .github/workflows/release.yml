@@ -1,0 +1,273 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
+#
+# Builds the installers for Windows, Linux and macOS with caecilia-dist, and
+# tries each on its own system: installed for one person and for everyone,
+# the plugins loaded by a host, and removed again. On a version tag (v2.0.0)
+# it attaches them to a DRAFT release. It never publishes: that is for a
+# person to do on the release page, after reading what the draft says.
+#
+# On a pull request that touches the installer it does all but the release.
+# See docs/INSTALLER.md.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/caecilia-installer/**"
+      - ".github/workflows/release.yml"
+      - "docs/INSTALLING.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    name: Installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      # Windows' bash would read a switch such as /S as a path.
+      MSYS_NO_PATHCONV: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag is the workspace's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          test "${GITHUB_REF_NAME#v}" = "$version" || {
+            echo "The tag says ${GITHUB_REF_NAME#v}, the workspace says $version." >&2
+            exit 1
+          }
+
+      # Caecilia depends on Manguebyte by path while both are developed side
+      # by side (C:/manguebyte in Cargo.toml). Windows has that path; on the
+      # others this checkout is told where it is.
+      - name: Check out Manguebyte
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            framework=C:/manguebyte
+          else
+            framework=$HOME/manguebyte
+          fi
+          git clone --depth 1 https://github.com/alessonqueirozdev-hub/manguebyte.git "$framework"
+          git -C "$framework" log -1 --format='Manguebyte at %H'
+          if [ "$RUNNER_OS" != Windows ]; then
+            find . -name Cargo.toml -exec perl -pi -e "s|C:/manguebyte|$framework|g" {} +
+          fi
+          echo "MANGUEBYTE=$framework" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$framework/target" >> "$GITHUB_ENV"
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+
+      - name: ALSA headers
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Clippy
+        run: cargo clippy --profile caecilia -p caecilia-installer --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --profile caecilia -p caecilia-installer
+
+      - name: Build the installer
+        run: >
+          cargo run --profile caecilia-release -p caecilia-installer --bin caecilia-dist --
+          build --target-dir "$CARGO_TARGET_DIR" --manguebyte "$MANGUEBYTE"
+
+      - name: Find what to try
+        run: |
+          try=$RUNNER_TEMP/try
+          mkdir -p "$try"
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp "$CARGO_TARGET_DIR"/installer/Caecilia-Setup-*.exe "$try/setup.exe"
+            setup=$try/setup.exe
+          else
+            tar -xf "$CARGO_TARGET_DIR"/installer/Caecilia-Setup-*.tar -C "$try"
+            setup=$(find "$try" -maxdepth 1 -name 'Caecilia-Setup*')
+            test -x "$setup" || { echo "The archive lost the mark that lets it run." >&2; exit 1; }
+          fi
+          echo "TRY=$try" >> "$GITHUB_ENV"
+          echo "SETUP=$setup" >> "$GITHUB_ENV"
+
+      - name: Try it for one person, without asking
+        if: runner.os != 'Windows'
+        run: |
+          export HOME=$TRY/home
+          mkdir -p "$HOME"
+          case $RUNNER_OS in
+            Linux)
+              program=$HOME/.local/share/Caecilia
+              plugins=("$HOME/.vst3/Caecilia.vst3" "$HOME/.clap/Caecilia.clap")
+              ;;
+            macOS)
+              program="$HOME/Library/Application Support/Caecilia"
+              plugins=("$HOME/Library/Audio/Plug-Ins/VST3/Caecilia.vst3" "$HOME/Library/Audio/Plug-Ins/CLAP/Caecilia.clap")
+              ;;
+          esac
+          "$SETUP" --silent --current-user --log "$TRY/user-setup.log"
+          test -x "$program/caecilia"
+          test -x "$program/uninstall"
+          test -f "$program/install.json"
+          test -e "${plugins[0]}"
+          test -e "${plugins[1]}"
+          test -f "$HOME/.config/caecilia/organs/caecilia-pipe-organ.organ.json"
+          test -L "$HOME/.local/bin/caecilia"
+          "$program/uninstall" --uninstall --silent --log "$TRY/user-uninstall.log"
+          test ! -e "$program"
+          test ! -e "${plugins[0]}"
+          test ! -e "${plugins[1]}"
+          test ! -e "$HOME/.local/bin/caecilia"
+
+      # `script` gives the installer the terminal it asks for.
+      - name: Try the questions for one person
+        if: runner.os != 'Windows'
+        run: |
+          export HOME=$TRY/home-asked
+          mkdir -p "$HOME"
+          case $RUNNER_OS in
+            Linux)
+              program=$HOME/.local/share/Caecilia
+              ask() { script -qefc "$(printf '%q ' "$@")" /dev/null; }
+              ;;
+            macOS)
+              program="$HOME/Library/Application Support/Caecilia"
+              ask() { script -q /dev/null "$@"; }
+              ;;
+          esac
+          # A person answers once the question is there: macOS's `script`
+          # drops what comes before the program has its terminal, and takes
+          # the end of its input as the end of the answers.
+          answers() { sleep 3; printf "$1"; sleep 10; }
+          # The licence, just me, the default folder, every component, the
+          # launcher, install.
+          answers 'y\n2\n\ny\ny\ny\ny\ny\ny\n' | ask "$SETUP"
+          test -x "$program/caecilia"
+          # An organ of the person's own stays; what was installed goes.
+          organs=$HOME/.config/caecilia/organs
+          echo '{}' > "$organs/mine.organ.json"
+          answers 'y\nn\n' | ask "$program/uninstall" --uninstall
+          test ! -e "$program"
+          test ! -e "$organs/caecilia-pipe-organ.organ.json"
+          test -f "$organs/mine.organ.json"
+
+      - name: Install for everyone
+        run: |
+          case $RUNNER_OS in
+            Windows)
+              "$SETUP" --silent --all-users --log "$TRY/machine-setup.log"
+              ;;
+            *)
+              sudo "$SETUP" --silent --all-users --log "$TRY/machine-setup.log"
+              ;;
+          esac
+
+      - name: The log of the installation for everyone
+        if: always()
+        run: cat "$TRY/machine-setup.log" || true
+
+      - name: The plugins load in a host, where they were installed
+        run: |
+          case $RUNNER_OS in
+            Windows)
+              clap="C:/Program Files/Common Files/CLAP/Caecilia.clap"
+              vst3="C:/Program Files/Common Files/VST3/Caecilia.vst3"
+              ;;
+            Linux)
+              clap=/usr/lib/clap/Caecilia.clap
+              vst3=/usr/lib/vst3/Caecilia.vst3
+              ;;
+            macOS)
+              clap=/Library/Audio/Plug-Ins/CLAP/Caecilia.clap
+              vst3=/Library/Audio/Plug-Ins/VST3/Caecilia.vst3
+              ;;
+          esac
+          cargo run --profile caecilia-release -p caecilia-plugin --example host_check -- "$clap" "$vst3"
+
+      - name: Remove it for everyone
+        run: |
+          case $RUNNER_OS in
+            Windows)
+              program="C:/Program Files/Caecilia"
+              "$program/uninstall.exe" --uninstall --silent --log "$TRY/machine-uninstall.log"
+              ;;
+            Linux)
+              program=/opt/Caecilia
+              sudo "$program/uninstall" --uninstall --silent --log "$TRY/machine-uninstall.log"
+              test ! -e /usr/lib/clap/Caecilia.clap
+              test ! -e /usr/lib/vst3/Caecilia.vst3
+              test ! -e /usr/local/bin/caecilia
+              ;;
+            macOS)
+              program="/Library/Application Support/Caecilia"
+              sudo "$program/uninstall" --uninstall --silent --log "$TRY/machine-uninstall.log"
+              test ! -e /Library/Audio/Plug-Ins/CLAP/Caecilia.clap
+              test ! -e /Library/Audio/Plug-Ins/VST3/Caecilia.vst3
+              test ! -e /usr/local/bin/caecilia
+              ;;
+          esac
+          test ! -e "$program"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Caecilia-installer-${{ matrix.os }}
+          path: |
+            ${{ env.CARGO_TARGET_DIR }}/installer/Caecilia-Setup-*.exe
+            ${{ env.CARGO_TARGET_DIR }}/installer/Caecilia-Setup-*.tar
+          if-no-files-found: error
+
+  draft:
+    name: Draft release
+    needs: installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+
+      # A draft, and only a draft. Run again for the same tag it replaces the
+      # files of the draft; it never touches a release already published.
+      - name: Attach the installers to a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$GITHUB_REF_NAME
+          ls -l installers
+          if gh release view "$tag" --json isDraft --jq .isDraft > state 2>/dev/null; then
+            if [ "$(cat state)" != true ]; then
+              echo "$tag is already published: nothing is changed." >&2
+              exit 1
+            fi
+            gh release upload "$tag" installers/* --clobber
+          else
+            prerelease=()
+            case $tag in *-*) prerelease=(--prerelease) ;; esac
+            gh release create "$tag" installers/* \
+              --draft --verify-tag "${prerelease[@]}" \
+              --title "Caecilia ${tag#v}" \
+              --notes-file docs/INSTALLING.md
+          fi

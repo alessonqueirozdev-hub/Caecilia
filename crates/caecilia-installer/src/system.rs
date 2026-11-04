@@ -29,6 +29,11 @@ pub trait System {
     fn make_shortcut(&mut self, shortcut: &Shortcut) -> std::io::Result<()>;
     /// Has the system delete `path` when it next starts; whether it will.
     fn delete_at_restart(&mut self, path: &Path) -> bool;
+    /// Gives `path`, made in a person's home by a run as an administrator,
+    /// to that person. Windows has no need of it.
+    fn give_to_person(&mut self, path: &Path) {
+        let _ = path;
+    }
     /// Takes the one lock of `product`'s installers, held until the process
     /// ends, so two runs never work on the same files; false if another
     /// run holds it.

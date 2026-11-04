@@ -4,15 +4,18 @@
 
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
-use crate::args::Args;
+use crate::args::{Args, Mode};
 use crate::engine::{Engine, Error};
 use crate::exit;
-use crate::log::Log;
+use crate::job::cancel_file;
+use crate::log::{Log, stamp};
 use crate::payload::Payload;
-use crate::plan::{Places, Plan, Scope};
+use crate::plan::{Flavor, Places, Plan, Scope};
 use crate::record::{LOG_COPY, RECORD, Record};
 use crate::system::{Installed, System};
+use crate::text::Lang;
 use crate::version;
 
 /// What the work runs on.
@@ -27,6 +30,88 @@ pub struct Host<'a> {
     pub uninstaller: Vec<u8>,
     /// Asked between steps: true stops and undoes everything.
     pub cancelled: &'a dyn Fn() -> bool,
+}
+
+/// Who a run that does not say is for: everyone on Windows, where it asks
+/// to be an administrator; elsewhere, whoever runs it.
+fn default_scope(places: &Places, elevated: bool) -> Scope {
+    if places.flavor == Flavor::Windows || elevated {
+        Scope::Machine
+    } else {
+        Scope::User
+    }
+}
+
+/// An uninstaller told no folder removes the installation it sits in. It
+/// runs from there: the engine moves it out of the folder if it must, so the
+/// folder can go.
+pub fn removes_its_own_folder(args: &mut Args) {
+    if args.mode == Mode::Uninstall && args.dir.is_none() {
+        args.dir = std::env::current_exe()
+            .ok()
+            .and_then(|me| me.parent().map(Path::to_owned))
+            .filter(|dir| dir.join(RECORD).is_file());
+    }
+}
+
+/// The run with no window, `/S` or the engine: logs, works, and returns the
+/// exit code. `payload` is what it installs, `places` the system's folders
+/// or why they are not known.
+pub fn headless(
+    args: &Args,
+    payload: &[u8],
+    places: Result<Places, String>,
+    elevated: bool,
+    lang: Lang,
+    sys: &mut dyn System,
+) -> i32 {
+    let what = if args.mode == Mode::Uninstall {
+        "Uninstall"
+    } else {
+        "Setup"
+    };
+    let product =
+        Payload::parse(payload).map_or_else(|_| "Caecilia".into(), |p| p.manifest.product);
+    let log_path = args.log.clone().unwrap_or_else(|| {
+        std::env::temp_dir().join(format!("{product}-{what}-{}.log", stamp(SystemTime::now())))
+    });
+    let mut log = Log::to_file(&log_path).unwrap_or_else(|_| Log::in_memory());
+    log.note(format_args!(
+        "{product} {what}, {} run, elevated {elevated}, language {}",
+        if args.engine { "engine" } else { "silent" },
+        lang.code()
+    ));
+    let code = match places {
+        Err(e) => {
+            log.error(format_args!("the system's folders are not known: {e}"));
+            exit::FAILED
+        }
+        Ok(places) => {
+            let cancel = cancel_file(&log_path);
+            let cancelled = || cancel.exists();
+            let uninstaller = match args.mode {
+                Mode::Install => std::env::current_exe()
+                    .and_then(std::fs::read)
+                    .unwrap_or_default(),
+                Mode::Uninstall => Vec::new(),
+            };
+            let mut host = Host {
+                sys,
+                places,
+                elevated,
+                uninstaller,
+                cancelled: &cancelled,
+            };
+            let code = match args.mode {
+                Mode::Install => install(args, payload, &mut host, &mut log),
+                Mode::Uninstall => uninstall(args, &product, &mut host, &mut log),
+            };
+            let _ = std::fs::remove_file(&cancel);
+            code
+        }
+    };
+    log.line("end", code);
+    code
 }
 
 /// An installation found, and its record.
@@ -84,7 +169,7 @@ pub fn install(args: &Args, payload: &[u8], host: &mut Host<'_>, log: &mut Log) 
         .scope
         .or(found.as_ref().map(|f| f.scope))
         .or(unreadable.as_ref().map(|u| u.0))
-        .unwrap_or(Scope::Machine);
+        .unwrap_or(default_scope(&host.places, host.elevated));
     if let Some((at, installed)) = &unreadable {
         // Installing beside it would leave its files and its entry behind
         // with nothing to remove them; over it, only when asked.

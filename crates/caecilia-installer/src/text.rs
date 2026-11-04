@@ -47,6 +47,16 @@ impl Lang {
         }
     }
 
+    /// The language of a locale such as `pt_BR.UTF-8`, else English.
+    pub fn from_locale(locale: &str) -> Lang {
+        let code = locale.split(['_', '.', '@', '-']).next().unwrap_or("");
+        match code.to_ascii_lowercase().as_str() {
+            "pt" => Lang::Pt,
+            "es" => Lang::Es,
+            _ => Lang::En,
+        }
+    }
+
     /// The words.
     pub fn text(self) -> &'static Text {
         match self {
@@ -250,6 +260,36 @@ pub struct Text {
     pub unreadable_title: &'static str,
     /// Under it: `{0}` its folder.
     pub unreadable_lead: &'static str,
+    /// In the terminal: the letters for yes and no.
+    pub term_yes_no: (&'static str, &'static str),
+    /// How a question shows its default: yes, then no.
+    pub term_yes_no_hint: (&'static str, &'static str),
+    /// Asks for a number: `{0}` the default.
+    pub term_choose: &'static str,
+    /// Asks for the folder: `{0}` the default.
+    pub term_folder: &'static str,
+    /// Asks for a component: `{0}` its name, `{1}` what it is.
+    pub term_component: &'static str,
+    /// Asks for the launcher.
+    pub term_launcher: &'static str,
+    /// The last question.
+    pub term_go: &'static str,
+    /// Before sudo asks.
+    pub term_sudo: &'static str,
+    /// Started with no terminal.
+    pub term_no_terminal: &'static str,
+    /// Leave without doing anything.
+    pub term_quit: &'static str,
+    /// Where the log is: `{0}`.
+    pub term_log: &'static str,
+    /// A folder an administrator does not own: `{0}` the one it must be in.
+    pub term_protected: &'static str,
+    /// How to start it: `{0}`.
+    pub term_run: &'static str,
+    /// No windows on this system yet.
+    pub term_no_window: &'static str,
+    /// The step that registers, where there is no *Apps & features*.
+    pub term_register: &'static str,
 }
 
 /// English.
@@ -360,6 +400,21 @@ pub const EN: Text = Text {
     kept: "Kept, because it was changed after it was installed:",
     unreadable_title: "Caecilia can't be removed safely",
     unreadable_lead: "Its record of what it installed, in {0}, is missing or damaged, so the uninstaller cannot tell which files are its own. Run the Caecilia installer again to repair it, then remove it.",
+    term_yes_no: ("y", "n"),
+    term_yes_no_hint: ("[Y/n]", "[y/N]"),
+    term_choose: "Choose [{0}]: ",
+    term_folder: "Program folder [{0}]: ",
+    term_component: "Install {0} ({1})?",
+    term_launcher: "Add Caecilia to the applications menu?",
+    term_go: "Install now?",
+    term_sudo: "An installation for everyone needs an administrator: sudo will ask for your password.",
+    term_no_terminal: "This installer asks its questions in a terminal. Run it from one, or use --silent.",
+    term_quit: "Quit",
+    term_log: "The log: {0}",
+    term_protected: "For everyone, Caecilia goes inside {0}, which only an administrator can change.",
+    term_run: "Start it with: {0}",
+    term_no_window: "On this system Caecilia plays in the terminal: its windows come later.",
+    term_register: "Registering the installation…",
 };
 
 /// Brazilian Portuguese.
@@ -476,6 +531,21 @@ pub const PT: Text = Text {
     kept: "Mantido, porque foi alterado depois de instalado:",
     unreadable_title: "Não dá para remover o Caecilia com segurança",
     unreadable_lead: "O registro do que ele instalou, em {0}, sumiu ou está danificado, e o desinstalador não sabe quais arquivos são dele. Rode o instalador do Caecilia de novo para repará-lo e depois remova.",
+    term_yes_no: ("s", "n"),
+    term_yes_no_hint: ("[S/n]", "[s/N]"),
+    term_choose: "Escolha [{0}]: ",
+    term_folder: "Pasta do programa [{0}]: ",
+    term_component: "Instalar {0} ({1})?",
+    term_launcher: "Adicionar o Caecilia ao menu de aplicativos?",
+    term_go: "Instalar agora?",
+    term_sudo: "Uma instalação para todos precisa de um administrador: o sudo vai pedir sua senha.",
+    term_no_terminal: "Este instalador faz as perguntas em um terminal. Rode-o em um, ou use --silent.",
+    term_quit: "Sair",
+    term_log: "O registro: {0}",
+    term_protected: "Para todos, o Caecilia fica dentro de {0}, que só um administrador pode alterar.",
+    term_run: "Para abrir: {0}",
+    term_no_window: "Neste sistema o Caecilia toca pelo terminal: as janelas vêm depois.",
+    term_register: "Registrando a instalação…",
 };
 
 /// Spanish.
@@ -595,6 +665,21 @@ pub const ES: Text = Text {
     kept: "Se mantuvo, porque se cambió después de instalarlo:",
     unreadable_title: "No se puede quitar Caecilia con seguridad",
     unreadable_lead: "El registro de lo que instaló, en {0}, falta o está dañado, y el desinstalador no sabe qué archivos son suyos. Ejecuta de nuevo el instalador de Caecilia para repararlo y luego quítalo.",
+    term_yes_no: ("s", "n"),
+    term_yes_no_hint: ("[S/n]", "[s/N]"),
+    term_choose: "Elige [{0}]: ",
+    term_folder: "Carpeta del programa [{0}]: ",
+    term_component: "¿Instalar {0} ({1})?",
+    term_launcher: "¿Añadir Caecilia al menú de aplicaciones?",
+    term_go: "¿Instalar ahora?",
+    term_sudo: "Una instalación para todos necesita un administrador: sudo pedirá tu contraseña.",
+    term_no_terminal: "Este instalador hace sus preguntas en un terminal. Ejecútalo en uno, o usa --silent.",
+    term_quit: "Salir",
+    term_log: "El registro: {0}",
+    term_protected: "Para todos, Caecilia va dentro de {0}, que solo un administrador puede cambiar.",
+    term_run: "Para abrirlo: {0}",
+    term_no_window: "En este sistema Caecilia toca en el terminal: sus ventanas vendrán después.",
+    term_register: "Registrando la instalación…",
 };
 
 /// A size in bytes, for people: `14 MB`.

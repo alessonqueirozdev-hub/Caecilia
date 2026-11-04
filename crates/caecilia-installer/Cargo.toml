@@ -1,6 +1,6 @@
 [package]
 name = "caecilia-installer"
-description = "Caecilia's Windows installer: the app and the plugins, with an uninstaller"
+description = "Caecilia's installer for Windows, Linux and macOS: the app and the plugins, with an uninstaller"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

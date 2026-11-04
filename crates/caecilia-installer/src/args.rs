@@ -104,8 +104,8 @@ impl Args {
             };
             match key.as_str() {
                 "s" | "silent" | "quiet" => a.silent = true,
-                "allusers" => a.scope = Some(Scope::Machine),
-                "currentuser" => a.scope = Some(Scope::User),
+                "allusers" | "all-users" => a.scope = Some(Scope::Machine),
+                "currentuser" | "current-user" => a.scope = Some(Scope::User),
                 "scope" => {
                     let v = value("user or machine")?;
                     a.scope = Some(Scope::from_name(&v).ok_or(format!("unknown scope '{v}'"))?);
@@ -117,9 +117,11 @@ impl Args {
                     let c = Components::parse(&v).ok_or(format!("unknown component in '{v}'"))?;
                     a.components = Some(c);
                 }
-                "noshortcuts" => (a.desktop, a.start_menu) = (Some(false), Some(false)),
-                "nodesktop" => a.desktop = Some(false),
-                "nostartmenu" => a.start_menu = Some(false),
+                "noshortcuts" | "no-shortcuts" => {
+                    (a.desktop, a.start_menu) = (Some(false), Some(false));
+                }
+                "nodesktop" | "no-desktop" => a.desktop = Some(false),
+                "nostartmenu" | "no-start-menu" => a.start_menu = Some(false),
                 "desktop" => a.desktop = Some(value("0 or 1")? != "0"),
                 "start-menu" => a.start_menu = Some(value("0 or 1")? != "0"),
                 "log" => a.log = Some(PathBuf::from(value("a file")?)),

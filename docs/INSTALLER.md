@@ -3,7 +3,12 @@ SPDX-License-Identifier: Apache-2.0
 Copyright (c) 2026 Alesson Queiroz and the Caecilia contributors.
 -->
 
-# Caecilia 2.0 — Windows Installer
+# Caecilia 2.0 — Installer
+
+Windows has the wizard this document is mostly about. Linux and macOS have the
+same engine and the same questions in a terminal: see
+[section 13](#13-linux-macos-and-releases). What a person downloading it reads is
+[`INSTALLING.md`](INSTALLING.md).
 
 > Status: **approved and built** (`crates/caecilia-installer`).
 > Screens: [`mockups/installer.html`](mockups/installer.html). Since the mockup was
@@ -275,3 +280,55 @@ with the product-specific part (names, components, the look) apart from the
 engine (payload, plan, transaction, record, Windows bits), and once it has
 shipped Caecilia, move the engine into Manguebyte as `manguebyte-installer`
 plus `cargo mangue installer`, which already knows each format's folders.
+
+## 13. Linux, macOS and releases
+
+**Manguebyte has no windows on Linux or macOS yet** (`App::new` says
+`Unsupported`), so neither can have the wizard, and the Caecilia application
+plays from the terminal there, as it already does when it has no window. Plugins
+have no editor on those systems for the same reason. Everything else is the
+same program:
+
+- `caecilia-setup` with no switches asks the wizard's questions in the terminal
+  (`terminal.rs`, in the same three languages), runs itself as an engine, through
+  `sudo` for everyone, and follows the log. With no terminal it says so and asks
+  for `--silent`. When Manguebyte has windows there, the wizard takes its place.
+- The engine, the payload and the record are the same code. A payload entry says
+  whether it `executable`, which `caecilia-dist` reads from the file it packs;
+  the engine sets `0755` or `0644` whatever the umask.
+- `posix.rs` is the `System` there: the entry *Apps & features* holds on Windows
+  is a small JSON file (`/var/lib/caecilia-setup` on Linux,
+  `/Library/Application Support/caecilia-setup` on macOS, or the person's
+  `caecilia-setup` beside their program folder); the launcher is a `.desktop`
+  file on Linux and a `.command` link on macOS; a command goes in `bin`. Only one
+  run works at a time, by a lock file in `/tmp` for each user, which gives way
+  if its process has ended.
+- For everyone, the program folder must be inside `/opt` or
+  `/Library/Application Support`, as it must be inside Program Files on Windows.
+- An administrator's run gives what it puts in a person's home (the organ) to
+  that person: the owner of the nearest folder above it not owned by root.
+- `caecilia-dist build` writes `Caecilia-Setup-<version>-linux-<arch>.tar` or
+  `-macos-<arch>.tar`. An archive because a file downloaded from a release page
+  loses the mark that lets it run. It is not compressed: the payload inside is
+  packed already.
+
+`.github/workflows/release.yml` builds the three on GitHub's runners and tries
+each: installed for one person, without asking and through the questions in a
+real terminal (`script`), for everyone (`sudo` on Linux and macOS, silently on
+Windows), the plugins loaded from where they went by `host_check`, and removed.
+On a tag `v<version>` it attaches them to a **draft** release, with
+`INSTALLING.md` as its text; publishing is for a person to do. On a pull request
+that touches the installer it does everything but the release.
+
+Not done, and to be said on any release:
+
+- **Nothing on macOS is signed with a Developer ID or notarized**, which needs an
+  Apple Developer account. The bundles have `cargo mangue`'s ad-hoc signature,
+  which lets them load on Apple silicon and does not satisfy Gatekeeper, so a
+  downloaded installer has to have its quarantine removed by hand.
+- Only Apple silicon on macOS, and only x86_64 on Linux, are built. Intel Macs
+  and Arm Linux would be another entry in the workflow.
+- The Linux build needs the glibc of the runner it was built on (2.39).
+- No Audio Unit: `caecilia-plugin` does not export one.
+- The workflow takes Manguebyte's `main` as it is. Pin a commit before a real
+  release, as the workspace's `Cargo.toml` says.

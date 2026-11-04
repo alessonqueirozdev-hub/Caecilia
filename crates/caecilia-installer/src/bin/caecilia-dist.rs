@@ -1,4 +1,4 @@
-//! `caecilia-dist`: builds Caecilia's Windows installer.
+//! `caecilia-dist`: builds Caecilia's installer, for the system it runs on.
 //!
 //! ```text
 //! cargo run --profile caecilia-release -p caecilia-installer --bin caecilia-dist -- build
@@ -10,9 +10,12 @@
 //! bundles with Manguebyte's own `cargo mangue bundle`, the payload that
 //! carries them (with the demonstration organ, the icon, the licence and the
 //! notices), and the installer with the payload inside, as
-//! `<target>/installer/Caecilia-Setup-<version>-x64.exe`. With `--sign` it
-//! signs the application and the plugin before they are packed and the
-//! installer after, with `signtool` from the Windows SDK.
+//! `<target>/installer/Caecilia-Setup-<version>-x64.exe` on Windows and
+//! `Caecilia-Setup-<version>-linux-<arch>.tar` or `-macos-<arch>.tar`
+//! elsewhere: an archive, so that the program stays marked as one when it
+//! is downloaded. With `--sign`, on Windows, it signs the application and
+//! the plugin before they are packed and the installer after, with
+//! `signtool` from the Windows SDK.
 //!
 //! ```text
 //! caecilia-dist pack --out caecilia.payload --product Caecilia --version 2.0.0
@@ -30,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use caecilia_installer::payload::{Digest, Payload, PayloadBuilder, Root};
+use caecilia_installer::tar;
 use caecilia_installer::text::size;
 
 fn main() -> ExitCode {
@@ -168,10 +172,14 @@ fn build(args: Vec<String>) -> Result<(), String> {
         &env,
         offline,
     )?;
-    let app = target.join("caecilia-release/caecilia.exe");
+    let exe = std::env::consts::EXE_SUFFIX;
+    let app = target.join(format!("caecilia-release/caecilia{exe}"));
     let bundled = target.join("bundled");
     let clap = bundled.join("Caecilia.clap");
     let vst3 = bundled.join("Caecilia.vst3");
+    if thumbprint.is_some() && !cfg!(windows) {
+        return Err("--sign is for Windows: signing on macOS is not done yet".into());
+    }
     if let Some(t) = &thumbprint {
         sign(
             t,
@@ -217,7 +225,7 @@ fn build(args: Vec<String>) -> Result<(), String> {
         "THIRD_PARTY_NOTICES.md",
         repo.join("THIRD_PARTY_NOTICES.md"),
     ));
-    line.extend(file("app", "program", "caecilia.exe", app));
+    line.extend(file("app", "program", &format!("caecilia{exe}"), app));
     line.extend([
         "--dir".into(),
         "vst3".into(),
@@ -225,7 +233,18 @@ fn build(args: Vec<String>) -> Result<(), String> {
         "Caecilia.vst3".into(),
         s(&vst3),
     ]);
-    line.extend(file("clap", "clap", "Caecilia.clap", clap));
+    // A file on Windows and Linux, a bundle (a folder) on macOS.
+    if clap.is_dir() {
+        line.extend([
+            "--dir".into(),
+            "clap".into(),
+            "clap".into(),
+            "Caecilia.clap".into(),
+            s(&clap),
+        ]);
+    } else {
+        line.extend(file("clap", "clap", "Caecilia.clap", clap));
+    }
     line.extend(file(
         "organ",
         "organs",
@@ -251,9 +270,14 @@ fn build(args: Vec<String>) -> Result<(), String> {
         ],
         offline,
     )?;
-    let setup = out.join(format!("Caecilia-Setup-{version}-x64.exe"));
-    std::fs::copy(target.join("caecilia-release/caecilia-setup.exe"), &setup)
-        .map_err(|e| e.to_string())?;
+    let built = target.join(format!("caecilia-release/caecilia-setup{exe}"));
+    let setup = if cfg!(windows) {
+        let setup = out.join(format!("Caecilia-Setup-{version}-x64.exe"));
+        std::fs::copy(&built, &setup).map_err(|e| e.to_string())?;
+        setup
+    } else {
+        archive(&built, &out, &version)?
+    };
     // The payload is inside the installer now; the disk is better without
     // a copy.
     let _ = std::fs::remove_file(&payload);
@@ -268,6 +292,38 @@ fn build(args: Vec<String>) -> Result<(), String> {
         Digest::of(&bytes).hex()
     );
     Ok(())
+}
+
+/// The installer `built` in an archive in `out`, for a system that needs
+/// the mark that lets a program run kept. On macOS a `.command`, which
+/// Finder opens in Terminal.
+fn archive(built: &Path, out: &Path, version: &str) -> Result<PathBuf, String> {
+    let (system, inner) = if cfg!(target_os = "macos") {
+        ("macos", "Caecilia-Setup.command".to_owned())
+    } else {
+        ("linux", format!("Caecilia-Setup-{version}"))
+    };
+    let arch = std::env::consts::ARCH;
+    let bytes = std::fs::read(built).map_err(|e| format!("{}: {e}", built.display()))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let tar = tar::single_file(&inner, 0o755, now, &bytes).ok_or("the name is too long")?;
+    let file = out.join(format!("Caecilia-Setup-{version}-{system}-{arch}.tar"));
+    std::fs::write(&file, tar).map_err(|e| format!("{}: {e}", file.display()))?;
+    Ok(file)
+}
+
+/// Whether the file is marked as a program, on the systems that mark them.
+#[cfg(unix)]
+fn is_program(file: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(file).is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_program(_file: &Path) -> bool {
+    false
 }
 
 fn pack(args: Vec<String>) -> Result<PathBuf, String> {
@@ -314,7 +370,7 @@ fn pack(args: Vec<String>) -> Result<PathBuf, String> {
             } else {
                 format!("{path}/{rel}")
             };
-            builder.add(&component, root, &dest, &bytes);
+            builder.add_file(&component, root, &dest, &bytes, is_program(&file));
             count += 1;
             total += bytes.len() as u64;
             println!("  {component:<5} {:<7} {dest}", root.name());

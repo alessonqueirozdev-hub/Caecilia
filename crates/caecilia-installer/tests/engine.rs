@@ -9,7 +9,9 @@ use caecilia_installer::engine::{Engine, Error};
 use caecilia_installer::log::Log;
 use caecilia_installer::payload::{Payload, PayloadBuilder, Root, Unpacked};
 use caecilia_installer::plan::{Choices, Components, Places, Plan, Scope};
-use caecilia_installer::record::{Leftover, Record};
+#[cfg(windows)]
+use caecilia_installer::record::Leftover;
+use caecilia_installer::record::Record;
 use caecilia_installer::system::{MemorySystem, System};
 
 /// A folder of its own for each test, removed at the end.
@@ -101,11 +103,13 @@ fn places(base: &Path) -> Places {
     p
 }
 
+#[cfg(windows)]
 fn paths(leftovers: &[Leftover]) -> Vec<&PathBuf> {
     leftovers.iter().map(|l| &l.path).collect()
 }
 
 /// The bytes of the first file under `root` in `files`.
+#[cfg(windows)]
 fn files_bytes_of(files: &Unpacked, root: Root) -> Vec<u8> {
     let entry = files
         .manifest
@@ -360,6 +364,7 @@ fn an_upgrade_replaces_files_and_drops_what_the_new_version_has_not() {
     assert!(!places.plugin_dir(Scope::Machine, "CLAP").exists());
 }
 
+#[cfg(windows)]
 #[test]
 fn a_dropped_plugin_a_host_still_holds_is_not_forgotten() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -424,6 +429,7 @@ fn a_dropped_plugin_a_host_still_holds_is_not_forgotten() {
     }
 }
 
+#[cfg(windows)]
 #[test]
 fn a_removal_does_not_forget_a_leftover_a_host_still_holds() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -502,11 +508,16 @@ fn a_removal_started_inside_the_program_folder_still_removes_it() {
     let was = std::env::current_dir().unwrap();
     std::env::set_current_dir(&plan.program_dir).unwrap();
     let gone = uninstall(&mut sys, &record, None);
-    let now = std::env::current_dir().unwrap();
+    // Windows refuses to remove the folder a process works in, so it steps
+    // out. Linux and macOS allow it, and it may not have needed to.
+    #[cfg(windows)]
+    assert_eq!(
+        std::env::current_dir().unwrap().canonicalize().unwrap(),
+        std::env::temp_dir().canonicalize().unwrap()
+    );
     std::env::set_current_dir(was).unwrap();
     assert!(gone.kept.is_empty(), "{:?}", gone.kept);
     assert!(!plan.program_dir.exists());
-    assert_eq!(now, std::env::temp_dir());
 }
 
 #[test]
@@ -571,6 +582,7 @@ fn an_update_to_another_folder_leaves_nothing_in_the_old_one() {
     assert_eq!(tree(&scratch.0), before, "and the removal leaves nothing");
 }
 
+#[cfg(windows)]
 #[test]
 fn files_in_use_the_record_cannot_note_are_said_kept() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -617,6 +629,7 @@ fn files_in_use_the_record_cannot_note_are_said_kept() {
     );
 }
 
+#[cfg(windows)]
 #[test]
 fn a_purge_that_fails_keeps_the_record_to_try_again() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -658,6 +671,7 @@ fn a_purge_that_fails_keeps_the_record_to_try_again() {
     assert!(sys.installed(Scope::User, "Caecilia").is_none());
 }
 
+#[cfg(windows)]
 #[test]
 fn an_update_run_by_the_old_uninstaller_to_another_folder_empties_the_old_one() {
     let scratch = Scratch::new("moved-running");
@@ -715,6 +729,7 @@ fn an_update_run_by_the_old_uninstaller_to_another_folder_empties_the_old_one() 
     }
 }
 
+#[cfg(windows)]
 #[test]
 fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     let scratch = Scratch::new("inuse");
@@ -774,6 +789,7 @@ fn a_running_app_is_replaced_and_its_old_copy_cleared_later() {
     assert!(!outcome.record.leftovers[0].path.exists());
 }
 
+#[cfg(windows)]
 #[test]
 fn the_running_uninstaller_leaves_no_folder_behind() {
     let scratch = Scratch::new("selfremove");
@@ -785,9 +801,13 @@ fn the_running_uninstaller_leaves_no_folder_behind() {
         &places,
         14,
     );
-    // The uninstaller is a real program: this test binary.
+    // The uninstaller is a real program: this test binary. As an
+    // administrator, whose copy is deleted at the next restart.
     let me = fs::read(std::env::current_exe().unwrap()).unwrap();
-    let mut sys = MemorySystem::default();
+    let mut sys = MemorySystem {
+        can_delete_at_restart: true,
+        ..MemorySystem::default()
+    };
     let mut log = Log::in_memory();
     let record = Engine {
         sys: &mut sys,
@@ -809,6 +829,7 @@ fn the_running_uninstaller_leaves_no_folder_behind() {
     running.wait().unwrap();
     assert!(gone.kept.is_empty(), "{:?}", gone.kept);
     assert!(!plan.program_dir.exists(), "the folder went with it");
+    assert!(!gone.restart, "nobody has to restart for a temporary file");
     // What the temporary folder's cleaning would take.
     let moved =
         std::env::temp_dir().join(format!("uninstall.exe.{}.caecilia-old", std::process::id()));
@@ -865,6 +886,7 @@ fn an_update_by_someone_else_keeps_the_first_persons_data_folder() {
     );
 }
 
+#[cfg(windows)]
 #[test]
 fn a_shortcut_that_cannot_go_keeps_the_record_to_try_again() {
     use std::os::windows::fs::OpenOptionsExt;

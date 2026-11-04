@@ -1452,7 +1452,7 @@ impl Wizard {
 }
 
 /// The choices that would install again what `found` has.
-fn choices_of(found: &Found) -> Choices {
+pub(crate) fn choices_of(found: &Found) -> Choices {
     let r = &found.record;
     Choices {
         scope: found.scope,

@@ -35,7 +35,7 @@ use windows_sys::Win32::UI::Shell::{
 };
 use windows_sys::core::GUID;
 
-use crate::plan::{Places, Scope, Shortcut, UninstallEntry};
+use crate::plan::{Flavor, Places, Scope, Shortcut, UninstallEntry};
 use crate::system::{Installed, System};
 
 /// `s` as a NUL-terminated wide string.
@@ -69,6 +69,10 @@ fn known_folder(id: &GUID) -> io::Result<PathBuf> {
 /// The folders of this system, for the person running the installer.
 pub fn places() -> io::Result<Places> {
     Ok(Places {
+        flavor: Flavor::Windows,
+        home: PathBuf::new(),
+        user_bin: PathBuf::new(),
+        common_bin: PathBuf::new(),
         program_files: known_folder(&FOLDERID_ProgramFiles)?,
         common_files: known_folder(&FOLDERID_ProgramFilesCommon)?,
         user_programs: known_folder(&FOLDERID_UserProgramFiles)?,

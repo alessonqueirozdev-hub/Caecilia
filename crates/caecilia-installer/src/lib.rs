@@ -1,6 +1,6 @@
-//! Caecilia's Windows installer, in Rust: the standalone application, the
-//! VST3 and CLAP plugins and the demonstration organ, with an uninstaller
-//! and an entry in *Apps & features*. See `docs/INSTALLER.md`.
+//! Caecilia's installer, in Rust, for Windows, Linux and macOS: the
+//! standalone application, the VST3 and CLAP plugins and the demonstration
+//! organ, with an uninstaller. See `docs/INSTALLER.md`.
 //!
 //! - [`payload`]: the files, carried inside the installer and checked by
 //!   hash;
@@ -11,7 +11,11 @@
 //! - [`system`]: the registry and shortcuts, behind a trait so tests never
 //!   touch the real ones;
 //! - [`args`], [`log`], [`text`]: the command line, the log, the words;
-//! - [`ui`]: the wizard, in the console's materials.
+//! - [`ui`]: the wizard, in the console's materials, on Windows;
+//! - [`terminal`]: the same questions in a terminal, where Manguebyte has no
+//!   windows yet (Linux and macOS);
+//! - [`posix`]: Linux's and macOS's side of [`system`];
+//! - [`tar`]: the archive their installers are downloaded in.
 //!
 //! The engine knows nothing of Caecilia beyond what the payload says; once
 //! it has shipped Caecilia it can move into Manguebyte for every plugin.
@@ -22,9 +26,12 @@ pub mod job;
 pub mod log;
 pub mod payload;
 pub mod plan;
+pub mod posix;
 pub mod record;
 pub mod run;
 pub mod system;
+pub mod tar;
+pub mod terminal;
 pub mod text;
 pub mod ui;
 pub mod version;
