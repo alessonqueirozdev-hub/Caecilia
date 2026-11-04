@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use caecilia_plugin::Caecilia;
+use caecilia_plugin::{Action, Binding, Caecilia, Source};
 use manguebyte_dsp::event::EventKind;
 use manguebyte_gfx::Point;
 use manguebyte_gui::HeadlessEditor;
@@ -399,6 +399,8 @@ fn the_sustain_pedal_alternates_two_models() {
                 value: if down { 127 } else { 0 },
             }),
         );
+        // No foot comes back sooner than this.
+        c.h.render(4800);
         c.settle();
     };
     let has = |c: &mut Console, name: &str| drawn_names(c).iter().any(|n| n == name);
@@ -433,4 +435,92 @@ fn the_sustain_pedal_alternates_two_models() {
     pedal(&mut c, true);
     pedal(&mut c, false);
     assert_eq!(c.h.plugin_mut().params().stop_mask(), before);
+}
+
+/// Two models chosen for the pedal, on a console that has them.
+fn pedal_console() -> Console {
+    let mut c = Console::open();
+    c.click(Role::Button, "Models");
+    c.click(Role::Button, "Sustain pedal");
+    c.click(Role::Button, "Model Récit: flutes");
+    c.click(Role::Button, "Model Grand-Orgue: plenum");
+    c
+}
+
+/// The pedal's messages, all at once, as `(channel, value)`.
+fn send_pedal(c: &mut Console, messages: &[(u8, u8)]) {
+    let at = c.h.position();
+    for (channel, value) in messages {
+        c.h.schedule(
+            at,
+            EventKind::Midi(MidiMessage::ControlChange {
+                channel: *channel,
+                controller: 64,
+                value: *value,
+            }),
+        );
+    }
+    // No foot comes back sooner than this.
+    c.h.render(4800);
+    c.h.render(4800);
+    c.settle();
+}
+
+fn on_first_model(c: &mut Console) -> bool {
+    drawn_names(c).iter().any(|n| n == "Flûte octaviante 4")
+}
+
+fn on_second_model(c: &mut Console) -> bool {
+    drawn_names(c).iter().any(|n| n == "Fourniture IV")
+}
+
+#[test]
+fn one_press_heard_on_two_channels_is_one_press() {
+    let mut c = pedal_console();
+    for round in 0..3 {
+        send_pedal(&mut c, &[(0, 127), (1, 127)]);
+        assert!(on_first_model(&mut c), "round {round}: the first model");
+        send_pedal(&mut c, &[(0, 0), (1, 0)]);
+        send_pedal(&mut c, &[(0, 127), (1, 127)]);
+        assert!(on_second_model(&mut c), "round {round}: the second model");
+        send_pedal(&mut c, &[(0, 0), (1, 0)]);
+    }
+}
+
+#[test]
+fn a_pedal_that_bounces_or_wavers_is_one_press() {
+    let mut c = pedal_console();
+    // A switch bouncing as it closes.
+    send_pedal(&mut c, &[(0, 127), (0, 0), (0, 127)]);
+    assert!(on_first_model(&mut c));
+    send_pedal(&mut c, &[(0, 0)]);
+    send_pedal(&mut c, &[(0, 127)]);
+    assert!(on_second_model(&mut c));
+    send_pedal(&mut c, &[(0, 0)]);
+    // A continuous pedal wavering around the middle, more slowly than a bounce.
+    send_pedal(&mut c, &[(0, 70)]);
+    assert!(on_first_model(&mut c));
+    send_pedal(&mut c, &[(0, 60)]);
+    send_pedal(&mut c, &[(0, 70)]);
+    assert!(on_first_model(&mut c), "it never came up");
+    send_pedal(&mut c, &[(0, 0)]);
+    send_pedal(&mut c, &[(0, 127)]);
+    assert!(on_second_model(&mut c));
+}
+
+#[test]
+fn the_alternating_pedal_comes_before_a_binding_it_once_had() {
+    let mut c = pedal_console();
+    c.h.plugin_mut().params().console.bind(Binding {
+        source: Source::Controller {
+            channel: 0,
+            number: 64,
+        },
+        action: Action::Model(0),
+    });
+    send_pedal(&mut c, &[(0, 127)]);
+    assert!(on_first_model(&mut c));
+    send_pedal(&mut c, &[(0, 0)]);
+    send_pedal(&mut c, &[(0, 127)]);
+    assert!(on_second_model(&mut c));
 }

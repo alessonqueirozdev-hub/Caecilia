@@ -175,6 +175,12 @@ const MAX_BLOCK_EVENTS: usize = 2048;
 /// compressor: the voices' own headroom keeps a tutti under it.
 const OUTPUT_CEILING_DB: f64 = -1.0;
 
+/// Below this, the sustain pedal has come up, for a new press of it to count.
+const PEDAL_UP: u8 = 32;
+/// How soon after a press of the sustain pedal another is the same one: longer
+/// than a switch bounces or a block of audio lasts, shorter than a foot's return.
+const PEDAL_QUIET_SECONDS: f64 = 0.08;
+
 /// The instrument.
 pub struct Caecilia {
     organ: Arc<Organ>,
@@ -212,6 +218,10 @@ pub struct Caecilia {
     last_channel: u8,
     /// Each controller's last value, for firing learned controls on the press.
     controller_values: [[u8; 128]; 16],
+    /// The channels whose sustain pedal has come up since it last went down.
+    pedal_lifted: u16,
+    /// Samples until another press of the sustain pedal is a new one.
+    pedal_quiet: u32,
     /// Who changed the registration this block, if the console did.
     origin: Option<Origin>,
     /// Every temperament on every key at A4 = 440, built once: building a
@@ -507,6 +517,38 @@ impl Caecilia {
         }
     }
 
+    /// The sustain pedal moved while it alternates two models. One press can
+    /// come many times: a keyboard may send it on every channel of a layer, a
+    /// switch bounces as it closes, a continuous pedal wavers around its middle.
+    /// Each would otherwise turn the page again, and two land where they began.
+    fn alternate_models(&mut self, channel: u8, value: u8) {
+        let bit = 1u16 << (channel & 0x0F);
+        if value < PEDAL_UP {
+            self.pedal_lifted |= bit;
+            return;
+        }
+        if value < 64 || self.pedal_lifted & bit == 0 {
+            return;
+        }
+        self.pedal_lifted &= !bit;
+        if self.pedal_quiet > 0 {
+            return;
+        }
+        self.pedal_quiet = (PEDAL_QUIET_SECONDS * self.sample_rate) as u32;
+        let console = &self.params.console;
+        let Some((a, b)) = console.pedal_pair() else {
+            return;
+        };
+        // Anywhere but on the first goes to the first, unless this organ lacks it.
+        let first = console.model(a).map_or(0, |m| m.0);
+        let next = if first == 0 || first == self.params.stop_mask() {
+            b
+        } else {
+            a
+        };
+        self.apply_model(next, Some(channel));
+    }
+
     /// A manual switch pressed on `channel`: that keyboard plays `division`
     /// from now on, or `division` too while another switch is held.
     fn switch_manual(&mut self, channel: u8, note: Option<u8>, division: u16) {
@@ -739,6 +781,8 @@ impl Plugin for Caecilia {
             channels_played: 0,
             last_channel: 0,
             controller_values: [[0; 128]; 16],
+            pedal_lifted: u16::MAX,
+            pedal_quiet: 0,
             origin: None,
             temperaments: temperament_tables(),
             tuning_choice: None,
@@ -817,6 +861,7 @@ impl Plugin for Caecilia {
         // The console first: pistons and learned controls change the
         // registration, which then applies to this block from its top.
         self.origin = None;
+        self.pedal_quiet = self.pedal_quiet.saturating_sub(buffer.num_frames() as u32);
         for event in context.events {
             match event.kind {
                 EventKind::Midi(MidiMessage::ProgramChange { program, .. }) => {
@@ -846,18 +891,17 @@ impl Plugin for Caecilia {
                         number: controller,
                     };
                     // Swell and sustain stay what they are unless learning took
-                    // them, or the sustain pedal is alternating two models.
-                    let taken = self.console_takes(source, rising);
-                    if !taken && controller == 64 && rising {
-                        if let Some((a, b)) = self.params.console.pedal_pair() {
-                            let on_first = self
-                                .params
-                                .console
-                                .model(a)
-                                .is_some_and(|m| m.0 == self.params.stop_mask());
-                            let next = if on_first { b } else { a };
-                            self.apply_model(next, Some(channel));
-                        }
+                    // them, or the sustain pedal is alternating two models: that
+                    // comes before anything it was bound to, but not before
+                    // learning what to bind it to.
+                    let console = &self.params.console;
+                    if controller == 64
+                        && console.armed().is_none()
+                        && console.pedal_pair().is_some()
+                    {
+                        self.alternate_models(channel, value);
+                    } else {
+                        self.console_takes(source, rising);
                     }
                 }
                 _ => {}

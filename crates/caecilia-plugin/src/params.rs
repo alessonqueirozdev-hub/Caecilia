@@ -306,7 +306,6 @@ impl CaeciliaParams {
     }
 }
 
-/// The factory generals in the first pistons, the rest empty.
 /// How the session names an organ the instrument carries, where any other is
 /// its file's path.
 const BUILT_IN_PREFIX: &str = "built-in:";
@@ -319,6 +318,7 @@ fn set_models(console: &ConsoleMemory, organ: &Organ) {
     }
 }
 
+/// The factory generals in the first pistons, the rest empty.
 fn set_factory_generals(console: &ConsoleMemory, organ: &Organ) {
     for n in 0..GENERALS {
         console.set_general(n, 0, 0);
