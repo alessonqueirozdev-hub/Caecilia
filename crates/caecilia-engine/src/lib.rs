@@ -384,11 +384,14 @@ impl OrganEngine {
         // The division a chest sounds for: the first rank standing on it,
         // which is what `process_divisions` writes a bus per division from.
         // A chest nobody's rank stands on answers to the first division.
+        // `u8::MAX` is the "no rank yet" mark, so a division's index stops
+        // one short of it; the render folds any index past the last bus
+        // into that bus anyway.
         let mut division_of_chest = [u8::MAX; MAX_CHESTS];
         for k in organ.ranks() {
             if let Some(slot) = division_of_chest.get_mut(k.windchest.index()) {
                 if *slot == u8::MAX {
-                    *slot = k.division.0.min(u16::from(u8::MAX)) as u8;
+                    *slot = k.division.0.min(u16::from(u8::MAX - 1)) as u8;
                 }
             }
         }
