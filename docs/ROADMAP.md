@@ -67,7 +67,10 @@ what they need.
 - [ ] More of them, historical and modern
 - [x] Routing to several outputs: each division of the organ on a stereo bus
   of its own, for a host that mixes the divisions apart. The main output keeps
-  the whole mix.
+  the whole mix. The buses are "Division 01" to "Division 16" by place, and
+  from a seventeenth division on, all share the last bus.
+- [ ] The organ's own division names on the output buses, when the Manguebyte
+  can rename a bus at runtime.
 
 *Help wanted:* anyone who can write an [organ file](ORGAN_FILE.md).
 
