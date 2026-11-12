@@ -1126,9 +1126,13 @@ impl Plugin for Caecilia {
         let (left, right) = buffer.channel_pair_mut(0, 1);
         // Each division renders where it can then be copied to its bus:
         // `bus_mut` lends a bus at a time, so the engine writes a scratch of
-        // the plugin's own, for the buses the host listens to.
+        // the plugin's own, for the buses the host listens to. A block the
+        // scratch does not cover — an empty one, which `chunks` would panic
+        // on, or one past prepare's largest — is not rendered to buses at
+        // all, and the buses a host listens to are made silent instead of
+        // keeping what the last block left in them.
         let mut divisions: [DivisionBus<'_>; MAX_DIVISIONS] = std::array::from_fn(|_| None);
-        if self.div_scratch.len() >= 2 * MAX_DIVISIONS * frames {
+        if frames > 0 && self.div_scratch.len() >= 2 * MAX_DIVISIONS * frames {
             for (d, (slot, chunk)) in divisions
                 .iter_mut()
                 .zip(self.div_scratch.chunks_mut(2 * frames))
@@ -1139,18 +1143,27 @@ impl Plugin for Caecilia {
                     *slot = Some((l, r));
                 }
             }
-        }
-        engine.process_divisions(left, right, &self.events, &mut divisions);
-        for (d, chunk) in self
-            .div_scratch
-            .chunks(2 * frames)
-            .take(MAX_DIVISIONS)
-            .enumerate()
-        {
-            if let Some(bus) = aux.bus_mut(d) {
-                if bus.num_frames() == frames {
-                    bus.channel_mut(0).copy_from_slice(&chunk[..frames]);
-                    bus.channel_mut(1).copy_from_slice(&chunk[frames..]);
+            engine.process_divisions(left, right, &self.events, &mut divisions);
+            for (d, chunk) in self
+                .div_scratch
+                .chunks(2 * frames)
+                .take(MAX_DIVISIONS)
+                .enumerate()
+            {
+                if let Some(bus) = aux.bus_mut(d) {
+                    if bus.num_frames() == frames {
+                        bus.channel_mut(0).copy_from_slice(&chunk[..frames]);
+                        bus.channel_mut(1).copy_from_slice(&chunk[frames..]);
+                    }
+                }
+            }
+        } else {
+            engine.process(left, right, &self.events);
+            for d in 0..MAX_DIVISIONS {
+                if let Some(bus) = aux.bus_mut(d) {
+                    for channel in 0..bus.num_channels() {
+                        bus.channel_mut(channel).fill(0.0);
+                    }
                 }
             }
         }
