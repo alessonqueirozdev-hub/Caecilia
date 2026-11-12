@@ -22,6 +22,10 @@
 //! the new one is built off the audio thread, held keys carry over, the old
 //! one fades out, and the session remembers the file.
 //!
+//! Beside the main output, which carries the whole mix, each division has
+//! its own stereo bus ([`DIVISION_BUSES`]), so a host can mix and place the
+//! divisions apart. A bus a host leaves switched off is not rendered.
+//!
 //! # Real time
 //!
 //! `prepare` builds the engine and allocates. `process` allocates nothing,
@@ -43,7 +47,7 @@ mod ui;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use caecilia_engine::{Command, EngagedTable, OrganEngine, Timed};
+use caecilia_engine::{Command, DivisionBus, EngagedTable, MAX_DIVISIONS, OrganEngine, Timed};
 use caecilia_model::{CouplerId, Diagnostic, DivisionId, Organ, StopId, caecilia_organ};
 use caecilia_registration::MASK_CAPACITY;
 use caecilia_wind::MAX_TREMULANT_DEPTH_FRACTION;
@@ -53,7 +57,10 @@ use manguebyte_dsp::event::EventKind;
 use manguebyte_dsp::tuning::{Scale, Temperament, TuningSettings};
 use manguebyte_dsp::{Limiter, ProcessContext, ProcessSpec, Processor, Reverb, Tuning};
 use manguebyte_midi::MidiMessage;
-use manguebyte_plugin::{AudioLayout, Plugin, PluginInfo, PluginKind, apply_param_events};
+use manguebyte_plugin::output::OutputBuffer;
+use manguebyte_plugin::{
+    AudioLayout, AuxOutput, AuxOutputs, Plugin, PluginInfo, PluginKind, apply_param_events,
+};
 
 pub use console::{Action, Binding, ConsoleMemory, GENERALS, LEARN_SLOTS, Source};
 pub use controller::{Origin, Played, RegistrationController};
@@ -171,6 +178,32 @@ const UI_NOTES: usize = 256;
 /// Commands one block can carry.
 const MAX_BLOCK_EVENTS: usize = 2048;
 
+/// One stereo output bus per division the engine can route, "Division 01"
+/// the organ's first division. The plugin formats fix a plugin's buses when
+/// it is built, so they are named for the division's place rather than the
+/// division the organ of the moment puts there; the console shows the
+/// organ's own names in the same order. A bus past the organ's divisions
+/// stays silent, and a host that leaves one switched off pays nothing for
+/// it.
+pub const DIVISION_BUSES: [AuxOutput; MAX_DIVISIONS] = [
+    AuxOutput::stereo("Division 01"),
+    AuxOutput::stereo("Division 02"),
+    AuxOutput::stereo("Division 03"),
+    AuxOutput::stereo("Division 04"),
+    AuxOutput::stereo("Division 05"),
+    AuxOutput::stereo("Division 06"),
+    AuxOutput::stereo("Division 07"),
+    AuxOutput::stereo("Division 08"),
+    AuxOutput::stereo("Division 09"),
+    AuxOutput::stereo("Division 10"),
+    AuxOutput::stereo("Division 11"),
+    AuxOutput::stereo("Division 12"),
+    AuxOutput::stereo("Division 13"),
+    AuxOutput::stereo("Division 14"),
+    AuxOutput::stereo("Division 15"),
+    AuxOutput::stereo("Division 16"),
+];
+
 /// The ceiling no output sample passes, dBFS. A safety net, not a bus
 /// compressor: the voices' own headroom keeps a tutti under it.
 const OUTPUT_CEILING_DB: f64 = -1.0;
@@ -247,6 +280,9 @@ pub struct Caecilia {
     fade_right: Vec<f32>,
     /// An organ done fading that the return ring had no room for yet.
     retired: Option<Box<Swap>>,
+    /// Where the divisions render before they are copied to their buses,
+    /// (left, right) per division of [`DIVISION_BUSES`].
+    div_scratch: Vec<f32>,
     /// Keys held, per channel, which an organ change carries over.
     held: [u128; 16],
     /// The organ slot's generation of the organ playing.
@@ -720,6 +756,7 @@ impl Plugin for Caecilia {
         kind: PluginKind::Instrument,
     };
     const LAYOUT: AudioLayout = AudioLayout::STEREO_INSTRUMENT;
+    const AUX_OUTPUTS: &'static [AuxOutput] = &DIVISION_BUSES;
     type Params = CaeciliaParams;
 
     fn new() -> Self {
@@ -796,6 +833,7 @@ impl Plugin for Caecilia {
             fade_left: Vec::new(),
             fade_right: Vec::new(),
             retired: None,
+            div_scratch: Vec::new(),
             held: [0; 16],
             generation: 0,
             telemetry,
@@ -832,6 +870,7 @@ impl Plugin for Caecilia {
         self.fade_len = (FADE_SECONDS * spec.sample_rate).round().max(1.0) as usize;
         self.fade_left = vec![0.0; spec.max_block_size];
         self.fade_right = vec![0.0; spec.max_block_size];
+        self.div_scratch = vec![0.0; 2 * MAX_DIVISIONS * spec.max_block_size];
         self.held = [0; 16];
         self.sounding = [[0; 128]; 16];
         self.switches_held = [0; 16];
@@ -849,6 +888,21 @@ impl Plugin for Caecilia {
     }
 
     fn process(&mut self, buffer: &mut AudioBuffer<f32>, context: &ProcessContext<'_, f32>) {
+        self.process_with_aux(
+            buffer,
+            context,
+            &mut OutputBuffer::new(),
+            &mut AuxOutputs::new(),
+        );
+    }
+
+    fn process_with_aux(
+        &mut self,
+        buffer: &mut AudioBuffer<f32>,
+        context: &ProcessContext<'_, f32>,
+        _output: &mut OutputBuffer,
+        aux: &mut AuxOutputs,
+    ) {
         let started = std::time::Instant::now();
         self.events.clear();
         self.take_new_organ();
@@ -1068,8 +1122,38 @@ impl Plugin for Caecilia {
         }
         self.telemetry.set_demo(self.demo.playing());
 
+        let frames = buffer.num_frames();
         let (left, right) = buffer.channel_pair_mut(0, 1);
-        engine.process(left, right, &self.events);
+        // Each division renders where it can then be copied to its bus:
+        // `bus_mut` lends a bus at a time, so the engine writes a scratch of
+        // the plugin's own, for the buses the host listens to.
+        let mut divisions: [DivisionBus<'_>; MAX_DIVISIONS] = std::array::from_fn(|_| None);
+        if self.div_scratch.len() >= 2 * MAX_DIVISIONS * frames {
+            for (d, (slot, chunk)) in divisions
+                .iter_mut()
+                .zip(self.div_scratch.chunks_mut(2 * frames))
+                .enumerate()
+            {
+                if aux.is_active(d) {
+                    let (l, r) = chunk.split_at_mut(frames);
+                    *slot = Some((l, r));
+                }
+            }
+        }
+        engine.process_divisions(left, right, &self.events, &mut divisions);
+        for (d, chunk) in self
+            .div_scratch
+            .chunks(2 * frames)
+            .take(MAX_DIVISIONS)
+            .enumerate()
+        {
+            if let Some(bus) = aux.bus_mut(d) {
+                if bus.num_frames() == frames {
+                    bus.channel_mut(0).copy_from_slice(&chunk[..frames]);
+                    bus.channel_mut(1).copy_from_slice(&chunk[frames..]);
+                }
+            }
+        }
         let chests = self.organ.windchests();
         for (i, chest) in chests.iter().take(telemetry::TELEMETRY_CHESTS).enumerate() {
             self.telemetry

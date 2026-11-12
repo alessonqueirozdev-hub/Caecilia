@@ -65,7 +65,9 @@ what they need.
   Renaissance and a small chapel organ, each a style rather than a copy of any
   instrument. The specifications are ours to improve, and they want an organist's ears.
 - [ ] More of them, historical and modern
-- [ ] Routing to several outputs
+- [x] Routing to several outputs: each division of the organ on a stereo bus
+  of its own, for a host that mixes the divisions apart. The main output keeps
+  the whole mix.
 
 *Help wanted:* anyone who can write an [organ file](ORGAN_FILE.md).
 

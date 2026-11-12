@@ -193,8 +193,17 @@ fn processing_never_allocates() {
         plugin.process(buffer, &context);
     };
     let empty = EventBuffer::with_capacity(1);
+    // The divisions' buses, made outside the watched blocks the way a
+    // host makes them.
+    let mut output = manguebyte_plugin::output::OutputBuffer::new();
+    let mut aux = manguebyte_plugin::AuxOutputs::for_plugin::<Caecilia>(256);
     // One block outside the watch, so nothing lazily initialised is counted.
     run(&mut plugin, &mut buffer, &empty);
+    {
+        let context = ProcessContext::new(&empty, &transport);
+        aux.start_block(256);
+        plugin.process_with_aux(&mut buffer, &context, &mut output, &mut aux);
+    }
 
     HEAP_CALLS.with(|c| c.set(0));
     WATCHING.with(|w| w.set(true));
@@ -205,6 +214,12 @@ fn processing_never_allocates() {
     }
     buffer.set_num_frames(256);
     run(&mut plugin, &mut buffer, &quiet);
+    // And a block writing the divisions' buses, the way a host runs it.
+    aux.start_block(256);
+    {
+        let context = ProcessContext::new(&events, &transport);
+        plugin.process_with_aux(&mut buffer, &context, &mut output, &mut aux);
+    }
     plugin.reset();
     run(&mut plugin, &mut buffer, &empty);
     WATCHING.with(|w| w.set(false));

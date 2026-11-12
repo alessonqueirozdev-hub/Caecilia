@@ -10,6 +10,8 @@
 //! once per block under the flow every sounding pipe draws, before any voice
 //! reads it. An engine built [`with_space`](OrganEngine::with_space) also gives
 //! every pipe its own place in the case, and the room its first reflections.
+//! [`OrganEngine::process_divisions`] renders the same mix and, beside it, a
+//! bus per division for a host that mixes the divisions apart.
 //!
 //! # Real time
 //!
@@ -43,7 +45,8 @@ pub use space::ROOMS;
 /// Default polyphony: as many pipes as can sound at once.
 pub const DEFAULT_POLYPHONY: usize = 512;
 
-/// Divisions that can carry a swell shoe or a sustain pedal.
+/// Divisions that can carry a swell shoe or a sustain pedal, and that
+/// [`OrganEngine::process_divisions`] can give a bus of their own.
 pub const MAX_DIVISIONS: usize = 16;
 
 /// Chests the engine keeps buses for.
@@ -124,6 +127,11 @@ pub struct Timed {
     pub command: Command,
 }
 
+/// A stereo bus one division writes, in the organ's division order; `None`
+/// where the caller does not listen to the division. What
+/// [`OrganEngine::process_divisions`] is handed.
+pub type DivisionBus<'a> = Option<(&'a mut [f32], &'a mut [f32])>;
+
 /// What the engine publishes after each block.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Meters {
@@ -181,6 +189,8 @@ pub struct OrganEngine {
     expr_current: [f32; MAX_DIVISIONS],
     expr_ramp: [(f32, f32); MAX_DIVISIONS],
     shoe_for_chest: [Option<u8>; MAX_CHESTS],
+    /// The division each chest sounds for, on the division's own bus.
+    division_of_chest: [u8; MAX_CHESTS],
     /// Each division's keyboard: a key off it is not a key.
     compass: [(MidiNote, MidiNote); MAX_DIVISIONS],
     bus_l: Vec<Vec<f32>>,
@@ -371,6 +381,23 @@ impl OrganEngine {
             }
         }
 
+        // The division a chest sounds for: the first rank standing on it,
+        // which is what `process_divisions` writes a bus per division from.
+        // A chest nobody's rank stands on answers to the first division.
+        let mut division_of_chest = [u8::MAX; MAX_CHESTS];
+        for k in organ.ranks() {
+            if let Some(slot) = division_of_chest.get_mut(k.windchest.index()) {
+                if *slot == u8::MAX {
+                    *slot = k.division.0.min(u16::from(u8::MAX)) as u8;
+                }
+            }
+        }
+        for slot in &mut division_of_chest {
+            if *slot == u8::MAX {
+                *slot = 0;
+            }
+        }
+
         let mut compass = [(0, 127); MAX_DIVISIONS];
         for d in organ
             .divisions()
@@ -420,6 +447,7 @@ impl OrganEngine {
             expr_current: [1.0; MAX_DIVISIONS],
             expr_ramp: [(1.0, 0.0); MAX_DIVISIONS],
             shoe_for_chest,
+            division_of_chest,
             compass,
             bus_l: vec![vec![0.0; max_block]; chest_count],
             bus_r: vec![vec![0.0; max_block]; chest_count],
@@ -522,6 +550,39 @@ impl OrganEngine {
     /// Render one block into `left` and `right` (overwritten), applying
     /// `events` at their frames.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32], events: &[Timed]) {
+        self.process_impl(left, right, events, None);
+    }
+
+    /// Render one block as [`process`](Self::process) does, and each
+    /// division into its own bus of `divisions` (overwritten too), in the
+    /// organ's division order. A `None` bus is not written, and the
+    /// division sounds on the main output alone.
+    ///
+    /// A division's bus carries the chests its ranks stand on, after the
+    /// room's reflections and its swell box and before whatever master
+    /// sections the caller adds, so the buses sum to the engine's mix. A
+    /// chest two divisions draw from sounds on the division of the first
+    /// rank standing on it; a division past [`MAX_DIVISIONS`] shares the
+    /// last bus given, and a bus past the organ's divisions sounds only
+    /// silence.
+    pub fn process_divisions(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        events: &[Timed],
+        divisions: &mut [DivisionBus<'_>],
+    ) {
+        self.process_impl(left, right, events, Some(divisions));
+    }
+
+    /// [`process`](Self::process), with the divisions' buses when asked.
+    fn process_impl(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        events: &[Timed],
+        divisions: Option<&mut [DivisionBus<'_>]>,
+    ) {
         let total = left.len().min(right.len());
         if total == 0 {
             return;
@@ -530,6 +591,8 @@ impl OrganEngine {
         self.pending_meters = Meters::default();
         self.meter_sum_sq = 0.0;
         self.meter_samples = 0;
+        // A block in which nobody listens to a bus renders exactly `process`.
+        let mut divisions = divisions.filter(|d| d.iter().any(Option::is_some));
 
         let mut next_event = 0;
         let mut done = 0;
@@ -546,7 +609,12 @@ impl OrganEngine {
                 next_event += 1;
             }
             let n = (until - done).min(self.max_block);
-            self.render_slice(&mut left[done..done + n], &mut right[done..done + n], done);
+            self.render_slice(
+                &mut left[done..done + n],
+                &mut right[done..done + n],
+                done,
+                divisions.as_deref_mut(),
+            );
             done += n;
         }
         // Events past every slice still land (on the last frame, applied now).
@@ -627,7 +695,13 @@ impl OrganEngine {
         }
     }
 
-    fn render_slice(&mut self, left: &mut [f32], right: &mut [f32], offset: usize) {
+    fn render_slice(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        offset: usize,
+        divisions: Option<&mut [DivisionBus<'_>]>,
+    ) {
         let frames = left.len();
         for c in 0..self.chest_count {
             self.bus_l[c][..frames].fill(0.0);
@@ -691,6 +765,37 @@ impl OrganEngine {
             fr.set_lowpass(self.sample_rate, cutoff);
             fl.process_in_place(&mut self.bus_l[c][..frames]);
             fr.process_in_place(&mut self.bus_r[c][..frames]);
+        }
+
+        // Each division's own bus takes the chests that feed it, from the
+        // same finished chest buses the main output sums below.
+        if let Some(divisions) = divisions {
+            let last = divisions.len().saturating_sub(1);
+            for slot in divisions.iter_mut().filter_map(Option::as_mut) {
+                if let (Some(l), Some(r)) = (
+                    slot.0.get_mut(offset..offset + frames),
+                    slot.1.get_mut(offset..offset + frames),
+                ) {
+                    l.fill(0.0);
+                    r.fill(0.0);
+                }
+            }
+            for c in 0..self.chest_count {
+                let d = usize::from(self.division_of_chest[c]).min(last);
+                if let Some(Some((l, r))) = divisions.get_mut(d) {
+                    if let (Some(l), Some(r)) = (
+                        l.get_mut(offset..offset + frames),
+                        r.get_mut(offset..offset + frames),
+                    ) {
+                        for (o, b) in l.iter_mut().zip(&self.bus_l[c][..frames]) {
+                            *o += b;
+                        }
+                        for (o, b) in r.iter_mut().zip(&self.bus_r[c][..frames]) {
+                            *o += b;
+                        }
+                    }
+                }
+            }
         }
 
         left.fill(0.0);

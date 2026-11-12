@@ -61,6 +61,9 @@ too**.
 - **Models, one press away.** Ready-made sounds, from a Récit oboe to a Baroque
   organ to the tutti, each drawing its stops and sending your keyboard to the right
   manual. Any key of your keyboard can choose one.
+- **Every division on its own output.** A host that opens the plugin's
+  auxiliary buses gets each division of the organ on a stereo bus of its own,
+  while the main output keeps the whole mix.
 - **Plays without a keyboard.** Bach demonstrations draw their own stops and play
   themselves, and a tour sounds every stop alone. With one MIDI keyboard, keys you
   choose switch between the manuals or play both.

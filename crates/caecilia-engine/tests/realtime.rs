@@ -197,6 +197,13 @@ fn playing_in_a_room_never_allocates() {
     let t = e.table_for(&organ, &all, &[]);
     e.set_engaged(t);
     let (mut l, mut r) = (vec![0.0f32; 256], vec![0.0f32; 256]);
+    // The divisions' buses, made outside the block they are written in.
+    let (mut dl, mut dr) = (vec![vec![0.0f32; 256]; 16], vec![vec![0.0f32; 256]; 16]);
+    let mut buses: Vec<caecilia_engine::DivisionBus<'_>> = dl
+        .iter_mut()
+        .zip(&mut dr)
+        .map(|(l, r)| Some((l.as_mut_slice(), r.as_mut_slice())))
+        .collect();
     let events: Vec<Timed> = [36u8, 48, 60, 72]
         .map(|note| Timed {
             offset: 7,
@@ -214,7 +221,12 @@ fn playing_in_a_room_never_allocates() {
         if b % 40 == 0 {
             e.set_room(b / 40);
         }
-        e.process(&mut l, &mut r, &[]);
+        // Every other block also writes the divisions' buses.
+        if b % 2 == 0 {
+            e.process_divisions(&mut l, &mut r, &[], &mut buses);
+        } else {
+            e.process(&mut l, &mut r, &[]);
+        }
     }
     e.reset();
     WATCHING.with(|w| w.set(false));
