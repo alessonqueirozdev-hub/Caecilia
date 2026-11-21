@@ -682,7 +682,7 @@ checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 
 [[package]]
 name = "manguebyte-clap"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap-sys",
  "manguebyte-core",
@@ -694,23 +694,24 @@ dependencies = [
 
 [[package]]
 name = "manguebyte-core"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "manguebyte-devices"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cpal",
  "manguebyte-core",
  "manguebyte-dsp",
  "manguebyte-midi",
  "manguebyte-ump-io",
+ "manguebyte-wasapi",
  "midir",
 ]
 
 [[package]]
 name = "manguebyte-dsp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "manguebyte-core",
  "manguebyte-midi",
@@ -718,7 +719,7 @@ dependencies = [
 
 [[package]]
 name = "manguebyte-gfx"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "harfrust",
  "skrifa",
@@ -727,7 +728,7 @@ dependencies = [
 
 [[package]]
 name = "manguebyte-gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "manguebyte-gfx",
  "manguebyte-params",
@@ -738,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "manguebyte-host"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap-sys",
  "libloading 0.8.9",
@@ -751,18 +752,18 @@ dependencies = [
 
 [[package]]
 name = "manguebyte-midi"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "manguebyte-params"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "manguebyte-core",
 ]
 
 [[package]]
 name = "manguebyte-plugin"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "manguebyte-core",
  "manguebyte-dsp",
@@ -772,7 +773,7 @@ dependencies = [
 
 [[package]]
 name = "manguebyte-standalone"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "manguebyte-core",
  "manguebyte-devices",
@@ -784,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "manguebyte-ui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "manguebyte-core",
  "manguebyte-dsp",
@@ -795,14 +796,14 @@ dependencies = [
 
 [[package]]
 name = "manguebyte-ump-io"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "manguebyte-vst3"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "manguebyte-core",
  "manguebyte-dsp",
@@ -813,8 +814,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "manguebyte-wasapi"
+version = "0.2.0"
+dependencies = [
+ "windows",
+]
+
+[[package]]
 name = "manguebyte-window"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "manguebyte-gfx",
  "manguebyte-plugin",

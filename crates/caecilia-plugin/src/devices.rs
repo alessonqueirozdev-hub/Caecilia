@@ -40,6 +40,9 @@ pub struct DevicesView {
     pub buffer_sizes: Vec<u32>,
     /// The buffer size asked for; `None` lets the device choose.
     pub buffer_size: Option<u32>,
+    /// Whether the output is held exclusively (WASAPI's exclusive mode),
+    /// or `None` where that cannot be chosen.
+    pub exclusive: Option<bool>,
     /// The MIDI input ports, the open ones chosen.
     pub midi_inputs: Vec<DeviceEntry>,
     /// What plays, then each thing that fell back or failed, a line each.
@@ -57,6 +60,8 @@ pub enum DeviceRequest {
     SampleRate(Option<u32>),
     /// Ask for this buffer size, or the device's own.
     BufferSize(Option<u32>),
+    /// Hold the output exclusively, or share it with other programs.
+    Exclusive(bool),
     /// Open or close the MIDI input port with this id.
     MidiInput(String, bool),
 }

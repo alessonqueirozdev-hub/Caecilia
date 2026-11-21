@@ -43,6 +43,7 @@ pub(crate) enum Pick {
     Key,
     Pitch,
     Output,
+    Mode,
     Rate,
     Buffer,
 }
@@ -55,6 +56,7 @@ impl Pick {
             Self::Key => "Temperament's key",
             Self::Pitch => "Pitch of A",
             Self::Output => "Output",
+            Self::Mode => "Mode",
             Self::Rate => "Sample rate",
             Self::Buffer => "Buffer",
         }
@@ -297,6 +299,16 @@ fn choices(pick: Pick, sound: &SoundView) -> Vec<(String, String, bool)> {
                 })
                 .collect()
         }),
+        Pick::Mode => sound
+            .devices
+            .as_ref()
+            .and_then(|d| d.exclusive)
+            .map_or_else(Vec::new, |on| {
+                vec![
+                    ("Shared".into(), "Mode Shared".into(), !on),
+                    ("Exclusive".into(), "Mode Exclusive".into(), on),
+                ]
+            }),
         Pick::Rate => sound.devices.as_ref().map_or_else(Vec::new, |d| {
             auto_or(&d.sample_rates, d.sample_rate, rate_name, "Rate")
         }),
@@ -319,6 +331,7 @@ fn columns(pick: Pick, count: usize) -> usize {
                 1
             }
         }
+        Pick::Mode => 2,
         Pick::Rate | Pick::Buffer => 5,
     }
 }
@@ -448,6 +461,9 @@ fn midi_plan(size: Size, count: usize, switches: usize, ports: Option<usize>) ->
 
 struct AudioPlan {
     output: Rect,
+    /// Shared or exclusive, at the end of the output's row, where the
+    /// system has an exclusive mode.
+    mode: Option<Rect>,
     rate: Rect,
     buffer: Rect,
     /// Where each line of the report goes, beside the selectors, and how
@@ -468,13 +484,33 @@ fn buffer_name(frames: Option<u32>) -> String {
     frames.map_or_else(|| "Auto".into(), |f| f.to_string())
 }
 
-fn audio_plan(size: Size) -> AudioPlan {
+fn mode_name(exclusive: bool) -> &'static str {
+    if exclusive { "Exclusive" } else { "Shared" }
+}
+
+/// Whether the Audio page offers the exclusive mode.
+fn has_mode(sound: &SoundView) -> bool {
+    sound
+        .devices
+        .as_ref()
+        .is_some_and(|d| d.exclusive.is_some())
+}
+
+fn audio_plan(size: Size, with_mode: bool) -> AudioPlan {
     let x = 20.0 + LABEL;
     let r = rows(size);
     let short = 110.0;
     let beside = x + short + 14.0;
+    let full = size.width - x - 20.0;
+    let (output_width, mode) = if with_mode {
+        let output = (full - short - 8.0).max(40.0);
+        (output, Some(Rect::new(x + output + 8.0, r[0], short, ROW)))
+    } else {
+        (full, None)
+    };
     AudioPlan {
-        output: Rect::new(x, r[0], size.width - x - 20.0, ROW),
+        output: Rect::new(x, r[0], output_width, ROW),
+        mode,
         rate: Rect::new(x, r[1], short, ROW),
         buffer: Rect::new(x, r[2], short, ROW),
         report: [
@@ -827,7 +863,7 @@ fn draw_audio(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
     let Some(devices) = &sound.devices else {
         return;
     };
-    let plan = audio_plan(size);
+    let plan = audio_plan(size, devices.exclusive.is_some());
     label(scene, snapshot, plan.output.y + 1.0, "Output");
     let chosen = devices
         .outputs
@@ -835,6 +871,9 @@ fn draw_audio(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
         .find(|d| d.chosen)
         .map_or("No output", |d| d.name.as_str());
     selector(scene, snapshot, plan.output, chosen);
+    if let (Some(rect), Some(on)) = (plan.mode, devices.exclusive) {
+        selector(scene, snapshot, rect, mode_name(on));
+    }
     label(scene, snapshot, plan.rate.y + 1.0, "Sample rate");
     selector(scene, snapshot, plan.rate, &rate_name(devices.sample_rate));
     label(scene, snapshot, plan.buffer.y + 1.0, "Buffer");
@@ -1042,8 +1081,11 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
     }
     match sound.page {
         AUDIO => {
-            let plan = audio_plan(size);
+            let plan = audio_plan(size, has_mode(sound));
             items.push(button("Output".into(), None, plan.output));
+            if let Some(rect) = plan.mode {
+                items.push(button("Mode".into(), None, rect));
+            }
             items.push(button("Sample rate".into(), None, plan.rate));
             items.push(button("Buffer".into(), None, plan.buffer));
         }
@@ -1305,8 +1347,10 @@ fn press_audio(source: &Source, sound: &SoundView, size: Size, at: Point) -> Pre
     if sound.devices.is_none() {
         return Pressed::Nothing;
     }
-    let plan = audio_plan(size);
-    let pick = if plan.output.contains(at) {
+    let plan = audio_plan(size, has_mode(sound));
+    let pick = if plan.mode.is_some_and(|r| r.contains(at)) {
+        Pick::Mode
+    } else if plan.output.contains(at) {
         Pick::Output
     } else if plan.rate.contains(at) {
         Pick::Rate
@@ -1353,6 +1397,7 @@ fn press_list(
                     source.ask_devices(DeviceRequest::Output(d.outputs[i].id.clone()));
                 }
             }
+            Pick::Mode => source.ask_devices(DeviceRequest::Exclusive(i == 1)),
             Pick::Rate => {
                 if let Some(d) = &sound.devices {
                     let rate = i.checked_sub(1).map(|i| d.sample_rates[i]);

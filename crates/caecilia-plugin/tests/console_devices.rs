@@ -93,8 +93,16 @@ fn entry(id: &str, name: &str, chosen: bool) -> DeviceEntry {
     }
 }
 
-/// A made-up sound card setup that does what it is asked.
+/// A made-up sound card setup that does what it is asked, with an
+/// exclusive mode.
 fn serve() -> Rc<RefCell<Vec<DeviceRequest>>> {
+    serve_with(Some(false))
+}
+
+/// The same, `exclusive` saying whether the output starts held exclusively,
+/// or `None` for a system with no such mode.
+fn serve_with(exclusive: Option<bool>) -> Rc<RefCell<Vec<DeviceRequest>>> {
+    let mut exclusive = exclusive;
     let asked: Rc<RefCell<Vec<DeviceRequest>>> = Rc::default();
     let seen = Rc::clone(&asked);
     let mut output = "speakers".to_string();
@@ -109,6 +117,7 @@ fn serve() -> Rc<RefCell<Vec<DeviceRequest>>> {
                 DeviceRequest::SampleRate(r) => rate = *r,
                 DeviceRequest::BufferSize(b) => buffer = *b,
                 DeviceRequest::MidiInput(_, open) => keyboard = *open,
+                DeviceRequest::Exclusive(on) => exclusive = exclusive.map(|_| *on),
             }
         }
         let name = if output == "umc" {
@@ -125,6 +134,7 @@ fn serve() -> Rc<RefCell<Vec<DeviceRequest>>> {
             sample_rate: rate,
             buffer_sizes: vec![128, 256, 512],
             buffer_size: buffer,
+            exclusive,
             midi_inputs: vec![entry("kbd", "Organ keyboard", keyboard)],
             report: format!("Playing on \"{name}\" at {} Hz", rate.unwrap_or(48_000)),
             failed: false,
@@ -183,6 +193,51 @@ fn the_audio_page_chooses_the_devices() {
     std::fs::create_dir_all(&dir).unwrap();
     let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
     std::fs::write(dir.join("console-audio@1x.png"), png).unwrap();
+    caecilia_plugin::stop_serving_devices();
+}
+
+#[test]
+fn the_audio_page_holds_the_output_exclusively_or_shares_it() {
+    let asked = serve();
+    let mut c = Console::open();
+    c.click(Role::Button, "Settings");
+    c.click(Role::Button, "Page Audio");
+    // The mode sits at the end of the output's row, and the output's
+    // selector still opens its own list.
+    let output = c.find(Role::Button, "Output").unwrap().bounds;
+    let mode = c
+        .find(Role::Button, "Mode")
+        .expect("a mode selector")
+        .bounds;
+    assert!(mode.x >= output.right() && (mode.y - output.y).abs() < 1.0);
+
+    c.click(Role::Button, "Mode");
+    assert!(c.find(Role::Button, "Mode Shared").is_some());
+    c.click(Role::Button, "Mode Exclusive");
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("console");
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = c.ui.pixels().expect("drawn").encode_png().unwrap();
+    std::fs::write(dir.join("console-audio-exclusive@1x.png"), png).unwrap();
+    c.click(Role::Button, "Mode");
+    c.click(Role::Button, "Mode Shared");
+    assert_eq!(
+        *asked.borrow(),
+        vec![
+            DeviceRequest::Exclusive(true),
+            DeviceRequest::Exclusive(false)
+        ]
+    );
+    caecilia_plugin::stop_serving_devices();
+}
+
+#[test]
+fn without_an_exclusive_mode_the_output_has_the_whole_row() {
+    let _asked = serve_with(None);
+    let mut c = Console::open();
+    c.click(Role::Button, "Settings");
+    c.click(Role::Button, "Page Audio");
+    assert!(c.find(Role::Button, "Output").is_some());
+    assert!(c.find(Role::Button, "Mode").is_none());
     caecilia_plugin::stop_serving_devices();
 }
 

@@ -29,6 +29,15 @@ use std::rc::Rc;
 use caecilia_plugin::{Caecilia, DeviceEntry, DeviceRequest, DevicesView};
 use manguebyte_params::ParamSet;
 use manguebyte_standalone::{SettingsChoices, Standalone, StandaloneOptions};
+
+/// The audio host that holds a WASAPI output exclusively, as Manguebyte
+/// lists it (`manguebyte_devices::WASAPI_EXCLUSIVE`).
+const EXCLUSIVE_HOST: &str = "WASAPI exclusive";
+
+/// Whether `host`, a saved host name, is the exclusive one.
+fn is_exclusive(host: Option<&str>) -> bool {
+    host.is_some_and(|h| h.eq_ignore_ascii_case(EXCLUSIVE_HOST))
+}
 use manguebyte_window::App;
 
 fn session_path() -> Option<PathBuf> {
@@ -182,7 +191,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     {
         options.settings = saved;
     }
-    let player = Rc::new(RefCell::new(Standalone::<Caecilia>::start(options)?));
+    // An output held exclusively the last time may be refused now (another
+    // program holds it, or the default it falls back to does not do it):
+    // the organ opens shared rather than not at all.
+    let retry = is_exclusive(options.settings.host.as_deref()).then(|| {
+        let mut shared = options.clone();
+        shared.settings.host = None;
+        shared
+    });
+    let started = match Standalone::<Caecilia>::start(options) {
+        Err(e) if retry.is_some() => {
+            println!("The output could not be held exclusively ({e}); it is shared instead.");
+            retry.map(Standalone::<Caecilia>::start).unwrap_or(Err(e))
+        }
+        other => other,
+    };
+    let player = Rc::new(RefCell::new(started?));
 
     if let Some(text) = session
         .as_ref()
@@ -264,6 +288,9 @@ fn save_audio(player: &Standalone<Caecilia>, path: &Path) {
 fn serve_devices(player: &Rc<RefCell<Standalone<Caecilia>>>, audio: Option<PathBuf>) {
     let player = Rc::clone(player);
     let mut listed: Option<SettingsChoices> = None;
+    // Set when the output refused to be held exclusively, until the next
+    // change: the page says so, last, in red.
+    let mut refused = false;
     caecilia_plugin::serve_devices(move |requests, describe| {
         let mut p = player.borrow_mut();
         for request in requests {
@@ -272,8 +299,17 @@ fn serve_devices(player: &Rc<RefCell<Standalone<Caecilia>>>, audio: Option<PathB
                 DeviceRequest::SampleRate(rate) => p.set_sample_rate(*rate),
                 DeviceRequest::BufferSize(frames) => p.set_buffer_size(*frames),
                 DeviceRequest::MidiInput(id, open) => p.set_midi_input(id, *open),
+                // The buffer size asked for in one mode means little in the
+                // other, so the device chooses again.
+                DeviceRequest::Exclusive(on) => {
+                    let mut settings = p.settings().clone();
+                    settings.host = on.then(|| EXCLUSIVE_HOST.to_owned());
+                    settings.buffer_size = None;
+                    p.apply_settings(settings)
+                }
             };
             println!("{report}");
+            refused = matches!(request, DeviceRequest::Exclusive(true)) && report.error.is_some();
         }
         if !requests.is_empty() {
             if let Some(path) = &audio {
@@ -287,7 +323,14 @@ fn serve_devices(player: &Rc<RefCell<Standalone<Caecilia>>>, audio: Option<PathB
         if describe || listed.is_none() || !requests.is_empty() {
             listed = p.choices().ok();
         }
-        view_of(&p, listed.as_ref())
+        let mut view = view_of(&p, listed.as_ref());
+        if refused && view.failed {
+            view.report.push_str(
+                "
+Exclusive refused by this device: shared",
+            );
+        }
+        view
     });
 }
 
@@ -296,8 +339,14 @@ fn view_of(player: &Standalone<Caecilia>, listed: Option<&SettingsChoices>) -> D
     let report = player.report();
     let settings = player.settings();
     let playing = report.output.as_ref().map(|o| o.id.as_str());
+    let exclusive = player
+        .hosts()
+        .iter()
+        .any(|h| h.name == EXCLUSIVE_HOST)
+        .then(|| is_exclusive(settings.host.as_deref()));
     let Some(listed) = listed else {
         return DevicesView {
+            exclusive,
             report: report.to_string(),
             failed: report.error.is_some(),
             ..DevicesView::default()
@@ -322,6 +371,7 @@ fn view_of(player: &Standalone<Caecilia>, listed: Option<&SettingsChoices>) -> D
         sample_rate: settings.sample_rate,
         buffer_sizes: output.map(|o| o.buffer_sizes.clone()).unwrap_or_default(),
         buffer_size: settings.buffer_size,
+        exclusive,
         midi_inputs: listed
             .midi_inputs
             .iter()
