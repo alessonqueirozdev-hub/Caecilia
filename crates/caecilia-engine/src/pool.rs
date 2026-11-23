@@ -32,6 +32,14 @@ pub(crate) struct Slot {
     pub chest: WindchestId,
     /// Its pipe's place in its chest's windchest, where the organ has places.
     pub place: Option<usize>,
+    /// The key that sounded it, and that key's keyboard: what the even level
+    /// and the melody judge it by.
+    pub key: MidiNote,
+    pub key_division: u8,
+    /// Its own gain on top of the swell shoe's, as it stands and where it is
+    /// gliding: the even level and the melody's lift.
+    pub emphasis: f32,
+    pub emphasis_target: f32,
 }
 
 /// A group's share of the space: its own windchests, so groups render apart
@@ -82,6 +90,12 @@ pub(crate) struct VoiceGroup {
     offset: usize,
     wind: WindSnapshot,
     expr: [(f32, f32); MAX_DIVISIONS],
+    /// How far each slot's emphasis glides to its target this slice.
+    glide: f32,
+    /// How much of the placed pipes give way to their sum at one point, at
+    /// the start of the slice and per frame after: 0 every pipe in its
+    /// place, 1 all of them in the middle, with no delay between them.
+    point: (f32, f32),
     space: Option<GroupSpace>,
 }
 
@@ -129,7 +143,14 @@ impl Job for VoiceGroup {
                 .get(usize::from(s.pipe.division))
                 .copied()
                 .unwrap_or((1.0, 0.0));
-            s.voice.set_expression(start, inc);
+            // The emphasis rides on the shoe's ramp: both glide, together.
+            let from = s.emphasis;
+            let to = from + self.glide * (s.emphasis_target - from);
+            s.emphasis = to;
+            let end = (start + inc * n as f32) * to;
+            let start = start * from;
+            s.voice
+                .set_expression(start, (end - start) / n.max(1) as f32);
         }
         // Slots rendered this slice, as bits: a group holds at most GROUP_SIZE.
         let mut rendered = 0u64;
@@ -182,13 +203,24 @@ impl Job for VoiceGroup {
         }
         if let Some(space) = &mut self.space {
             space.output.set_num_frames(n);
+            let (start, step) = self.point;
             for (c, chest) in space.chests.iter_mut().enumerate().take(self.chests) {
+                // The windchest runs whatever is heard, so its delays hold
+                // the pipes' recent past when the places come back.
                 chest.finish(&mut space.output);
-                for (o, x) in self.bus_l[c][..n].iter_mut().zip(space.output.channel(0)) {
-                    *o += x;
-                }
-                for (o, x) in self.bus_r[c][..n].iter_mut().zip(space.output.channel(1)) {
-                    *o += x;
+                let placed = space.output.channel(0).iter().zip(space.output.channel(1));
+                for (i, ((ol, or), (l, r))) in self.bus_l[c][..n]
+                    .iter_mut()
+                    .zip(self.bus_r[c][..n].iter_mut())
+                    .zip(placed)
+                    .enumerate()
+                {
+                    let a = start + step * i as f32;
+                    // The point is both sides at equal power: each side
+                    // takes it at 1/sqrt 2, as a voice in the middle sounds.
+                    let middle = space.mono[c][i] * std::f32::consts::FRAC_1_SQRT_2 * a;
+                    *ol += l * (1.0 - a) + middle;
+                    *or += r * (1.0 - a) + middle;
                 }
             }
         }
@@ -241,6 +273,10 @@ impl Pool {
                             sustained: false,
                             flow: 0.0,
                             chest: WindchestId(0),
+                            key: 0,
+                            key_division: 0,
+                            emphasis: 1.0,
+                            emphasis_target: 1.0,
                         })
                         .collect(),
                     // Popped from the end: slot 0 is handed out first.
@@ -252,6 +288,8 @@ impl Pool {
                     offset: 0,
                     wind: WindSnapshot::default(),
                     expr: [(1.0, 0.0); MAX_DIVISIONS],
+                    glide: 1.0,
+                    point: (0.0, 0.0),
                     space: layout.and_then(|l| GroupSpace::new(l, sample_rate, max_block)),
                 }
             })
@@ -408,20 +446,36 @@ impl Pool {
         n
     }
 
+    /// Point every sounding voice's emphasis at what `target` says for the
+    /// key that sounded it (its note and keyboard); each glides there.
+    pub fn retarget(&mut self, target: impl Fn(MidiNote, u8) -> f32) {
+        self.each(|job| {
+            for s in job.slots.iter_mut().filter(|s| s.active) {
+                s.emphasis_target = target(s.key, s.key_division);
+            }
+        });
+    }
+
     /// Render every group for a slice of `frames` starting at `offset` in the
-    /// wind's block.
+    /// wind's block. `glide` is how far each emphasis moves to its target;
+    /// `point` is the placed pipes' share given to their sum in the middle,
+    /// at the start of the slice and per frame.
     pub fn render(
         &mut self,
         frames: usize,
         offset: usize,
         wind: &WindSnapshot,
         expr: &[(f32, f32); MAX_DIVISIONS],
+        glide: f32,
+        point: (f32, f32),
     ) -> BlockReport {
         self.each(|job| {
             job.frames = frames;
             job.offset = offset;
             job.wind = *wind;
             job.expr = *expr;
+            job.glide = glide;
+            job.point = point;
         });
         self.groups.run(self.count)
     }

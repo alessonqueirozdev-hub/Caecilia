@@ -13,6 +13,45 @@ pub const ROOM_NAMES: [&str; 5] = ["Room", "Chamber", "Hall", "Cathedral", "Plat
 /// The room an instance opens in: the hall.
 pub const DEFAULT_ROOM: usize = 2;
 
+/// The spaces: every pipe in its place, with the room and the reverb; or
+/// dry, for a church that brings its own.
+pub const SPACE_NAMES: [&str; 2] = ["Full", "Dry"];
+
+/// The outputs: stereo, or both sides the same, for a mono desk.
+pub const OUTPUT_NAMES: [&str; 2] = ["Stereo", "Mono"];
+
+/// The levels: as the registration makes it, or even between registrations.
+pub const LEVEL_NAMES: [&str; 2] = ["Natural", "Even"];
+
+/// Both sides made one, gliding there and back over a block so the switch
+/// does not click: each side becomes their average, which a mono desk
+/// summing the two then hears whole.
+#[derive(Debug, Default)]
+pub(crate) struct MonoFold {
+    amount: f32,
+}
+
+impl MonoFold {
+    pub(crate) fn process(&mut self, buffer: &mut AudioBuffer<f32>, on: bool) {
+        let target = if on { 1.0 } else { 0.0 };
+        if buffer.num_channels() < 2 || (self.amount == 0.0 && target == 0.0) {
+            self.amount = target;
+            return;
+        }
+        let frames = buffer.num_frames();
+        let step = (target - self.amount) / frames.max(1) as f32;
+        let start = self.amount;
+        let (left, right) = buffer.channel_pair_mut(0, 1);
+        for (i, (l, r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
+            let a = start + step * i as f32;
+            let mid = 0.5 * (*l + *r);
+            *l += a * (mid - *l);
+            *r += a * (mid - *r);
+        }
+        self.amount = target;
+    }
+}
+
 /// How a room rings: its tail in seconds, its size, how dark its walls
 /// (0 bright to 1 dark), and how wide it spreads.
 struct Room {

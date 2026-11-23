@@ -42,6 +42,18 @@ use space::Layout;
 
 pub use space::ROOMS;
 
+/// Which of the keys `held` on one manual carries the melody, now that
+/// `pressed` went down (`None`: a key came up); `previous` is the key that
+/// carried it before. `None` lifts no key.
+fn melody_key(
+    held: &[MidiNote],
+    previous: Option<MidiNote>,
+    pressed: Option<MidiNote>,
+) -> Option<MidiNote> {
+    let _ = (previous, pressed);
+    held.iter().copied().max()
+}
+
 /// Default polyphony: as many pipes as can sound at once.
 pub const DEFAULT_POLYPHONY: usize = 512;
 
@@ -67,8 +79,18 @@ const SHUTTER_OPEN_HZ: f32 = 18000.0;
 const SHUTTER_CLOSED_HZ: f32 = 800.0;
 /// log2(18000 / 800).
 const SHUTTER_OCTAVE_SPAN: f32 = 4.491_853;
-/// The swell shoe's glide.
+/// The swell shoe's glide; the space, the even level and the melody's lift
+/// glide the same way.
 const EXPRESSION_GLIDE_SECONDS: f64 = 0.030;
+
+/// How much of a registration's difference in loudness the even level takes
+/// away: half of it, in decibels. A full organ still sounds fuller than a
+/// flute, but not twelve decibels louder.
+const EVEN_SHARE: f32 = 0.5;
+/// The most the even level takes from a loud registration: -12 dB.
+const EVEN_FLOOR: f32 = 0.251_188_64;
+/// The most it gives a soft one: +6 dB.
+const EVEN_CEILING: f32 = 1.995_262_3;
 
 /// What reaches the engine from the player.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -197,6 +219,29 @@ pub struct OrganEngine {
     bus_r: Vec<Vec<f32>>,
     shutters: Vec<[OnePole; 2]>,
     room: Option<RoomSound>,
+    /// The room chosen, of [`ROOMS`], kept while dry so it comes back.
+    room_index: usize,
+    /// No reflections, and every pipe in the middle with no delay between.
+    dry: bool,
+    /// Every pipe in the middle, so the two sides sum without cancelling.
+    mono: bool,
+    /// The placed pipes' share given to their sum in the middle: where it
+    /// stands, and where it is gliding (1 dry or mono, 0 otherwise).
+    point_current: f32,
+    point_target: f32,
+    /// What each stop's rank puts out, as power: its partials' summed.
+    rank_power: Vec<f32>,
+    /// The power the even level brings a keyboard's registration towards:
+    /// the organ's median rank.
+    power_reference: f32,
+    /// Whether the even level is on, and its gain per keyboard now.
+    even: bool,
+    even_gain: [f32; MAX_DIVISIONS],
+    /// The melody's lift as a gain (1 for none), and each keyboard's melody key.
+    melody_gain: f32,
+    melody: [Option<MidiNote>; MAX_DIVISIONS],
+    /// Keyboards played by the feet: they carry no melody.
+    pedal: [bool; MAX_DIVISIONS],
     frame: u64,
     meters: Meters,
     pending_meters: Meters,
@@ -335,11 +380,134 @@ impl OrganEngine {
         let Some(chests) = sound.layout.rooms.get(room) else {
             return;
         };
+        self.room_index = room;
         for (c, (reflections, amount)) in chests.iter().enumerate() {
             if sound.early[c].set_reflections(reflections).is_ok() {
-                sound.send[c].1 = *amount;
+                sound.send[c].1 = if self.dry { 0.0 } else { *amount };
             }
         }
+    }
+
+    /// Dry: the room's reflections fade out, and every pipe moves to the
+    /// middle with no delay between pipes, as a microphone close to the case
+    /// would hear them, for a church that brings its own space. Off, the
+    /// room and the places come back. Glides; real-time safe.
+    pub fn set_dry(&mut self, on: bool) {
+        if self.dry == on {
+            return;
+        }
+        self.dry = on;
+        self.aim_point();
+        let room = self.room_index;
+        if let Some(sound) = &mut self.room {
+            if let Some(chests) = sound.layout.rooms.get(room) {
+                for (c, (_, amount)) in chests.iter().enumerate().take(sound.send.len()) {
+                    sound.send[c].1 = if on { 0.0 } else { *amount };
+                }
+            }
+        }
+    }
+
+    /// Mono: every pipe in the middle, so that a mono desk or loudspeaker,
+    /// which sums the two sides, hears no pipe cancel itself. The room's
+    /// reflections stay. Glides; real-time safe.
+    pub fn set_mono(&mut self, on: bool) {
+        self.mono = on;
+        self.aim_point();
+    }
+
+    fn aim_point(&mut self) {
+        self.point_target = if self.dry || self.mono { 1.0 } else { 0.0 };
+    }
+
+    /// The even level: each keyboard's registration is brought half way, in
+    /// decibels, towards the organ's median rank, between -12 and +6 dB, so
+    /// a full registration and a quiet one are closer in level. Glides;
+    /// real-time safe.
+    pub fn set_even(&mut self, on: bool) {
+        self.even = on;
+        self.even_gain = self.even_for(&self.table);
+        self.retarget();
+    }
+
+    /// The melody's lift, in decibels, or `None` for none: the key that
+    /// carries the melody on each manual sounds this much above the others,
+    /// in the same registration. Glides; real-time safe.
+    pub fn set_melody(&mut self, lift_db: Option<f32>) {
+        self.melody_gain = lift_db.map_or(1.0, |db| 10.0f32.powf(db / 20.0));
+        self.retarget();
+    }
+
+    /// Each keyboard's even-level gain under `table`.
+    fn even_for(&self, table: &EngagedTable) -> [f32; MAX_DIVISIONS] {
+        let mut gain = [1.0; MAX_DIVISIONS];
+        if !self.even || self.power_reference <= 0.0 {
+            return gain;
+        }
+        let power_of = |division: DivisionId| -> f32 {
+            table
+                .ranks()
+                .iter()
+                .filter(|r| r.division == division)
+                .map(|r| self.rank_power.get(r.stop.index()).copied().unwrap_or(0.0))
+                .sum()
+        };
+        for (d, g) in gain.iter_mut().enumerate() {
+            let division = DivisionId(d as u16);
+            let mut power = power_of(division);
+            for c in table.couplers().iter().filter(|c| c.to == division) {
+                power += power_of(c.from);
+            }
+            if power > 0.0 {
+                // Power ratio to the share of a decibel difference, as an
+                // amplitude: (p/ref)^(-share/2).
+                *g = (power / self.power_reference)
+                    .powf(-EVEN_SHARE * 0.5)
+                    .clamp(EVEN_FLOOR, EVEN_CEILING);
+            }
+        }
+        gain
+    }
+
+    /// What a voice sounded by `key` on keyboard `division` is lifted by.
+    fn emphasis(
+        even: &[f32; MAX_DIVISIONS],
+        melody: &[Option<MidiNote>; MAX_DIVISIONS],
+        lift: f32,
+        key: MidiNote,
+        division: u8,
+    ) -> f32 {
+        let d = usize::from(division);
+        let even = even.get(d).copied().unwrap_or(1.0);
+        let lifted = melody.get(d).copied().flatten() == Some(key);
+        even * if lifted { lift } else { 1.0 }
+    }
+
+    /// Point every sounding voice at what the even level and the melody now
+    /// say for it.
+    fn retarget(&mut self) {
+        let (even, melody, lift) = (self.even_gain, self.melody, self.melody_gain);
+        self.pool
+            .retarget(move |key, division| Self::emphasis(&even, &melody, lift, key, division));
+    }
+
+    /// Which key carries the melody on keyboard `division`, now that `pressed`
+    /// went down (or, `None`, a key came up).
+    fn update_melody(&mut self, division: DivisionId, pressed: Option<MidiNote>) {
+        let d = division.index();
+        if d >= MAX_DIVISIONS || self.pedal[d] {
+            return;
+        }
+        let mut notes = [0; MAX_HELD_KEYS];
+        let mut n = 0;
+        for k in self.held[..self.held_count]
+            .iter()
+            .filter(|k| k.division == division)
+        {
+            notes[n] = k.note;
+            n += 1;
+        }
+        self.melody[d] = melody_key(&notes[..n], self.melody[d], pressed);
     }
 
     fn build(
@@ -402,13 +570,32 @@ impl OrganEngine {
         }
 
         let mut compass = [(0, 127); MAX_DIVISIONS];
+        let mut pedal = [false; MAX_DIVISIONS];
         for d in organ
             .divisions()
             .iter()
             .filter(|d| d.id.index() < MAX_DIVISIONS)
         {
             compass[d.id.index()] = (d.low_note, d.high_note);
+            pedal[d.id.index()] = d.kind == caecilia_model::DivisionKind::Pedal;
         }
+
+        // A rank's power: its partials' steady levels, summed as power.
+        let rank_power: Vec<f32> = voicings
+            .iter()
+            .map(|v| {
+                v.spectrum
+                    .partials
+                    .iter()
+                    .map(|p| 10.0f32.powf(p.amp_db / 10.0))
+                    .sum()
+            })
+            .collect();
+        let power_reference = {
+            let mut sounding: Vec<f32> = rank_power.iter().copied().filter(|&p| p > 0.0).collect();
+            sounding.sort_by(f32::total_cmp);
+            sounding.get(sounding.len() / 2).copied().unwrap_or(0.0)
+        };
 
         let shutters = (0..chest_count)
             .map(|_| {
@@ -441,6 +628,18 @@ impl OrganEngine {
                 layout.as_ref(),
             ),
             room: layout.and_then(|l| RoomSound::new(l, sample_rate, max_block)),
+            room_index: RoomSound::FIRST,
+            dry: false,
+            mono: false,
+            point_current: 0.0,
+            point_target: 0.0,
+            rank_power,
+            power_reference,
+            even: false,
+            even_gain: [1.0; MAX_DIVISIONS],
+            melody_gain: 1.0,
+            melody: [None; MAX_DIVISIONS],
+            pedal,
             missed_jobs: 0,
             table: EngagedTable::default(),
             held: [HeldKey::default(); MAX_HELD_KEYS],
@@ -535,19 +734,29 @@ impl OrganEngine {
             for early in &mut sound.early {
                 early.reset();
             }
+            for send in &mut sound.send {
+                send.0 = send.1;
+            }
         }
         self.wind.reset();
         self.snapshot = self.wind.snapshot();
         self.frame = 0;
         self.meters = Meters::default();
+        self.melody = [None; MAX_DIVISIONS];
+        // Where the space was going, it is: nothing left to glide.
+        self.point_current = self.point_target;
     }
 
     /// Adopt a new registration at a block boundary. Keys already down are
     /// reconciled: pipes the new registration drops release as a pipe does;
     /// pipes it adds start with their own speech; the rest are not touched.
+    /// Under the even level, the voices still sounding glide to the new
+    /// registration's level.
     pub fn set_engaged(&mut self, next: EngagedTable) {
+        self.even_gain = self.even_for(&next);
         self.reconcile_held_keys(&next);
         self.table = next;
+        self.retarget();
     }
 
     /// Render one block into `left` and `right` (overwritten), applying
@@ -645,6 +854,7 @@ impl OrganEngine {
                 self.pool.all_notes_off();
                 self.held_count = 0;
                 self.sustain_down = [false; MAX_DIVISIONS];
+                self.melody = [None; MAX_DIVISIONS];
             }
             Command::Sustain { division, down } => {
                 if let Some(s) = self.sustain_down.get_mut(division.index()) {
@@ -711,10 +921,23 @@ impl OrganEngine {
             self.bus_r[c][..frames].fill(0.0);
         }
         self.step_expression(frames);
+        let glide =
+            (1.0 - (-(frames as f64) / (EXPRESSION_GLIDE_SECONDS * self.sample_rate)).exp()) as f32;
+        let from = self.point_current;
+        self.point_current = from + glide * (self.point_target - from);
+        if (self.point_target - self.point_current).abs() < 1e-4 {
+            self.point_current = self.point_target;
+        }
+        let point = (from, (self.point_current - from) / frames as f32);
 
-        let report = self
-            .pool
-            .render(frames, offset, &self.snapshot, &self.expr_ramp);
+        let report = self.pool.render(
+            frames,
+            offset,
+            &self.snapshot,
+            &self.expr_ramp,
+            glide,
+            point,
+        );
         self.missed_jobs += report.missed as u64;
         for c in 0..self.chest_count {
             self.pool.mix_chest(
@@ -900,7 +1123,22 @@ impl OrganEngine {
         }
     }
 
-    fn start_voice(&mut self, rank: EngagedRank, note: MidiNote) -> bool {
+    /// Sound `rank` at `note` for `key` held on keyboard `division`.
+    fn start_voice(
+        &mut self,
+        rank: EngagedRank,
+        note: MidiNote,
+        key: MidiNote,
+        division: DivisionId,
+    ) -> bool {
+        let key_division = division.0.min(u16::from(u8::MAX)) as u8;
+        let emphasis = Self::emphasis(
+            &self.even_gain,
+            &self.melody,
+            self.melody_gain,
+            key,
+            key_division,
+        );
         let pipe = PipeId {
             rank: rank.stop.0,
             note,
@@ -925,6 +1163,11 @@ impl OrganEngine {
         slot.place = place;
         slot.flow = rank.wind_flow * octaves_below_middle_c.exp2() * self.flow_per_voice;
         slot.chest = rank.chest;
+        slot.key = key;
+        slot.key_division = key_division;
+        // A new pipe starts where it belongs, with nothing to glide.
+        slot.emphasis = emphasis;
+        slot.emphasis_target = emphasis;
         if let Some(v) = self.voicings.get(rank.stop.index()) {
             slot.voice.adopt_rank(v);
         }
@@ -985,11 +1228,14 @@ impl OrganEngine {
             }
         }
         self.remember_key(note, division);
+        self.update_melody(division, Some(note));
         for &w in &wanted[..want] {
             if !self.held_elsewhere(w, &table, note, division, &table) {
-                self.start_voice(table.ranks[w.rank], w.note);
+                self.start_voice(table.ranks[w.rank], w.note, note, division);
             }
         }
+        // The key that had the melody may have just lost it.
+        self.retarget();
     }
 
     fn note_off(&mut self, division: DivisionId, note: MidiNote) {
@@ -997,6 +1243,8 @@ impl OrganEngine {
             return;
         }
         self.forget_key(note, division);
+        self.update_melody(division, None);
+        self.retarget();
         let table = self.table;
         let mut going = [KeyVoice::default(); MAX_KEY_VOICES];
         let n = Self::expand_key(note, division, &table, &mut going);
@@ -1047,7 +1295,7 @@ impl OrganEngine {
                 if self.pool.free_count() == 0 && self.pool.steal_quietest_key() == 0 {
                     break;
                 }
-                self.start_voice(next.ranks[a.rank], a.note);
+                self.start_voice(next.ranks[a.rank], a.note, key.note, key.division);
             }
         }
     }

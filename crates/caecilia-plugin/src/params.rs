@@ -11,7 +11,7 @@ use caecilia_model::{Diagnostic, Organ, caecilia_organ};
 use caecilia_registration::{MASK_CAPACITY, Piston, factory_generals};
 
 use crate::console::{ConsoleMemory, GENERALS};
-use crate::sound::{DEFAULT_ROOM, EQ_BANDS, ROOM_NAMES};
+use crate::sound::{DEFAULT_ROOM, EQ_BANDS, LEVEL_NAMES, OUTPUT_NAMES, ROOM_NAMES, SPACE_NAMES};
 use crate::switch::{OrganLoadError, OrganSlot, SwitchAudio};
 use manguebyte_params::{BoolParam, ChoiceParam, FloatParam, FloatRange, Param, ParamSet};
 
@@ -62,6 +62,19 @@ pub struct CaeciliaParams {
     pub room: ChoiceParam,
     /// The master EQ, on or off.
     pub eq: BoolParam,
+    /// The space, from [`SPACE_NAMES`](crate::SPACE_NAMES): every pipe in
+    /// its place with the room's reflections and the reverb, or dry.
+    pub space: ChoiceParam,
+    /// The output, from [`OUTPUT_NAMES`](crate::OUTPUT_NAMES): stereo, or
+    /// both sides the same for a mono desk.
+    pub output: ChoiceParam,
+    /// The level, from [`LEVEL_NAMES`](crate::LEVEL_NAMES): as the
+    /// registration makes it, or even between registrations.
+    pub level_mode: ChoiceParam,
+    /// The melody (the top key on a manual) sounds above the other voices.
+    pub melody: BoolParam,
+    /// By how much, dB.
+    pub melody_lift: FloatParam,
     /// Its five bands' gains, dB, low to high (see [`EQ_BANDS`](crate::EQ_BANDS)).
     pub eq_bands: [FloatParam; 5],
     /// Drawstops, by stop id.
@@ -164,6 +177,18 @@ impl CaeciliaParams {
             .with_precision(1),
             room: ChoiceParam::new("room", "Room", &ROOM_NAMES, DEFAULT_ROOM),
             eq: BoolParam::new("eq", "EQ", true),
+            space: ChoiceParam::new("space", "Space", &SPACE_NAMES, 0),
+            output: ChoiceParam::new("output", "Output", &OUTPUT_NAMES, 0),
+            level_mode: ChoiceParam::new("level-mode", "Level mode", &LEVEL_NAMES, 0),
+            melody: BoolParam::new("melody", "Melody", false),
+            melody_lift: FloatParam::new(
+                "melody-lift",
+                "Melody lift",
+                FloatRange::linear(1.0, 9.0),
+                4.0,
+            )
+            .with_unit("dB")
+            .with_precision(1),
             eq_bands: std::array::from_fn(|i| {
                 let band = &EQ_BANDS[i];
                 FloatParam::new(
@@ -352,6 +377,12 @@ impl ParamSet for CaeciliaParams {
         for p in &self.couplers {
             visitor(p);
         }
+        // Last, so every parameter before keeps its place.
+        visitor(&self.space);
+        visitor(&self.output);
+        visitor(&self.level_mode);
+        visitor(&self.melody);
+        visitor(&self.melody_lift);
     }
 
     fn save_extra(&self, section: &mut dyn FnMut(&str, &str)) {
