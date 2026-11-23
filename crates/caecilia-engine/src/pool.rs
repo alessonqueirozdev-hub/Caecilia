@@ -36,6 +36,9 @@ pub(crate) struct Slot {
     /// and the melody judge it by.
     pub key: MidiNote,
     pub key_division: u8,
+    /// Whether its key carried the melody when it went down. Decided then
+    /// and kept: a pipe speaking does not change because another key moves.
+    pub lifted: bool,
     /// Its own gain on top of the swell shoe's, as it stands and where it is
     /// gliding: the even level and the melody's lift.
     pub emphasis: f32,
@@ -275,6 +278,7 @@ impl Pool {
                             chest: WindchestId(0),
                             key: 0,
                             key_division: 0,
+                            lifted: false,
                             emphasis: 1.0,
                             emphasis_target: 1.0,
                         })
@@ -447,11 +451,11 @@ impl Pool {
     }
 
     /// Point every sounding voice's emphasis at what `target` says for the
-    /// key that sounded it (its note and keyboard); each glides there.
-    pub fn retarget(&mut self, target: impl Fn(MidiNote, u8) -> f32) {
+    /// keyboard that sounded it and whether it was lifted; each glides there.
+    pub fn retarget(&mut self, target: impl Fn(u8, bool) -> f32) {
         self.each(|job| {
             for s in job.slots.iter_mut().filter(|s| s.active) {
-                s.emphasis_target = target(s.key, s.key_division);
+                s.emphasis_target = target(s.key_division, s.lifted);
             }
         });
     }

@@ -233,3 +233,82 @@ fn a_registration_drawn_under_the_even_level_glides_without_a_click() {
         .fold(0.0f32, f32::max);
     assert!(step < swing, "a step of {step} against a swing of {swing}");
 }
+
+/// Keys pressed and released at given seconds, with the melody lifted by
+/// `lift` dB (or not); the left and right sides as they came out.
+fn played(lift: Option<f32>, steps: &[(f64, Command)], seconds: f64) -> Render {
+    let organ = caecilia_organ();
+    let mut e = engine(&organ, MONTRE);
+    e.set_dry(true);
+    e.set_melody(lift);
+    e.reset();
+    run(
+        &mut e,
+        blocks_for(seconds),
+        |b| {
+            steps
+                .iter()
+                .filter(|(at, _)| blocks_for(*at) == b)
+                .map(|(_, c)| *c)
+                .collect()
+        },
+        |_, _| {},
+    )
+}
+
+fn level_between(x: &Render, from: f64, to: f64) -> f64 {
+    let span = (from * SR) as usize..(to * SR) as usize;
+    10.0 * (power(&x.l[span.clone()]) + power(&x.r[span])).log10()
+}
+
+fn down(note: u8) -> Command {
+    Command::NoteOn {
+        division: caecilia_organ().primary_manual(),
+        note,
+    }
+}
+
+fn up(note: u8) -> Command {
+    Command::NoteOff {
+        division: caecilia_organ().primary_manual(),
+        note,
+    }
+}
+
+#[test]
+fn the_top_key_as_it_goes_down_carries_the_melody() {
+    let steps = [(0.0, down(72))];
+    let lifted = level_between(&played(Some(6.0), &steps, 0.8), 0.3, 0.8);
+    let plain = level_between(&played(None, &steps, 0.8), 0.3, 0.8);
+    let gained = lifted - plain;
+    assert!((gained - 6.0).abs() < 0.5, "lifted by {gained:.2} dB");
+}
+
+#[test]
+fn letting_the_soprano_go_does_not_lift_the_alto() {
+    // The soprano down first, the alto under it, then the soprano up: the
+    // alto, held all along, sounds on as it did.
+    let steps = [(0.0, down(72)), (0.05, down(64)), (0.5, up(72))];
+    let lifted = level_between(&played(Some(6.0), &steps, 1.2), 0.8, 1.2);
+    let plain = level_between(&played(None, &steps, 1.2), 0.8, 1.2);
+    let gained = lifted - plain;
+    assert!(gained.abs() < 0.3, "the alto rose by {gained:.2} dB");
+}
+
+#[test]
+fn a_higher_key_does_not_quieten_a_pipe_already_speaking() {
+    // The soprano held, a higher key down above it: the soprano keeps its
+    // lift; the new key, the top as it went down, takes one too.
+    let one = [(0.0, down(64))];
+    let both = [(0.0, down(64)), (0.5, down(72))];
+    let alone = level_between(&played(Some(6.0), &one, 1.2), 0.8, 1.2);
+    let plain_alone = level_between(&played(None, &one, 1.2), 0.8, 1.2);
+    let together = level_between(&played(Some(6.0), &both, 1.2), 0.8, 1.2);
+    let plain_together = level_between(&played(None, &both, 1.2), 0.8, 1.2);
+    assert!((alone - plain_alone - 6.0).abs() < 0.5);
+    let gained = together - plain_together;
+    assert!(
+        (gained - 6.0).abs() < 0.5,
+        "the pair rose by {gained:.2} dB"
+    );
+}

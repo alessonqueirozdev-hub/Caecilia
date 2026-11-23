@@ -45,13 +45,20 @@ pub use space::ROOMS;
 /// Which of the keys `held` on one manual carries the melody, now that
 /// `pressed` went down (`None`: a key came up); `previous` is the key that
 /// carried it before. `None` lifts no key.
+///
+/// As a melody coupler on an organ does it: a key is judged as it goes
+/// down, and carries the melody if no key held is above it. Nothing is
+/// handed on: when the melody's key comes up, the keys still held keep
+/// sounding as they were, and the next key down is judged in its turn.
 fn melody_key(
     held: &[MidiNote],
     previous: Option<MidiNote>,
     pressed: Option<MidiNote>,
 ) -> Option<MidiNote> {
-    let _ = (previous, pressed);
-    held.iter().copied().max()
+    match pressed {
+        Some(note) if held.iter().all(|&k| k <= note) => Some(note),
+        _ => previous.filter(|p| held.contains(p)),
+    }
 }
 
 /// Default polyphony: as many pipes as can sound at once.
@@ -469,26 +476,19 @@ impl OrganEngine {
         gain
     }
 
-    /// What a voice sounded by `key` on keyboard `division` is lifted by.
-    fn emphasis(
-        even: &[f32; MAX_DIVISIONS],
-        melody: &[Option<MidiNote>; MAX_DIVISIONS],
-        lift: f32,
-        key: MidiNote,
-        division: u8,
-    ) -> f32 {
-        let d = usize::from(division);
-        let even = even.get(d).copied().unwrap_or(1.0);
-        let lifted = melody.get(d).copied().flatten() == Some(key);
+    /// What a voice sounded on keyboard `division` is lifted by: the even
+    /// level, and the melody's lift if its key carried the melody.
+    fn emphasis(even: &[f32; MAX_DIVISIONS], lift: f32, division: u8, lifted: bool) -> f32 {
+        let even = even.get(usize::from(division)).copied().unwrap_or(1.0);
         even * if lifted { lift } else { 1.0 }
     }
 
-    /// Point every sounding voice at what the even level and the melody now
-    /// say for it.
+    /// Point every sounding voice at what the even level and the melody's
+    /// lift now say for it: a registration drawn, a switch moved.
     fn retarget(&mut self) {
-        let (even, melody, lift) = (self.even_gain, self.melody, self.melody_gain);
+        let (even, lift) = (self.even_gain, self.melody_gain);
         self.pool
-            .retarget(move |key, division| Self::emphasis(&even, &melody, lift, key, division));
+            .retarget(move |division, lifted| Self::emphasis(&even, lift, division, lifted));
     }
 
     /// Which key carries the melody on keyboard `division`, now that `pressed`
@@ -1132,13 +1132,8 @@ impl OrganEngine {
         division: DivisionId,
     ) -> bool {
         let key_division = division.0.min(u16::from(u8::MAX)) as u8;
-        let emphasis = Self::emphasis(
-            &self.even_gain,
-            &self.melody,
-            self.melody_gain,
-            key,
-            key_division,
-        );
+        let lifted = self.melody.get(division.index()).copied().flatten() == Some(key);
+        let emphasis = Self::emphasis(&self.even_gain, self.melody_gain, key_division, lifted);
         let pipe = PipeId {
             rank: rank.stop.0,
             note,
@@ -1165,6 +1160,7 @@ impl OrganEngine {
         slot.chest = rank.chest;
         slot.key = key;
         slot.key_division = key_division;
+        slot.lifted = lifted;
         // A new pipe starts where it belongs, with nothing to glide.
         slot.emphasis = emphasis;
         slot.emphasis_target = emphasis;
@@ -1234,8 +1230,6 @@ impl OrganEngine {
                 self.start_voice(table.ranks[w.rank], w.note, note, division);
             }
         }
-        // The key that had the melody may have just lost it.
-        self.retarget();
     }
 
     fn note_off(&mut self, division: DivisionId, note: MidiNote) {
@@ -1244,7 +1238,6 @@ impl OrganEngine {
         }
         self.forget_key(note, division);
         self.update_melody(division, None);
-        self.retarget();
         let table = self.table;
         let mut going = [KeyVoice::default(); MAX_KEY_VOICES];
         let n = Self::expand_key(note, division, &table, &mut going);
