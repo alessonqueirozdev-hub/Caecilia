@@ -16,7 +16,8 @@ on:
   push:
     branches: [main, rust-2.0]
   pull_request:
-    branches: [main]
+    # rust-2.0 is where 2.0 is made; a pull request into it is checked too.
+    branches: [main, rust-2.0]
   workflow_dispatch:
 
 jobs:
