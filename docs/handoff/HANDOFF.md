@@ -10,8 +10,8 @@ work lives on **`rust-2.0`**; `main` still holds the C++ 1.x.
   Shared/Exclusive selector) and CI on pull requests into `rust-2.0`.
 - CI: `.github/workflows/build.yml`, Windows only (fmt, clippy, tests, bundles,
   a host check, the standalone and the installer).
-- Depends on Manguebyte by path (`../manguebyte/crates/...`): the setup script
-  clones it beside this repository.
+- Depends on Manguebyte by path (`../manguebyte/crates/...`): the CI clones
+  the framework's `main` beside it.
 
 ## Open work
 
@@ -39,11 +39,12 @@ work lives on **`rust-2.0`**; `main` still holds the C++ 1.x.
 
 ## How to test
 
-```
-bash scripts/cloud-setup.sh --test
-cargo test --profile caecilia -p caecilia-engine --test church -- --nocapture   # the church numbers
-```
+On GitHub, from `gh`: `build.yml` runs on pull requests into `rust-2.0` and
+`main` and on pushes to them. Its artifact **`Caecilia-windows`** carries the
+installer, the CLAP and VST 3 bundles and the standalone, for Alesson to try:
+`gh run download <run-id> -R alessonqueirozdev-hub/Caecilia -n Caecilia-windows`.
 
+The church numbers: `cargo test --profile caecilia -p caecilia-engine --test church -- --nocapture`.
 UI pictures: the console tests render headless and write PNGs under
 `target/tmp/console/` (`CARGO_TARGET_TMPDIR`).
 
