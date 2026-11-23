@@ -68,7 +68,7 @@ pub use devices::{DeviceEntry, DeviceRequest, DevicesView, serve_devices, stop_s
 pub use params::{
     CaeciliaParams, KEY_NAMES, MAX_COUPLERS, TEMPERAMENT_NAMES, coupler_param_id, stop_param_id,
 };
-pub use sound::{EQ_BANDS, EqBand, ROOM_NAMES};
+pub use sound::{EQ_BANDS, EqBand, LEVEL_NAMES, OUTPUT_NAMES, ROOM_NAMES, SPACE_NAMES};
 pub use switch::{FADE_SECONDS, OrganLoadError, OrganSlot};
 pub use telemetry::{TELEMETRY_CHESTS, Telemetry};
 pub use ui::EDITOR_SIZE;
@@ -214,6 +214,28 @@ const PEDAL_UP: u8 = 32;
 /// than a switch bounces or a block of audio lasts, shorter than a foot's return.
 const PEDAL_QUIET_SECONDS: f64 = 0.08;
 
+/// How the engine plays, as the parameters say: what the audio thread hands
+/// the engine when any of it changes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Modes {
+    dry: bool,
+    mono: bool,
+    even: bool,
+    /// The melody's lift in dB, or `None` when the melody is off.
+    melody_lift: Option<f32>,
+}
+
+impl Modes {
+    fn of(params: &CaeciliaParams) -> Self {
+        Self {
+            dry: params.space.index() == 1,
+            mono: params.output.index() == 1,
+            even: params.level_mode.index() == 1,
+            melody_lift: params.melody.value().then(|| params.melody_lift.value()),
+        }
+    }
+}
+
 /// The instrument.
 pub struct Caecilia {
     organ: Arc<Organ>,
@@ -228,6 +250,10 @@ pub struct Caecilia {
     reverb: Reverb,
     /// The room the reverb is in, once set.
     room: Option<usize>,
+    /// The space, output, level and melody the engine plays with, once set;
+    /// `None` hands them to the next engine.
+    modes: Option<Modes>,
+    mono: sound::MonoFold,
     eq: sound::MasterEq,
     limiter: Limiter,
     gain: f32,
@@ -644,10 +670,12 @@ impl Caecilia {
         if let Some((stops, couplers)) = swap.registration.take() {
             self.set_masks(stops, couplers);
         }
-        // The new organ stands in the room the old one did.
+        // The new organ stands in the room the old one did, and plays as it
+        // did: dry, mono, even, with the melody lifted.
         if let (Some(room), Some(e)) = (self.room, self.engine.as_mut()) {
             e.set_room(room);
         }
+        self.modes = None;
         // The swap now holds the organ being left.
         self.fading = Some(swap);
         self.fade_done = 0;
@@ -806,6 +834,8 @@ impl Plugin for Caecilia {
             swell: None,
             reverb,
             room: None,
+            modes: None,
+            mono: sound::MonoFold::default(),
             eq: sound::MasterEq::new(),
             limiter,
             gain: 1.0,
@@ -884,6 +914,8 @@ impl Plugin for Caecilia {
         self.reverb.prepare(spec);
         self.eq.prepare(spec);
         self.room = None;
+        self.modes = None;
+        self.mono = sound::MonoFold::default();
         self.limiter.prepare(spec);
     }
 
@@ -1185,10 +1217,27 @@ impl Plugin for Caecilia {
                 e.set_room(room);
             }
         }
-        self.reverb.set_mix(f64::from(self.params.reverb.value()));
+        let modes = Modes::of(&self.params);
+        if self.modes != Some(modes) {
+            if let Some(e) = self.engine.as_mut() {
+                e.set_dry(modes.dry);
+                e.set_mono(modes.mono);
+                e.set_even(modes.even);
+                e.set_melody(modes.melody_lift);
+                self.modes = Some(modes);
+            }
+        }
+        // Dry, the church is the reverb.
+        let reverb = if modes.dry {
+            0.0
+        } else {
+            self.params.reverb.value()
+        };
+        self.reverb.set_mix(f64::from(reverb));
         self.reverb.process(buffer);
         let gains = std::array::from_fn(|i| self.params.eq_bands[i].value());
         self.eq.process(buffer, self.params.eq.value(), gains);
+        self.mono.process(buffer, modes.mono);
         let target = 10.0f32.powf(self.params.level.value() / 20.0);
         buffer.apply_gain_ramp(self.gain, target);
         self.gain = target;

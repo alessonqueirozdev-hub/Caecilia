@@ -22,7 +22,7 @@ use super::snapshot::{Snapshot, Source, note_name};
 use crate::console::{Action, Source as Control};
 use crate::devices::{DeviceRequest, DevicesView};
 use crate::params::{KEY_NAMES, TEMPERAMENT_NAMES};
-use crate::{EQ_BANDS, ROOM_NAMES};
+use crate::{EQ_BANDS, LEVEL_NAMES, OUTPUT_NAMES, ROOM_NAMES, SPACE_NAMES};
 
 /// The pages, in the order of their tabs; Audio only where an application
 /// serves the devices.
@@ -87,6 +87,13 @@ pub(crate) struct SoundView {
     pub(crate) level: f32,
     pub(crate) reverb: f32,
     pub(crate) room: usize,
+    /// Dry: no room, no reverb, every pipe in the middle.
+    pub(crate) dry: bool,
+    pub(crate) mono: bool,
+    pub(crate) even: bool,
+    pub(crate) melody: bool,
+    pub(crate) melody_db: f32,
+    pub(crate) melody_lift: f32,
     pub(crate) eq: bool,
     pub(crate) bands_db: [f32; 5],
     pub(crate) bands: [f32; 5],
@@ -118,13 +125,21 @@ impl SoundView {
 impl std::hash::Hash for SoundView {
     fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
         self.page.hash(h);
-        for v in [self.level, self.reverb, self.pitch, self.rate, self.depth]
-            .iter()
-            .chain(&self.bands)
+        for v in [
+            self.level,
+            self.reverb,
+            self.pitch,
+            self.rate,
+            self.depth,
+            self.melody_lift,
+        ]
+        .iter()
+        .chain(&self.bands)
         {
             v.to_bits().hash(h);
         }
         (self.room, self.eq, self.temperament, self.key).hash(h);
+        (self.dry, self.mono, self.even, self.melody).hash(h);
         self.learn.hash(h);
         (&self.devices, self.picking).hash(h);
     }
@@ -145,6 +160,12 @@ impl SoundView {
             level: p.level.normalized() as f32,
             reverb: p.reverb.value(),
             room: p.room.index(),
+            dry: p.space.index() == 1,
+            mono: p.output.index() == 1,
+            even: p.level_mode.index() == 1,
+            melody: p.melody.value(),
+            melody_db: p.melody_lift.value(),
+            melody_lift: p.melody_lift.normalized() as f32,
             eq: p.eq.value(),
             bands_db: std::array::from_fn(|i| p.eq_bands[i].value()),
             bands: std::array::from_fn(|i| p.eq_bands[i].normalized() as f32),
@@ -338,16 +359,43 @@ fn columns(pick: Pick, count: usize) -> usize {
 
 struct SoundPlan {
     level: Rect,
+    space: [Rect; 2],
     reverb: Rect,
     rooms: Vec<Rect>,
+    output: [Rect; 2],
+    level_mode: [Rect; 2],
+    melody: [Rect; 2],
+    lift: Rect,
+}
+
+/// The tops of `n` rows below the tabs, spread over what the panel has.
+fn rows_of(size: Size, n: usize) -> Vec<f32> {
+    let gap = ((size.height - 42.0 - ROW - 14.0) / (n.max(2) - 1) as f32).clamp(ROW + 4.0, 42.0);
+    (0..n).map(|i| 42.0 + i as f32 * gap).collect()
+}
+
+/// Two chips side by side after the label: a switch between two ways.
+fn pair(y: f32) -> [Rect; 2] {
+    let x = 20.0 + LABEL;
+    [
+        Rect::new(x, y, 84.0, ROW),
+        Rect::new(x + 90.0, y, 84.0, ROW),
+    ]
 }
 
 fn sound_plan(size: Size) -> SoundPlan {
-    let r = rows(size);
+    let r = rows_of(size, 7);
+    let melody = pair(r[6]);
+    let lift_x = melody[1].right() + 18.0;
     SoundPlan {
         level: track(size, r[0]),
-        reverb: track(size, r[1]),
-        rooms: chips(size, r[2], ROOM_NAMES.len()),
+        space: pair(r[1]),
+        reverb: track(size, r[2]),
+        rooms: chips(size, r[3], ROOM_NAMES.len()),
+        output: pair(r[4]),
+        level_mode: pair(r[5]),
+        melody,
+        lift: Rect::new(lift_x, r[6], (size.width - lift_x - 80.0).max(40.0), ROW),
     }
 }
 
@@ -642,6 +690,14 @@ fn draw_sound(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
         sound.level,
         &format!("{:+.1} dB", sound.level_db),
     );
+    two_ways(
+        scene,
+        snapshot,
+        plan.space,
+        "Space",
+        &SPACE_NAMES,
+        sound.dry,
+    );
     slider(
         scene,
         snapshot,
@@ -654,6 +710,87 @@ fn draw_sound(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundV
     for (i, r) in plan.rooms.iter().enumerate() {
         chip(scene, snapshot, *r, ROOM_NAMES[i], i == sound.room);
     }
+    if sound.dry {
+        // Dry, the church is the room and the reverb: both are greyed, and
+        // keep what they were set to for when the space comes back.
+        let veil = snapshot.look.panel_top.with_alpha(0xB0);
+        for r in [plan.reverb, plan.rooms[0]] {
+            scene.fill(
+                Rect::new(14.0, r.y - 6.0, size.width - 28.0, r.height + 12.0),
+                veil,
+            );
+        }
+    }
+    two_ways(
+        scene,
+        snapshot,
+        plan.output,
+        "Output",
+        &OUTPUT_NAMES,
+        sound.mono,
+    );
+    two_ways(
+        scene,
+        snapshot,
+        plan.level_mode,
+        "Level",
+        &LEVEL_NAMES,
+        sound.even,
+    );
+    two_ways(
+        scene,
+        snapshot,
+        plan.melody,
+        "Melody",
+        &["Off", "On"],
+        sound.melody,
+    );
+    if sound.melody {
+        lift_track(
+            scene,
+            snapshot,
+            plan.lift,
+            sound.melody_lift,
+            sound.melody_db,
+        );
+    }
+}
+
+/// A row of two chips under `name`: the first lit unless `second`.
+fn two_ways(
+    scene: &mut Scene,
+    snapshot: &Snapshot,
+    chips: [Rect; 2],
+    name: &str,
+    names: &[&str; 2],
+    second: bool,
+) {
+    label(scene, snapshot, chips[0].y + 1.0, name);
+    chip(scene, snapshot, chips[0], names[0], !second);
+    chip(scene, snapshot, chips[1], names[1], second);
+}
+
+/// The melody's lift: a track with no label of its own, beside its switch.
+fn lift_track(scene: &mut Scene, snapshot: &Snapshot, r: Rect, at: f32, db: f32) {
+    let look = snapshot.look;
+    let y = r.center().y;
+    scene.fill(
+        RoundedRect::new(Rect::new(r.x, y - 2.0, r.width, 4.0), 2.0),
+        look.edge,
+    );
+    let x = r.x + r.width * at.clamp(0.0, 1.0);
+    scene.fill(
+        RoundedRect::new(Rect::new(r.x, y - 2.0, x - r.x, 4.0), 2.0),
+        look.accent,
+    );
+    knob(scene, snapshot, Point::new(x, y));
+    text(
+        scene,
+        &format!("+{db:.1} dB"),
+        style(11.5, 600.0, look.text2),
+        Point::new(r.right() + 60.0, r.y + 5.0),
+        1.0,
+    );
 }
 
 fn draw_eq(size: Size, scene: &mut Scene, snapshot: &Snapshot, sound: &SoundView) {
@@ -1037,12 +1174,28 @@ pub(crate) fn describe(sound: &SoundView) -> String {
             }
             said
         }
-        _ => format!(
-            "Sound: volume {:+.1} dB, reverb {:.0} % in the {}",
-            sound.level_db,
-            sound.reverb * 100.0,
-            ROOM_NAMES[sound.room].to_lowercase(),
-        ),
+        _ => {
+            let mut said = if sound.dry {
+                format!("Sound: volume {:+.1} dB, dry", sound.level_db)
+            } else {
+                format!(
+                    "Sound: volume {:+.1} dB, reverb {:.0} % in the {}",
+                    sound.level_db,
+                    sound.reverb * 100.0,
+                    ROOM_NAMES[sound.room].to_lowercase(),
+                )
+            };
+            if sound.mono {
+                said.push_str(", mono");
+            }
+            if sound.even {
+                said.push_str(", even level");
+            }
+            if sound.melody {
+                said.push_str(&format!(", melody lifted {:+.1} dB", sound.melody_db));
+            }
+            said
+        }
     }
 }
 
@@ -1131,11 +1284,46 @@ pub(crate) fn items(sound: &SoundView, size: Size) -> Vec<Item> {
         }
         _ => {
             let plan = sound_plan(size);
+            let ways = |items: &mut Vec<Item>,
+                        name: &str,
+                        names: &[&str; 2],
+                        chips: [Rect; 2],
+                        second: bool| {
+                items.push(button(
+                    format!("{name} {}", names[0]),
+                    Some(!second),
+                    chips[0],
+                ));
+                items.push(button(
+                    format!("{name} {}", names[1]),
+                    Some(second),
+                    chips[1],
+                ));
+            };
             items.push(slider_item("Volume", plan.level));
+            ways(&mut items, "Space", &SPACE_NAMES, plan.space, sound.dry);
             items.push(slider_item("Reverb", plan.reverb));
             for (i, r) in plan.rooms.iter().enumerate() {
                 let on = Some(i == sound.room);
                 items.push(button(format!("Room {}", ROOM_NAMES[i]), on, *r));
+            }
+            ways(&mut items, "Output", &OUTPUT_NAMES, plan.output, sound.mono);
+            ways(
+                &mut items,
+                "Level",
+                &LEVEL_NAMES,
+                plan.level_mode,
+                sound.even,
+            );
+            ways(
+                &mut items,
+                "Melody",
+                &["Off", "On"],
+                plan.melody,
+                sound.melody,
+            );
+            if sound.melody {
+                items.push(slider_item("Melody lift", plan.lift));
             }
         }
     }
@@ -1261,6 +1449,24 @@ fn press_sound(context: &EditorContext, source: &Source, size: Size, at: Point) 
     } else if let Some(i) = plan.rooms.iter().position(|r| r.contains(at)) {
         Gesture::set_once(context, p.room.param_id(), choice(i, ROOM_NAMES.len()));
         Pressed::Done
+    } else if let Some(i) = plan.space.iter().position(|r| r.contains(at)) {
+        Gesture::set_once(context, p.space.param_id(), choice(i, SPACE_NAMES.len()));
+        Pressed::Done
+    } else if let Some(i) = plan.output.iter().position(|r| r.contains(at)) {
+        Gesture::set_once(context, p.output.param_id(), choice(i, OUTPUT_NAMES.len()));
+        Pressed::Done
+    } else if let Some(i) = plan.level_mode.iter().position(|r| r.contains(at)) {
+        Gesture::set_once(
+            context,
+            p.level_mode.param_id(),
+            choice(i, LEVEL_NAMES.len()),
+        );
+        Pressed::Done
+    } else if let Some(i) = plan.melody.iter().position(|r| r.contains(at)) {
+        Gesture::set_once(context, p.melody.param_id(), if i == 1 { 1.0 } else { 0.0 });
+        Pressed::Done
+    } else if p.melody.value() && row(plan.lift).contains(at) {
+        Pressed::Drag(begin(context, &p.melody_lift, plan.lift, false, at))
     } else {
         Pressed::Nothing
     }
